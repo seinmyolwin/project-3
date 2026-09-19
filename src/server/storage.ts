@@ -25,6 +25,7 @@ import {
   ServerAuditRecord,
 } from './types';
 import { PairingCodeRecord } from '../types/multiDevice';
+import { OutboxRecord, ServerEvent, ServerEventType } from './realtime/types';
 
 let SQL: SqlJsStatic | null = null;
 
@@ -300,6 +301,39 @@ export class PersistentSQLiteStorage {
       `);
 
       this.seedInitialData();
+    }
+
+    if (currentVersion < 2) {
+      this.db.run(`
+        -- 13. Event Outbox Table (Publish-After-Commit Local Event Bus)
+        CREATE TABLE IF NOT EXISTS event_outbox (
+          id TEXT PRIMARY KEY,
+          event_id TEXT UNIQUE NOT NULL,
+          business_id TEXT NOT NULL,
+          branch_id TEXT NOT NULL,
+          event_type TEXT NOT NULL,
+          entity_type TEXT NOT NULL,
+          entity_id TEXT NOT NULL,
+          operation_id TEXT,
+          sequence INTEGER NOT NULL,
+          payload TEXT NOT NULL,
+          actor_device_id TEXT,
+          actor_user_id TEXT,
+          created_at TEXT NOT NULL,
+          published_at TEXT,
+          status TEXT NOT NULL DEFAULT 'PENDING'
+        );
+
+        -- 14. Event Sequence Counter Table (Monotonic sequence per business+branch)
+        CREATE TABLE IF NOT EXISTS event_sequences (
+          business_id TEXT NOT NULL,
+          branch_id TEXT NOT NULL,
+          current_sequence INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY (business_id, branch_id)
+        );
+
+        INSERT INTO schema_migrations (version, applied_at) VALUES (2, datetime('now'));
+      `);
     }
   }
 
@@ -614,6 +648,12 @@ export class PersistentSQLiteStorage {
     return { success: true, message: 'Device successfully paired and authorized.', device: registered };
   }
 
+  public updateDeviceStatus(deviceId: string, status: 'ACTIVE' | 'REVOKED' | 'PENDING'): void {
+    if (!this.db) throw new Error('DB uninitialized');
+    this.db.run(`UPDATE devices SET status = ? WHERE device_id = ?`, [status, deviceId]);
+    this.flushToDisk();
+  }
+
   // ==========================================
   // USER AUTHENTICATION
   // ==========================================
@@ -702,6 +742,172 @@ export class PersistentSQLiteStorage {
   }
 
   // ==========================================
+  // REAL-TIME EVENT OUTBOX ENGINE
+  // ==========================================
+
+  public getNextSequence(businessId: string, branchId: string): number {
+    if (!this.db) throw new Error('DB uninitialized');
+    this.db.run(`
+      INSERT INTO event_sequences (business_id, branch_id, current_sequence)
+      VALUES (?, ?, 1)
+      ON CONFLICT(business_id, branch_id) DO UPDATE SET current_sequence = current_sequence + 1
+    `, [businessId, branchId]);
+
+    const stmt = this.db.prepare(`SELECT current_sequence FROM event_sequences WHERE business_id = ? AND branch_id = ?`);
+    stmt.bind([businessId, branchId]);
+    let seq = 1;
+    if (stmt.step()) {
+      seq = Number(stmt.getAsObject().current_sequence);
+    }
+    stmt.free();
+    return seq;
+  }
+
+  public getLatestSequence(businessId: string, branchId: string): number {
+    if (!this.db) return 0;
+    const stmt = this.db.prepare(`SELECT current_sequence FROM event_sequences WHERE business_id = ? AND branch_id = ?`);
+    stmt.bind([businessId, branchId]);
+    let seq = 0;
+    if (stmt.step()) {
+      seq = Number(stmt.getAsObject().current_sequence);
+    }
+    stmt.free();
+    return seq;
+  }
+
+  public recordOutboxEvent(event: {
+    eventId?: string;
+    businessId: string;
+    branchId: string;
+    eventType: ServerEventType;
+    entityType: string;
+    entityId: string;
+    operationId?: string;
+    payload: any;
+    actorDeviceId?: string;
+    actorUserId?: string;
+  }): OutboxRecord {
+    if (!this.db) throw new Error('DB uninitialized');
+    const id = 'outbox_' + Date.now() + '_' + crypto.randomBytes(4).toString('hex');
+    const eventId = event.eventId || crypto.randomUUID();
+    const now = new Date().toISOString();
+    const sequence = this.getNextSequence(event.businessId, event.branchId);
+    const payloadJson = typeof event.payload === 'string' ? event.payload : JSON.stringify(event.payload);
+
+    this.db.run(`
+      INSERT INTO event_outbox (
+        id, event_id, business_id, branch_id, event_type, entity_type, entity_id, operation_id, sequence, payload, actor_device_id, actor_user_id, created_at, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')
+    `, [
+      id,
+      eventId,
+      event.businessId,
+      event.branchId,
+      event.eventType,
+      event.entityType,
+      event.entityId,
+      event.operationId || null,
+      sequence,
+      payloadJson,
+      event.actorDeviceId || null,
+      event.actorUserId || null,
+      now,
+    ]);
+
+    return {
+      id,
+      eventId,
+      businessId: event.businessId,
+      branchId: event.branchId,
+      eventType: event.eventType,
+      entityType: event.entityType,
+      entityId: event.entityId,
+      operationId: event.operationId,
+      sequence,
+      payload: payloadJson,
+      actorDeviceId: event.actorDeviceId,
+      actorUserId: event.actorUserId,
+      createdAt: now,
+      status: 'PENDING',
+    };
+  }
+
+  public getPendingOutboxEvents(limit = 50): OutboxRecord[] {
+    if (!this.db) return [];
+    const events: OutboxRecord[] = [];
+    const stmt = this.db.prepare(`
+      SELECT * FROM event_outbox WHERE status = 'PENDING' ORDER BY sequence ASC LIMIT ?
+    `);
+    stmt.bind([limit]);
+    while (stmt.step()) {
+      const row = stmt.getAsObject();
+      events.push({
+        id: row.id as string,
+        eventId: row.event_id as string,
+        businessId: row.business_id as string,
+        branchId: row.branch_id as string,
+        eventType: row.event_type as ServerEventType,
+        entityType: row.entity_type as string,
+        entityId: row.entity_id as string,
+        operationId: (row.operation_id as string) || undefined,
+        sequence: Number(row.sequence),
+        payload: row.payload as string,
+        actorDeviceId: (row.actor_device_id as string) || undefined,
+        actorUserId: (row.actor_user_id as string) || undefined,
+        createdAt: row.created_at as string,
+        publishedAt: (row.published_at as string) || undefined,
+        status: row.status as any,
+      });
+    }
+    stmt.free();
+    return events;
+  }
+
+  public markOutboxEventPublished(eventId: string): void {
+    if (!this.db) return;
+    const now = new Date().toISOString();
+    this.db.run(`UPDATE event_outbox SET status = 'PUBLISHED', published_at = ? WHERE event_id = ?`, [now, eventId]);
+    this.flushToDisk();
+  }
+
+  public getOutboxEventsSince(businessId: string, branchId: string, sinceSequence: number, limit = 100): ServerEvent[] {
+    if (!this.db) return [];
+    const events: ServerEvent[] = [];
+    const query = branchId === '*'
+      ? `SELECT * FROM event_outbox WHERE business_id = ? AND sequence > ? ORDER BY sequence ASC LIMIT ?`
+      : `SELECT * FROM event_outbox WHERE business_id = ? AND branch_id = ? AND sequence > ? ORDER BY sequence ASC LIMIT ?`;
+    const stmt = this.db.prepare(query);
+    stmt.bind(branchId === '*' ? [businessId, sinceSequence, limit] : [businessId, branchId, sinceSequence, limit]);
+
+    while (stmt.step()) {
+      const row = stmt.getAsObject();
+      let payloadObj: any = {};
+      try {
+        payloadObj = JSON.parse(row.payload as string);
+      } catch {
+        payloadObj = row.payload;
+      }
+      events.push({
+        eventId: row.event_id as string,
+        eventType: row.event_type as ServerEventType,
+        businessId: row.business_id as string,
+        branchId: row.branch_id as string,
+        entityType: row.entity_type as string,
+        entityId: row.entity_id as string,
+        operationId: (row.operation_id as string) || undefined,
+        version: 1,
+        timestamp: row.created_at as string,
+        sequence: Number(row.sequence),
+        actorDeviceId: (row.actor_device_id as string) || undefined,
+        actorUserId: (row.actor_user_id as string) || undefined,
+        payload: payloadObj,
+      });
+    }
+    stmt.free();
+    return events;
+  }
+
+  // ==========================================
   // REAL FINANCIAL OPERATIONS EXECUTION
   // ==========================================
 
@@ -747,6 +953,39 @@ export class PersistentSQLiteStorage {
         UPDATE rooms SET status = 'occupied', active_session_id = ?, updated_at = ? WHERE id = ?
       `, [params.sessionId, now, params.roomId]);
 
+      // 3. Atomically Record Outbox Real-Time Events (Publish-After-Commit)
+      this.recordOutboxEvent({
+        businessId: params.businessId,
+        branchId: params.branchId,
+        eventType: 'SESSION_STARTED',
+        entityType: 'SESSION',
+        entityId: params.sessionId,
+        payload: {
+          sessionId: params.sessionId,
+          roomId: params.roomId,
+          roomName: room.name,
+          customerName: params.customerName || null,
+          status: 'active',
+          startTime: now,
+        },
+        actorUserId: params.userId,
+      });
+
+      this.recordOutboxEvent({
+        businessId: params.businessId,
+        branchId: params.branchId,
+        eventType: 'ROOM_STATUS_CHANGED',
+        entityType: 'ROOM',
+        entityId: params.roomId,
+        payload: {
+          roomId: params.roomId,
+          roomName: room.name,
+          status: 'occupied',
+          activeSessionId: params.sessionId,
+        },
+        actorUserId: params.userId,
+      });
+
       return { sessionId: params.sessionId, roomId: params.roomId, roomName: room.name, status: 'active', startTime: now };
     });
   }
@@ -791,6 +1030,38 @@ export class PersistentSQLiteStorage {
         now,
       ]);
 
+      // Atomically Record Outbox Real-Time Events
+      this.recordOutboxEvent({
+        businessId: params.businessId,
+        branchId: params.branchId,
+        eventType: 'PAYMENT_CREATED',
+        entityType: 'INVOICE',
+        entityId: params.invoiceId,
+        payload: {
+          invoiceId: params.invoiceId,
+          invoiceNumber: params.invoiceNumber,
+          totalMMK: params.totalMMK,
+          paidMMK: params.paidMMK,
+          paymentStatus,
+          paymentMethod: params.paymentMethod,
+          customerId: params.customerId || null,
+        },
+      });
+
+      this.recordOutboxEvent({
+        businessId: params.businessId,
+        branchId: params.branchId,
+        eventType: 'INVOICE_UPDATED',
+        entityType: 'INVOICE',
+        entityId: params.invoiceId,
+        payload: {
+          invoiceId: params.invoiceId,
+          invoiceNumber: params.invoiceNumber,
+          paymentStatus,
+          paidMMK: params.paidMMK,
+        },
+      });
+
       return { invoiceId: params.invoiceId, invoiceNumber: params.invoiceNumber, totalMMK: params.totalMMK, paidMMK: params.paidMMK, paymentStatus };
     });
   }
@@ -816,6 +1087,24 @@ export class PersistentSQLiteStorage {
         INSERT INTO expenses (id, business_id, branch_id, category, description, amount_mmk, payment_method, date, created_by, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [params.expenseId, params.businessId, params.branchId, params.category, params.description, params.amountMMK, params.paymentMethod, now.split('T')[0], params.createdBy, now]);
+
+      // Atomically Record Outbox Real-Time Event
+      this.recordOutboxEvent({
+        businessId: params.businessId,
+        branchId: params.branchId,
+        eventType: 'EXPENSE_CREATED',
+        entityType: 'EXPENSE',
+        entityId: params.expenseId,
+        payload: {
+          expenseId: params.expenseId,
+          category: params.category,
+          description: params.description,
+          amountMMK: params.amountMMK,
+          paymentMethod: params.paymentMethod,
+          createdBy: params.createdBy,
+        },
+        actorUserId: params.createdBy,
+      });
 
       return { expenseId: params.expenseId, amountMMK: params.amountMMK, category: params.category };
     });
@@ -861,6 +1150,34 @@ export class PersistentSQLiteStorage {
         INSERT INTO customer_ledger (id, business_id, branch_id, customer_id, type, amount_mmk, balance_after_mmk, notes, date, created_at)
         VALUES (?, ?, ?, ?, 'credit_sale', ?, ?, ?, ?, ?)
       `, [params.ledgerId, params.businessId, params.branchId, params.customerId, params.amountMMK, newBalance, params.notes || null, now.split('T')[0], now]);
+
+      // Atomically Record Outbox Real-Time Events
+      this.recordOutboxEvent({
+        businessId: params.businessId,
+        branchId: params.branchId,
+        eventType: 'CUSTOMER_CREDIT_CREATED',
+        entityType: 'CUSTOMER_LEDGER',
+        entityId: params.ledgerId,
+        payload: {
+          ledgerId: params.ledgerId,
+          customerId: params.customerId,
+          amountMMK: params.amountMMK,
+          newBalance,
+          notes: params.notes || null,
+        },
+      });
+
+      this.recordOutboxEvent({
+        businessId: params.businessId,
+        branchId: params.branchId,
+        eventType: 'CUSTOMER_BALANCE_UPDATED',
+        entityType: 'CUSTOMER',
+        entityId: params.customerId,
+        payload: {
+          customerId: params.customerId,
+          outstandingBalanceMMK: newBalance,
+        },
+      });
 
       return { customerId: params.customerId, previousBalance: customer.outstanding_balance_mmk, newBalance, amountMMK: params.amountMMK };
     });
@@ -917,6 +1234,25 @@ export class PersistentSQLiteStorage {
         }
         throw err;
       }
+
+      // Atomically Record Outbox Real-Time Event
+      this.recordOutboxEvent({
+        businessId: params.businessId,
+        branchId: params.branchId,
+        eventType: 'CASH_CLOSING_CREATED',
+        entityType: 'CASH_CLOSING',
+        entityId: params.closingId,
+        payload: {
+          closingId: params.closingId,
+          date: params.date,
+          expectedCashMMK: expectedCash,
+          actualCashMMK: params.actualCashMMK,
+          discrepancyMMK: discrepancy,
+          status,
+          closedBy: params.closedBy,
+        },
+        actorUserId: params.closedBy,
+      });
 
       return { closingId: params.closingId, date: params.date, expectedCashMMK: expectedCash, actualCashMMK: params.actualCashMMK, discrepancyMMK: discrepancy, status };
     });

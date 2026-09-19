@@ -1,12 +1,15 @@
+import http from 'http';
 import express from 'express';
 import path from 'path';
 import cors from 'cors';
 import { createServer as createViteServer } from 'vite';
 import { createApiRouter } from './src/server/routes';
 import { serverStorage } from './src/server/storage';
+import { realtimeEventBus } from './src/server/realtime/eventBus';
 
 async function startServer() {
   const app = express();
+  const server = http.createServer(app);
   const PORT = 3000;
 
   // Middleware
@@ -19,6 +22,10 @@ async function startServer() {
 
   // API Routes
   app.use('/api', createApiRouter(serverStorage));
+
+  // Attach Realtime WebSocket LAN Event Bus to HTTP Server
+  realtimeEventBus.setStorage(serverStorage);
+  realtimeEventBus.attach(server);
 
   // Vite middleware for development / static serving for production
   if (process.env.NODE_ENV !== 'production') {
@@ -35,8 +42,8 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[Shop Server] Running on http://0.0.0.0:${PORT} (ACID SQLite Persistent Database)`);
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`[Shop Server] Running on http://0.0.0.0:${PORT} (ACID SQLite + Local Real-Time WebSocket LAN Bus)`);
   });
 }
 

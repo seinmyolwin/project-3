@@ -10,13 +10,14 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "tsx src/domain/__tests__/financial.test.ts && tsx src/domain/__tests__/server_multi_device.test.ts"
+    "test": "tsx src/domain/__tests__/financial.test.ts && tsx src/domain/__tests__/server_multi_device.test.ts && tsx src/domain/__tests__/server_realtime_websocket.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/cors": "^2.8.19",
     "@types/sql.js": "^1.4.11",
+    "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^6.1.1",
     "cors": "^2.8.6",
     "dexie": "^4.4.6",
@@ -27,7 +28,8 @@
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "sql.js": "^1.14.2",
-    "vite": "^8.3.0"
+    "vite": "^8.3.0",
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

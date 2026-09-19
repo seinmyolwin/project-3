@@ -10,6 +10,7 @@ import path from 'path';
 import { PersistentSQLiteStorage, serverStorage } from './storage';
 import { ServerAuthSession, ServerUserEntity } from './types';
 import { UserRole } from '../types';
+import { realtimeEventBus } from './realtime/eventBus';
 
 export const activeSessions = new Map<string, ServerAuthSession>();
 
@@ -207,6 +208,30 @@ export function createApiRouter(storage: PersistentSQLiteStorage = serverStorage
     res.json({ success: true, count: devices.length, devices });
   });
 
+  router.put('/devices/:deviceId/status', requireAuth(['owner', 'manager']), (req: Request, res: Response) => {
+    const user = (req as any).user as ServerUserEntity;
+    const { deviceId } = req.params;
+    const { status } = req.body;
+
+    if (!['ACTIVE', 'REVOKED', 'PENDING'].includes(status)) {
+      return res.status(400).json({ error: 'INVALID_STATUS', message: 'Status must be ACTIVE, REVOKED, or PENDING' });
+    }
+
+    const device = storage.getDevice(deviceId);
+    if (!device || device.businessId !== user.businessId) {
+      return res.status(404).json({ error: 'DEVICE_NOT_FOUND', message: `Device ${deviceId} not found` });
+    }
+
+    storage.updateDeviceStatus(deviceId, status);
+
+    // If revoked, disconnect all active WebSocket connections for this device immediately
+    if (status === 'REVOKED') {
+      realtimeEventBus.revokeDeviceConnections(deviceId);
+    }
+
+    res.json({ success: true, deviceId, status });
+  });
+
   // ==========================================
   // 4. FINANCIAL SERVER OPERATION BOUNDARY
   // ==========================================
@@ -390,6 +415,11 @@ export function createApiRouter(storage: PersistentSQLiteStorage = serverStorage
         metadata: { requestHash, operationResult },
       });
 
+      // Immediate drain of real-time outbox for connected clients
+      realtimeEventBus.drainOutbox().catch(err => {
+        console.warn('[Routes] Immediate outbox drain warning:', err.message);
+      });
+
       return res.status(200).json({
         status: 'PROCESSED',
         operationId,
@@ -408,7 +438,62 @@ export function createApiRouter(storage: PersistentSQLiteStorage = serverStorage
   });
 
   // ==========================================
-  // 5. AUDIT LOGS QUERY
+  // 5. REAL-TIME EVENT SYNC & PRESENCE
+  // ==========================================
+  router.get('/sync/events', requireAuth(), (req: Request, res: Response) => {
+    const user = (req as any).user as ServerUserEntity;
+    const sinceSequence = Number(req.query.sinceSequence) || 0;
+    const branchId = (req.query.branchId as string) || user.branchId;
+    const limit = Math.min(Number(req.query.limit) || 100, 500);
+
+    // Branch isolation guard
+    if (branchId !== user.branchId && user.role !== 'owner') {
+      return res.status(403).json({ error: 'BRANCH_ISOLATION_VIOLATION', message: 'Cannot query events for other branches' });
+    }
+
+    const events = storage.getOutboxEventsSince(user.businessId, branchId, sinceSequence, limit);
+    const latestSequence = storage.getLatestSequence(user.businessId, branchId);
+
+    res.json({
+      success: true,
+      businessId: user.businessId,
+      branchId,
+      sinceSequence,
+      latestSequence,
+      count: events.length,
+      events,
+    });
+  });
+
+  router.get('/sync/status', requireAuth(), (req: Request, res: Response) => {
+    const user = (req as any).user as ServerUserEntity;
+    const branchId = (req.query.branchId as string) || user.branchId;
+    const latestSequence = storage.getLatestSequence(user.businessId, branchId);
+    const pendingOutbox = storage.getPendingOutboxEvents(100).length;
+
+    res.json({
+      success: true,
+      businessId: user.businessId,
+      branchId,
+      latestSequence,
+      pendingOutboxCount: pendingOutbox,
+      serverTime: new Date().toISOString(),
+    });
+  });
+
+  router.get('/realtime/presence', requireAuth(['owner', 'manager']), (req: Request, res: Response) => {
+    const user = (req as any).user as ServerUserEntity;
+    const clients = realtimeEventBus.getConnectedClients(user.businessId);
+    res.json({
+      success: true,
+      businessId: user.businessId,
+      onlineCount: clients.length,
+      clients,
+    });
+  });
+
+  // ==========================================
+  // 6. AUDIT LOGS QUERY
   // ==========================================
   router.get('/audit/logs', requireAuth(['owner', 'manager']), (req: Request, res: Response) => {
     const user = (req as any).user as ServerUserEntity;
@@ -417,7 +502,7 @@ export function createApiRouter(storage: PersistentSQLiteStorage = serverStorage
   });
 
   // ==========================================
-  // 6. BACKUP & RESTORE
+  // 7. BACKUP & RESTORE
   // ==========================================
   router.post('/system/backup', requireAuth(['owner']), (req: Request, res: Response) => {
     try {
