@@ -311,6 +311,8 @@ export default function App() {
             staff={staff}
             staffLedger={staffLedger}
             sessions={sessions}
+            customers={customers}
+            creditLedger={creditLedger}
             currentUser={effectiveUser}
             lang={lang}
           />

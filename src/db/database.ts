@@ -62,6 +62,7 @@ import {
   roundMMK,
   deriveStaffLedgerBalances,
   deriveCustomerLedgerBalances,
+  validateCustomerCreditPolicy,
   createCommissionSnapshot,
   evaluateBillPaymentStatus,
   MoneyMMK,
@@ -2204,6 +2205,288 @@ export class MyanmarBusinessDB extends Dexie {
       });
 
       return { payment, ledgerEntry };
+    });
+  }
+
+  /**
+   * ATOMIC TRANSACTION: Record Customer Credit Sale
+   * Validates credit limit policy & creates traceable ledger debt entry.
+   */
+  async recordCustomerCreditSaleTransaction(params: {
+    customerId: string;
+    amountMMK: number;
+    invoiceId?: string;
+    notes?: string;
+    allowCreditLimitOverride?: boolean;
+    currentUser: { id: string; name: string; role: any };
+  }): Promise<CustomerLedgerEntry> {
+    const amount = MoneyMMK.assertNonNegative(params.amountMMK, 'Credit Sale Amount');
+    if (amount <= 0) throw new Error('Credit sale amount must be greater than 0 MMK.');
+
+    return this.transaction('rw', [
+      this.customers,
+      this.customerLedger,
+      this.customerCreditLedger,
+      this.auditLogs,
+    ], async () => {
+      const customer = await this.customers.get(params.customerId);
+      if (!customer) throw new Error(`Customer ${params.customerId} not found.`);
+
+      // Validate credit policy against current ledger balance
+      const existingEntries = await this.customerLedger.where('customerId').equals(params.customerId).toArray();
+      const derived = deriveCustomerLedgerBalances(existingEntries);
+      const validation = validateCustomerCreditPolicy({
+        customer,
+        currentOutstandingMMK: derived.netOutstandingDebtMMK,
+        newCreditAmountMMK: amount,
+      });
+
+      if (!validation.isValid) {
+        if (validation.isLimitExceeded && params.allowCreditLimitOverride) {
+          // Allowed via manager override approval
+        } else {
+          throw new Error(validation.error || 'Credit sale rejected by customer credit policy.');
+        }
+      }
+
+      const now = new Date().toISOString();
+      const todayDate = now.split('T')[0];
+      const newBal = derived.netOutstandingDebtMMK + amount;
+      const ledgerEntryId = 'cleg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+
+      await this.customers.update(params.customerId, { currentBalanceMMK: newBal });
+
+      const ledgerEntry: CustomerLedgerEntry = {
+        id: ledgerEntryId,
+        customerId: params.customerId,
+        invoiceId: params.invoiceId,
+        type: 'debt_incurred',
+        amountMMK: amount,
+        balanceAfterMMK: newBal,
+        notes: params.notes || 'Credit Sale Debt Incurred',
+        date: todayDate,
+        createdAt: now,
+        createdBy: params.currentUser.name,
+      };
+      await this.customerLedger.add(ledgerEntry);
+
+      await this.customerCreditLedger.add({
+        id: 'ccl_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+        customerId: params.customerId,
+        invoiceId: params.invoiceId,
+        type: 'debt_incurred',
+        amountMMK: amount,
+        balanceAfterMMK: newBal,
+        notes: params.notes,
+        date: todayDate,
+        createdBy: params.currentUser.name,
+      });
+
+      await this.auditLogs.add({
+        id: 'aud_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+        timestamp: now,
+        userId: params.currentUser.id,
+        userName: params.currentUser.name,
+        userRole: params.currentUser.role,
+        action: validation.isLimitExceeded ? 'CREDIT_LIMIT_OVERRIDE_SALE' : 'CUSTOMER_CREDIT_SALE_CREATED',
+        entity: 'Customer',
+        entityId: params.customerId,
+        newValue: JSON.stringify({
+          creditIncurredMMK: amount,
+          newBalanceMMK: newBal,
+          limitOverridden: validation.isLimitExceeded && params.allowCreditLimitOverride,
+        }),
+      });
+
+      return ledgerEntry;
+    });
+  }
+
+  /**
+   * ATOMIC TRANSACTION: Record Customer Debt/Credit Adjustment
+   * Supports Debit Adjustment (+ Debt) or Credit Adjustment (- Debt).
+   */
+  async recordCustomerCreditAdjustmentTransaction(params: {
+    customerId: string;
+    type: 'adjustment_debit' | 'adjustment_credit';
+    amountMMK: number;
+    notes: string;
+    currentUser: { id: string; name: string; role: any };
+  }): Promise<CustomerLedgerEntry> {
+    const rawAmt = MoneyMMK.assertNonNegative(params.amountMMK, 'Adjustment Amount');
+    if (rawAmt <= 0) throw new Error('Adjustment amount must be greater than 0 MMK.');
+    if (!params.notes || !params.notes.trim()) throw new Error('A mandatory reason/notes is required for customer ledger adjustments.');
+
+    return this.transaction('rw', [
+      this.customers,
+      this.customerLedger,
+      this.customerCreditLedger,
+      this.auditLogs,
+    ], async () => {
+      const customer = await this.customers.get(params.customerId);
+      if (!customer) throw new Error(`Customer ${params.customerId} not found.`);
+
+      const existingEntries = await this.customerLedger.where('customerId').equals(params.customerId).toArray();
+      const derived = deriveCustomerLedgerBalances(existingEntries);
+
+      const isDebit = params.type === 'adjustment_debit';
+      const adjustmentSignedAmount = isDebit ? rawAmt : -rawAmt;
+      const newBal = Math.max(0, derived.netOutstandingDebtMMK + adjustmentSignedAmount);
+
+      const now = new Date().toISOString();
+      const todayDate = now.split('T')[0];
+      const ledgerEntryId = 'cleg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+
+      const ledgerEntry: CustomerLedgerEntry = {
+        id: ledgerEntryId,
+        customerId: params.customerId,
+        type: 'adjustment',
+        amountMMK: adjustmentSignedAmount,
+        balanceAfterMMK: newBal,
+        notes: `ADJUSTMENT (${isDebit ? 'DEBIT/INCREASE DEBT' : 'CREDIT/DECREASE DEBT'}): ${params.notes.trim()}`,
+        date: todayDate,
+        createdAt: now,
+        createdBy: params.currentUser.name,
+      };
+      await this.customerLedger.add(ledgerEntry);
+
+      await this.customerCreditLedger.add({
+        id: 'ccl_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+        customerId: params.customerId,
+        type: 'adjustment',
+        amountMMK: adjustmentSignedAmount,
+        balanceAfterMMK: newBal,
+        notes: params.notes,
+        date: todayDate,
+        createdBy: params.currentUser.name,
+      });
+
+      await this.customers.update(params.customerId, { currentBalanceMMK: newBal });
+
+      await this.auditLogs.add({
+        id: 'aud_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+        timestamp: now,
+        userId: params.currentUser.id,
+        userName: params.currentUser.name,
+        userRole: params.currentUser.role,
+        action: 'CUSTOMER_CREDIT_ADJUSTMENT',
+        entity: 'Customer',
+        entityId: params.customerId,
+        reason: params.notes,
+        newValue: JSON.stringify({ adjustmentMMK: adjustmentSignedAmount, newBalanceMMK: newBal }),
+      });
+
+      return ledgerEntry;
+    }
+  )}
+
+  /**
+   * ATOMIC TRANSACTION: Reverse Customer Ledger Entry
+   * Reverses a financial entry without deleting history. Creates opposite reversal entry.
+   */
+  async reverseCustomerLedgerEntryTransaction(params: {
+    entryId: string;
+    reason: string;
+    currentUser: { id: string; name: string; role: any };
+  }): Promise<CustomerLedgerEntry> {
+    if (!params.reason || !params.reason.trim()) {
+      throw new Error('A mandatory reversal reason is required.');
+    }
+
+    return this.transaction('rw', [
+      this.customers,
+      this.customerLedger,
+      this.customerCreditLedger,
+      this.auditLogs,
+    ], async () => {
+      const targetEntry = await this.customerLedger.get(params.entryId);
+      if (!targetEntry) throw new Error('Target customer ledger entry not found.');
+
+      const customer = await this.customers.get(targetEntry.customerId);
+      if (!customer) throw new Error('Associated customer record not found.');
+
+      const now = new Date().toISOString();
+      const todayDate = now.split('T')[0];
+
+      // Determine reversal direction and type
+      let reversalType: 'debt_reversal' | 'payment_received' = 'debt_reversal';
+      let reversalAmountMMK = 0;
+
+      if (targetEntry.type === 'debt_incurred') {
+        // Reversing debt incurred reduces outstanding debt
+        reversalType = 'debt_reversal';
+        reversalAmountMMK = Math.abs(targetEntry.amountMMK);
+      } else if (targetEntry.type === 'payment_received') {
+        // Reversing a payment increases outstanding debt again
+        reversalType = 'debt_incurred' as any;
+        reversalAmountMMK = Math.abs(targetEntry.amountMMK);
+      } else if (targetEntry.type === 'adjustment') {
+        if (targetEntry.amountMMK > 0) {
+          reversalType = 'debt_reversal';
+          reversalAmountMMK = Math.abs(targetEntry.amountMMK);
+        } else {
+          reversalType = 'debt_incurred' as any;
+          reversalAmountMMK = Math.abs(targetEntry.amountMMK);
+        }
+      } else {
+        throw new Error('Reversal of this ledger entry type is not supported or already reversed.');
+      }
+
+      const existingEntries = await this.customerLedger.where('customerId').equals(targetEntry.customerId).toArray();
+      const currentBalances = deriveCustomerLedgerBalances(existingEntries);
+
+      let newBal = currentBalances.netOutstandingDebtMMK;
+      if (reversalType === 'debt_reversal') {
+        newBal = Math.max(0, newBal - reversalAmountMMK);
+      } else {
+        newBal = newBal + reversalAmountMMK;
+      }
+
+      const reversalLedgerEntryId = 'cleg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+      const reversalEntry: CustomerLedgerEntry = {
+        id: reversalLedgerEntryId,
+        customerId: targetEntry.customerId,
+        invoiceId: targetEntry.invoiceId,
+        paymentId: targetEntry.paymentId,
+        type: reversalType,
+        amountMMK: reversalAmountMMK,
+        balanceAfterMMK: newBal,
+        notes: `REVERSAL of Entry #${targetEntry.id}: ${params.reason.trim()}`,
+        date: todayDate,
+        createdAt: now,
+        createdBy: params.currentUser.name,
+      };
+
+      await this.customerLedger.add(reversalEntry);
+
+      await this.customerCreditLedger.add({
+        id: 'ccl_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+        customerId: targetEntry.customerId,
+        invoiceId: targetEntry.invoiceId,
+        type: reversalType === 'debt_reversal' ? 'debt_reversal' : 'debt_incurred',
+        amountMMK: reversalAmountMMK,
+        balanceAfterMMK: newBal,
+        notes: `REVERSAL: ${params.reason}`,
+        date: todayDate,
+        createdBy: params.currentUser.name,
+      });
+
+      await this.customers.update(targetEntry.customerId, { currentBalanceMMK: newBal });
+
+      await this.auditLogs.add({
+        id: 'aud_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+        timestamp: now,
+        userId: params.currentUser.id,
+        userName: params.currentUser.name,
+        userRole: params.currentUser.role,
+        action: 'CUSTOMER_LEDGER_REVERSAL',
+        entity: 'CustomerLedger',
+        entityId: targetEntry.id,
+        reason: params.reason,
+        newValue: JSON.stringify({ reversalEntryId: reversalEntry.id, newBalanceMMK: newBal }),
+      });
+
+      return reversalEntry;
     });
   }
 

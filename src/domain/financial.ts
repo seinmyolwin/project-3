@@ -16,6 +16,9 @@ import {
   CommissionSnapshot,
   StaffLedgerEntry,
   CustomerLedgerEntry,
+  CustomerCreditLedger,
+  Customer,
+  Invoice,
   SessionRecord,
   SessionExtensionRecord,
   SessionPricingRuleType,
@@ -1072,7 +1075,7 @@ export function deriveStaffLedgerBalances(entries: StaffLedgerEntry[]): StaffDer
 }
 
 // ====================================================
-// DERIVED CUSTOMER CREDIT BALANCES
+// DERIVED CUSTOMER CREDIT BALANCES & POLICY ENGINE
 // ====================================================
 
 export interface CustomerDerivedBalance {
@@ -1083,8 +1086,11 @@ export interface CustomerDerivedBalance {
 
 /**
  * Derives customer credit debt strictly from immutable customer ledger entries.
+ * Does NOT rely on an editable balance field as source of truth.
  */
-export function deriveCustomerLedgerBalances(entries: CustomerLedgerEntry[]): CustomerDerivedBalance {
+export function deriveCustomerLedgerBalances(
+  entries: (CustomerLedgerEntry | CustomerCreditLedger)[]
+): CustomerDerivedBalance {
   let totalDebtIncurred = 0;
   let totalPaymentReceived = 0;
 
@@ -1093,6 +1099,9 @@ export function deriveCustomerLedgerBalances(entries: CustomerLedgerEntry[]): Cu
     if (entry.type === 'debt_incurred') {
       totalDebtIncurred += amount;
     } else if (entry.type === 'payment_received' || entry.type === 'debt_reversal') {
+      totalPaymentReceived += amount;
+    } else if ((entry.type as string) === 'credit_reversal') {
+      // Reversal of a credit sale or debt
       totalPaymentReceived += amount;
     } else if (entry.type === 'adjustment') {
       if (amount >= 0) {
@@ -1109,5 +1118,187 @@ export function deriveCustomerLedgerBalances(entries: CustomerLedgerEntry[]): Cu
     totalDebtIncurredMMK: totalDebtIncurred,
     totalPaymentReceivedMMK: totalPaymentReceived,
     netOutstandingDebtMMK,
+  };
+}
+
+export interface CreditPolicyValidationResult {
+  isValid: boolean;
+  isLimitExceeded: boolean;
+  isCreditDisallowed: boolean;
+  currentOutstandingMMK: number;
+  newCreditAmountMMK: number;
+  projectedOutstandingMMK: number;
+  creditLimitMMK: number;
+  error?: string;
+  warning?: string;
+}
+
+/**
+ * Validates customer credit sale eligibility against credit limit and policy rules.
+ */
+export function validateCustomerCreditPolicy(params: {
+  customer: Customer;
+  currentOutstandingMMK: number;
+  newCreditAmountMMK: number;
+}): CreditPolicyValidationResult {
+  const currentOutstandingMMK = Math.max(0, roundMMK(params.currentOutstandingMMK));
+  const newCreditAmountMMK = Math.max(0, roundMMK(params.newCreditAmountMMK));
+  const projectedOutstandingMMK = currentOutstandingMMK + newCreditAmountMMK;
+  const creditLimitMMK = Math.max(0, roundMMK(params.customer.creditLimitMMK || 0));
+
+  if (params.customer.creditAllowed === false) {
+    return {
+      isValid: false,
+      isLimitExceeded: false,
+      isCreditDisallowed: true,
+      currentOutstandingMMK,
+      newCreditAmountMMK,
+      projectedOutstandingMMK,
+      creditLimitMMK,
+      error: `Credit sales are disabled for customer '${params.customer.name}'.`,
+    };
+  }
+
+  const isLimitExceeded = creditLimitMMK > 0 && projectedOutstandingMMK > creditLimitMMK;
+
+  if (isLimitExceeded) {
+    return {
+      isValid: false,
+      isLimitExceeded: true,
+      isCreditDisallowed: false,
+      currentOutstandingMMK,
+      newCreditAmountMMK,
+      projectedOutstandingMMK,
+      creditLimitMMK,
+      error: `Credit limit exceeded for ${params.customer.name}. Limit: ${formatMMK(creditLimitMMK)}, Outstanding after sale: ${formatMMK(projectedOutstandingMMK)}. Manager override required.`,
+      warning: `Projected outstanding (${formatMMK(projectedOutstandingMMK)}) exceeds credit limit (${formatMMK(creditLimitMMK)}).`,
+    };
+  }
+
+  return {
+    isValid: true,
+    isLimitExceeded: false,
+    isCreditDisallowed: false,
+    currentOutstandingMMK,
+    newCreditAmountMMK,
+    projectedOutstandingMMK,
+    creditLimitMMK,
+  };
+}
+
+export interface CustomerAgingBucket {
+  customerId: string;
+  customerName: string;
+  phone: string;
+  creditLimitMMK: number;
+  currentOutstandingMMK: number;
+  bucket0to30MMK: number;
+  bucket31to60MMK: number;
+  bucket61to90MMK: number;
+  bucketOver90MMK: number;
+}
+
+export interface CustomerAgingReportSummary {
+  customersCountWithDebt: number;
+  totalOutstandingMMK: number;
+  totalBucket0to30MMK: number;
+  totalBucket31to60MMK: number;
+  totalBucket61to90MMK: number;
+  totalBucketOver90MMK: number;
+  customerBreakdowns: CustomerAgingBucket[];
+}
+
+/**
+ * Calculates Customer Debt Aging Breakdown (0–30 days, 31–60 days, 61–90 days, 90+ days)
+ * based on ledger entry timestamps / invoice dates.
+ */
+export function calculateCustomerAgingReport(params: {
+  customers: Customer[];
+  ledgerEntries: (CustomerLedgerEntry | CustomerCreditLedger)[];
+  asOfDateISO?: string;
+}): CustomerAgingReportSummary {
+  const asOf = params.asOfDateISO ? new Date(params.asOfDateISO) : new Date();
+  const asOfTime = asOf.getTime();
+
+  let totalOutstandingMMK = 0;
+  let totalBucket0to30MMK = 0;
+  let totalBucket31to60MMK = 0;
+  let totalBucket61to90MMK = 0;
+  let totalBucketOver90MMK = 0;
+
+  const customerBreakdowns: CustomerAgingBucket[] = [];
+
+  for (const cust of params.customers) {
+    const custEntries = params.ledgerEntries.filter(e => e.customerId === cust.id);
+    const balances = deriveCustomerLedgerBalances(custEntries);
+
+    if (balances.netOutstandingDebtMMK <= 0) {
+      continue; // Skip customers with zero debt
+    }
+
+    let remainingDebtToBucket = balances.netOutstandingDebtMMK;
+    let b0to30 = 0;
+    let b31to60 = 0;
+    let b61to90 = 0;
+    let bOver90 = 0;
+
+    // Filter debt-increasing entries sorted from newest to oldest
+    const debtEntries = custEntries
+      .filter(e => e.type === 'debt_incurred' || (e.type === 'adjustment' && e.amountMMK > 0))
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    for (const entry of debtEntries) {
+      if (remainingDebtToBucket <= 0) break;
+
+      const entryAmt = Math.max(0, roundMMK(entry.amountMMK));
+      const allocatedToThisEntry = Math.min(entryAmt, remainingDebtToBucket);
+      remainingDebtToBucket -= allocatedToThisEntry;
+
+      const entryDate = new Date(entry.date);
+      const diffDays = Math.floor((asOfTime - entryDate.getTime()) / (1000 * 60 * 60 * 24));
+
+      if (diffDays <= 30) {
+        b0to30 += allocatedToThisEntry;
+      } else if (diffDays <= 60) {
+        b31to60 += allocatedToThisEntry;
+      } else if (diffDays <= 90) {
+        b61to90 += allocatedToThisEntry;
+      } else {
+        bOver90 += allocatedToThisEntry;
+      }
+    }
+
+    // Any remaining debt not mapped to specific entries falls into 0–30 bucket as default
+    if (remainingDebtToBucket > 0) {
+      b0to30 += remainingDebtToBucket;
+    }
+
+    customerBreakdowns.push({
+      customerId: cust.id,
+      customerName: cust.name,
+      phone: cust.phone || '-',
+      creditLimitMMK: cust.creditLimitMMK || 0,
+      currentOutstandingMMK: balances.netOutstandingDebtMMK,
+      bucket0to30MMK: b0to30,
+      bucket31to60MMK: b31to60,
+      bucket61to90MMK: b61to90,
+      bucketOver90MMK: bOver90,
+    });
+
+    totalOutstandingMMK += balances.netOutstandingDebtMMK;
+    totalBucket0to30MMK += b0to30;
+    totalBucket31to60MMK += b31to60;
+    totalBucket61to90MMK += b61to90;
+    totalBucketOver90MMK += bOver90;
+  }
+
+  return {
+    customersCountWithDebt: customerBreakdowns.length,
+    totalOutstandingMMK,
+    totalBucket0to30MMK,
+    totalBucket31to60MMK,
+    totalBucket61to90MMK,
+    totalBucketOver90MMK,
+    customerBreakdowns: customerBreakdowns.sort((a, b) => b.currentOutstandingMMK - a.currentOutstandingMMK),
   };
 }

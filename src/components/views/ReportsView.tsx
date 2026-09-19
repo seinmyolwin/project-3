@@ -6,8 +6,11 @@ import {
   StaffLedgerEntry,
   SessionRecord,
   UserAccount,
+  Customer,
+  CustomerCreditLedger,
+  CustomerLedgerEntry,
 } from '../../types';
-import { formatMMK } from '../../domain/financial';
+import { formatMMK, deriveCustomerLedgerBalances, calculateCustomerAgingReport } from '../../domain/financial';
 import { Language } from '../../utils/translations';
 import {
   TrendingUp,
@@ -19,6 +22,8 @@ import {
   PieChart,
   ShoppingBag,
   Award,
+  CreditCard,
+  ShieldAlert,
 } from 'lucide-react';
 
 interface ReportsViewProps {
@@ -27,6 +32,8 @@ interface ReportsViewProps {
   staff: StaffMember[];
   staffLedger: StaffLedgerEntry[];
   sessions: SessionRecord[];
+  customers?: Customer[];
+  creditLedger?: (CustomerCreditLedger | CustomerLedgerEntry)[];
   currentUser: UserAccount;
   lang: Language;
 }
@@ -37,11 +44,41 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   staff,
   staffLedger,
   sessions,
+  customers = [],
+  creditLedger = [],
   lang,
 }) => {
   const isMm = lang === 'my';
 
   const [dateFilter, setDateFilter] = useState<'today' | '7days' | 'month' | 'all'>('month');
+
+  // Customer Credit & Debt Aging Aggregations
+  const activeCustomers = customers.filter(c => c.isActive !== false);
+  const customerCreditSummaries = activeCustomers.map(cust => {
+    const custEntries = creditLedger.filter(e => e.customerId === cust.id);
+    const derived = deriveCustomerLedgerBalances(custEntries);
+    const agingSummary = calculateCustomerAgingReport({
+      customers: [cust],
+      ledgerEntries: custEntries,
+    });
+    const agingBucket = agingSummary.customerBreakdowns[0] || {
+      bucket0to30MMK: 0,
+      bucket31to60MMK: 0,
+      bucket61to90MMK: 0,
+      bucketOver90MMK: 0,
+    };
+    return {
+      customer: cust,
+      derived,
+      agingBucket,
+    };
+  });
+
+  const totalOutstandingCreditMMK = customerCreditSummaries.reduce(
+    (sum, item) => sum + item.derived.netOutstandingDebtMMK,
+    0
+  );
+  const debtorsCount = customerCreditSummaries.filter(item => item.derived.netOutstandingDebtMMK > 0).length;
 
   // Date filtering logic
   const now = new Date();
@@ -376,6 +413,110 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
             ))}
           </div>
         </div>
+      </div>
+
+      {/* Customer Credit Portfolio & Debt Aging Summary */}
+      <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gray-100 pb-3">
+          <div className="flex items-center gap-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-100 text-rose-700">
+              <CreditCard className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-gray-900">
+                {isMm ? 'ဖောက်သည် အကြွေးနှင့် ကြွေးကျန် ကာလခွဲခြားမှု အစီရင်ခံစာ' : 'Customer Credit & Debt Aging Report'}
+              </h3>
+              <p className="text-xs text-gray-500">
+                {isMm ? 'ဖောက်သည်များ၏ စုစုပေါင်း အကြွေးကျန်များ' : 'Overview of active customer receivables and age distribution'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4 text-xs font-semibold">
+            <div className="rounded-xl bg-gray-50 p-2.5 border border-gray-100">
+              <span className="text-gray-500 block text-[10px] uppercase">{isMm ? 'အကြွေးရှိသူ အရေအတွက်' : 'Debtors Count'}</span>
+              <span className="text-sm font-bold text-gray-900">{debtorsCount} {isMm ? 'ဦး' : 'customers'}</span>
+            </div>
+            <div className="rounded-xl bg-rose-50 p-2.5 border border-rose-100">
+              <span className="text-rose-600 block text-[10px] uppercase">{isMm ? 'စုစုပေါင်း အကြွေးကျန်' : 'Total Outstanding'}</span>
+              <span className="text-sm font-extrabold text-rose-800 font-mono">{formatMMK(totalOutstandingCreditMMK)}</span>
+            </div>
+          </div>
+        </div>
+
+        {customerCreditSummaries.filter(s => s.derived.netOutstandingDebtMMK > 0).length === 0 ? (
+          <div className="p-6 text-center text-xs text-gray-400 bg-gray-50/50 rounded-xl border border-dashed border-gray-200">
+            {isMm ? 'လက်ရှိတွင် အကြွေးကျန်ရှိသော ဖောက်သည် မရှိပါ' : 'No customers currently have outstanding debt.'}
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-gray-200 text-gray-500 bg-gray-50/50 uppercase text-[10px] tracking-wider">
+                  <th className="py-2.5 px-3">{isMm ? 'ဖောက်သည်' : 'Customer'}</th>
+                  <th className="py-2.5 px-3 text-right">{isMm ? 'စုစုပေါင်း ဝယ်ယူမှု' : 'Total Sales'}</th>
+                  <th className="py-2.5 px-3 text-right">{isMm ? 'ပေးချေပြီး' : 'Total Paid'}</th>
+                  <th className="py-2.5 px-3 text-right">{isMm ? 'အကြွေးကျန်' : 'Outstanding Debt'}</th>
+                  <th className="py-2.5 px-3 text-center">{isMm ? '၀-၃၀ ရက်' : '0-30 Days'}</th>
+                  <th className="py-2.5 px-3 text-center">{isMm ? '၃၁-၆၀ ရက်' : '31-60 Days'}</th>
+                  <th className="py-2.5 px-3 text-center">{isMm ? '၆၁-၉၀ ရက်' : '61-90 Days'}</th>
+                  <th className="py-2.5 px-3 text-center">{isMm ? '၉၀+ ရက်' : '90+ Days'}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {customerCreditSummaries
+                  .filter(s => s.derived.netOutstandingDebtMMK > 0)
+                  .map(({ customer, derived, agingBucket }) => (
+                    <tr key={customer.id} className="hover:bg-gray-50/80">
+                      <td className="py-2.5 px-3">
+                        <div className="font-bold text-gray-900">{customer.name}</div>
+                        <div className="text-[10px] text-gray-500">{customer.phone}</div>
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono text-gray-700">
+                        {formatMMK(derived.totalDebtIncurredMMK)}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono text-emerald-700 font-semibold">
+                        {formatMMK(derived.totalPaymentReceivedMMK)}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono text-rose-700 font-bold">
+                        {formatMMK(derived.netOutstandingDebtMMK)}
+                      </td>
+                      <td className="py-2.5 px-3 text-center font-mono">
+                        {agingBucket.bucket0to30MMK > 0 ? (
+                          <span className="text-emerald-700 font-medium">{formatMMK(agingBucket.bucket0to30MMK)}</span>
+                        ) : (
+                          <span className="text-gray-300">-</span>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-3 text-center font-mono">
+                        {agingBucket.bucket31to60MMK > 0 ? (
+                          <span className="text-amber-700 font-medium">{formatMMK(agingBucket.bucket31to60MMK)}</span>
+                        ) : (
+                          <span className="text-gray-300">-</span>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-3 text-center font-mono">
+                        {agingBucket.bucket61to90MMK > 0 ? (
+                          <span className="text-orange-700 font-semibold">{formatMMK(agingBucket.bucket61to90MMK)}</span>
+                        ) : (
+                          <span className="text-gray-300">-</span>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-3 text-center font-mono">
+                        {agingBucket.bucketOver90MMK > 0 ? (
+                          <span className="text-rose-700 font-extrabold bg-rose-50 px-1.5 py-0.5 rounded">
+                            {formatMMK(agingBucket.bucketOver90MMK)}
+                          </span>
+                        ) : (
+                          <span className="text-gray-300">-</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

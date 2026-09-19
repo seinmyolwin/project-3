@@ -23,8 +23,11 @@ import {
   formatMMK,
   validateDiscount,
   evaluateBillPaymentStatus,
+  deriveCustomerLedgerBalances,
+  validateCustomerCreditPolicy,
+  calculateCustomerAgingReport,
 } from '../financial';
-import { CommissionRule, InvoiceItem, PaymentRecord } from '../../types';
+import { CommissionRule, Customer, CustomerLedgerEntry, InvoiceItem, PaymentRecord } from '../../types';
 
 let totalTests = 0;
 let passedTests = 0;
@@ -657,6 +660,153 @@ function runAllTests() {
     // But settlement calculation uses ONLY the posted ledger entry (40,000 MMK)
     const historicalLedgerBreakdown = calculateDetailedSettlementBreakdown([historicalEntry]);
     assert(historicalLedgerBreakdown.grossCommissionMMK === 40000, 'Settlement preserves historical posted ledger amount 40,000 MMK without recalculation');
+  }
+
+  // 22. Customer Credit Policy, Ledger Balances, Debt Aging & Reversals
+  console.log('\n22. Testing Customer Credit Policy, Ledger Balances, Aging & Reversals:');
+  {
+    const mockCustomer: Customer = {
+      id: 'cust_001',
+      name: 'U Maung Maung',
+      phone: '09123456789',
+      creditAllowed: true,
+      creditLimitMMK: 100000,
+      currentBalanceMMK: 0,
+      createdAt: '2026-01-01T00:00:00.000Z',
+    };
+
+    // Test 22.1: Credit Policy Validation - Below Limit
+    const policy1 = validateCustomerCreditPolicy({
+      customer: mockCustomer,
+      currentOutstandingMMK: 30000,
+      newCreditAmountMMK: 40000,
+    });
+    assert(policy1.isValid === true, 'Credit sale within limit is valid');
+    assert(policy1.projectedOutstandingMMK === 70000, 'Projected debt is 70,000 MMK');
+    assert(policy1.isLimitExceeded === false, 'Limit is not exceeded');
+
+    // Test 22.2: Credit Policy Validation - Exceeding Limit
+    const policy2 = validateCustomerCreditPolicy({
+      customer: mockCustomer,
+      currentOutstandingMMK: 70000,
+      newCreditAmountMMK: 50000, // Total 120,000 MMK vs limit 100,000 MMK
+    });
+    assert(policy2.isValid === false, 'Credit sale exceeding limit is invalid by default');
+    assert(policy2.isLimitExceeded === true, 'isLimitExceeded flag is set to true');
+
+    // Test 22.3: Credit Sales Disabled for Customer
+    const noCreditCustomer: Customer = { ...mockCustomer, creditAllowed: false };
+    const policy3 = validateCustomerCreditPolicy({
+      customer: noCreditCustomer,
+      currentOutstandingMMK: 0,
+      newCreditAmountMMK: 10000,
+    });
+    assert(policy3.isValid === false, 'Credit sale rejected when creditAllowed is false');
+    assert(policy3.isCreditDisallowed === true, 'isCreditDisallowed flag is set to true');
+
+    // Test 22.4: Deriving Customer Ledger Balances with Adjustments and Reversals
+    const mockEntries: CustomerLedgerEntry[] = [
+      {
+        id: 'cle_1',
+        customerId: 'cust_001',
+        type: 'debt_incurred',
+        amountMMK: 100000,
+        balanceAfterMMK: 100000,
+        date: '2026-08-01',
+        createdAt: '2026-08-01T10:00:00.000Z',
+        createdBy: 'usr_cashier',
+      },
+      {
+        id: 'cle_2',
+        customerId: 'cust_001',
+        type: 'payment_received',
+        amountMMK: 40000,
+        balanceAfterMMK: 60000,
+        date: '2026-08-15',
+        createdAt: '2026-08-15T14:00:00.000Z',
+        createdBy: 'usr_cashier',
+      },
+      {
+        id: 'cle_3',
+        customerId: 'cust_001',
+        type: 'adjustment',
+        amountMMK: 10000, // Positive adjustment increasing debt
+        balanceAfterMMK: 70000,
+        date: '2026-09-01',
+        createdAt: '2026-09-01T09:00:00.000Z',
+        createdBy: 'usr_admin',
+      },
+      {
+        id: 'cle_4',
+        customerId: 'cust_001',
+        type: 'debt_reversal',
+        amountMMK: 10000, // Reversing the 10,000 adjustment
+        balanceAfterMMK: 60000,
+        date: '2026-09-02',
+        createdAt: '2026-09-02T11:00:00.000Z',
+        createdBy: 'usr_admin',
+      },
+    ];
+
+    const balances = deriveCustomerLedgerBalances(mockEntries);
+    assert(balances.totalDebtIncurredMMK === 110000, 'Total debt incurred is 110,000 MMK');
+    assert(balances.totalPaymentReceivedMMK === 50000, 'Total payment/reversals received is 50,000 MMK');
+    assert(balances.netOutstandingDebtMMK === 60000, `Net outstanding debt is 60,000 MMK (got ${balances.netOutstandingDebtMMK})`);
+
+    // Test 22.5: Customer Debt Aging Calculations
+    const daysAgo = (d: number) => new Date(Date.now() - d * 24 * 60 * 60 * 1000).toISOString();
+    const agingEntries: CustomerLedgerEntry[] = [
+      {
+        id: 'a1',
+        customerId: 'cust_001',
+        type: 'debt_incurred',
+        amountMMK: 20000,
+        balanceAfterMMK: 20000,
+        date: daysAgo(10).split('T')[0],
+        createdAt: daysAgo(10),
+        createdBy: 'usr_1',
+      },
+      {
+        id: 'a2',
+        customerId: 'cust_001',
+        type: 'debt_incurred',
+        amountMMK: 30000,
+        balanceAfterMMK: 50000,
+        date: daysAgo(45).split('T')[0],
+        createdAt: daysAgo(45),
+        createdBy: 'usr_1',
+      },
+      {
+        id: 'a3',
+        customerId: 'cust_001',
+        type: 'debt_incurred',
+        amountMMK: 15000,
+        balanceAfterMMK: 65000,
+        date: daysAgo(75).split('T')[0],
+        createdAt: daysAgo(75),
+        createdBy: 'usr_1',
+      },
+      {
+        id: 'a4',
+        customerId: 'cust_001',
+        type: 'debt_incurred',
+        amountMMK: 25000,
+        balanceAfterMMK: 90000,
+        date: daysAgo(120).split('T')[0],
+        createdAt: daysAgo(120),
+        createdBy: 'usr_1',
+      },
+    ];
+
+    const agingReport = calculateCustomerAgingReport({
+      customers: [mockCustomer],
+      ledgerEntries: agingEntries,
+    });
+    assert(agingReport.totalBucket0to30MMK === 20000, 'Aging 0-30 days is 20,000 MMK');
+    assert(agingReport.totalBucket31to60MMK === 30000, 'Aging 31-60 days is 30,000 MMK');
+    assert(agingReport.totalBucket61to90MMK === 15000, 'Aging 61-90 days is 15,000 MMK');
+    assert(agingReport.totalBucketOver90MMK === 25000, 'Aging 90+ days is 25,000 MMK');
+    assert(agingReport.totalOutstandingMMK === 90000, 'Aging total outstanding is 90,000 MMK');
   }
 
   console.log('\n====================================================');
