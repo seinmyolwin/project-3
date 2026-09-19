@@ -988,3 +988,5 @@ export interface BackupMetadata {
   notes?: string;
 }
 
+export * from './multiDevice';
+
