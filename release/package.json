@@ -1,0 +1,10 @@
+{
+  "name": "karaoke-ps5-commerce-hub",
+  "version": "1.0.0",
+  "description": "100% Offline Self-Contained Standalone Local Shop Server & POS Hub",
+  "main": "dist/server.cjs",
+  "executable": "KaraokePS5CommerceHub.exe",
+  "scripts": {
+    "start": "KaraokePS5CommerceHub.exe"
+  }
+}

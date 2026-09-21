@@ -11,6 +11,9 @@ import { PersistentSQLiteStorage, serverStorage } from './storage';
 import { ServerAuthSession, ServerUserEntity } from './types';
 import { UserRole } from '../types';
 import { realtimeEventBus } from './realtime/eventBus';
+import { healthManager } from './health';
+import { logger } from './logger';
+import { runtimeConfig } from './config';
 
 export const activeSessions = new Map<string, ServerAuthSession>();
 
@@ -23,6 +26,7 @@ export function createApiRouter(storage: PersistentSQLiteStorage = serverStorage
       await storage.initialize();
       next();
     } catch (err: any) {
+      logger.error('Routes', 'Database initialization error on request', { error: err.message });
       res.status(500).json({ error: 'DATABASE_INITIALIZATION_ERROR', message: err.message });
     }
   });
@@ -72,14 +76,8 @@ export function createApiRouter(storage: PersistentSQLiteStorage = serverStorage
   // 1. HEALTH & METADATA
   // ==========================================
   router.get('/health', (req: Request, res: Response) => {
-    res.json({
-      status: 'ok',
-      service: 'karaoke-ps5-local-server',
-      version: '1.0.0',
-      timestamp: new Date().toISOString(),
-      database: 'SQLite (ACID Persistent)',
-      lanMode: '100% Offline / Local LAN',
-    });
+    const health = healthManager.getHealth(storage.isReady(), storage.getDatabasePath());
+    res.json(health);
   });
 
   // ==========================================
@@ -318,6 +316,18 @@ export function createApiRouter(storage: PersistentSQLiteStorage = serverStorage
           break;
         }
 
+        case 'SESSION_END': {
+          operationResult = await storage.executeSessionEnd({
+            sessionId: entityId || payload.sessionId,
+            businessId,
+            branchId,
+            roomId: payload.roomId,
+            totalFeeMMK: Number(payload.totalFeeMMK) || 0,
+            userId: user.id,
+          });
+          break;
+        }
+
         case 'PAYMENT': {
           operationResult = await storage.executePayment({
             invoiceId: entityId || payload.invoiceId || `inv_${Date.now()}`,
@@ -440,6 +450,13 @@ export function createApiRouter(storage: PersistentSQLiteStorage = serverStorage
   // ==========================================
   // 5. REAL-TIME EVENT SYNC & PRESENCE
   // ==========================================
+  router.post('/rooms/:roomId/reset', requireAuth(), async (req: Request, res: Response) => {
+    const user = (req as any).user as ServerUserEntity;
+    const { roomId } = req.params;
+    await storage.resetRoomStatus(user.businessId, roomId);
+    res.json({ success: true, message: `Room ${roomId} reset to available` });
+  });
+
   router.get('/sync/events', requireAuth(), (req: Request, res: Response) => {
     const user = (req as any).user as ServerUserEntity;
     const sinceSequence = Number(req.query.sinceSequence) || 0;
@@ -502,17 +519,49 @@ export function createApiRouter(storage: PersistentSQLiteStorage = serverStorage
   });
 
   // ==========================================
-  // 7. BACKUP & RESTORE
+  // 7. BACKUP & RESTORE & RUNTIME LOGS
   // ==========================================
+  router.get('/system/backups', requireAuth(['owner', 'manager']), (req: Request, res: Response) => {
+    try {
+      const backups = storage.listBackups();
+      res.json({ success: true, count: backups.length, backups, backupDir: runtimeConfig.backupDir });
+    } catch (err: any) {
+      res.status(500).json({ error: 'BACKUP_LIST_FAILED', message: err.message });
+    }
+  });
+
   router.post('/system/backup', requireAuth(['owner']), (req: Request, res: Response) => {
     try {
-      const backupDir = path.join(process.cwd(), 'data', 'backups');
-      const backupPath = path.join(backupDir, `backup_${Date.now()}.sqlite`);
-      storage.exportBackup(backupPath);
-      res.json({ success: true, backupPath, timestamp: new Date().toISOString() });
+      const backupInfo = storage.createDefaultBackup();
+      logger.info('Backup', `Created manual backup: ${backupInfo.fileName}`, { sizeBytes: backupInfo.sizeBytes });
+      res.json({ success: true, backup: backupInfo, timestamp: new Date().toISOString() });
     } catch (err: any) {
+      logger.error('Backup', 'Failed to create backup', { error: err.message });
       res.status(500).json({ error: 'BACKUP_FAILED', message: err.message });
     }
+  });
+
+  router.post('/system/restore', requireAuth(['owner']), (req: Request, res: Response) => {
+    try {
+      const { backupPath, fileName } = req.body;
+      const targetPath = backupPath || (fileName ? path.join(runtimeConfig.backupDir, fileName) : null);
+      if (!targetPath) {
+        return res.status(400).json({ error: 'INVALID_REQUEST', message: 'backupPath or fileName is required' });
+      }
+
+      storage.restoreBackup(targetPath);
+      logger.warn('Backup', `Database restored from backup: ${targetPath}`);
+      res.json({ success: true, message: 'Database restored successfully', restoredFrom: targetPath, timestamp: new Date().toISOString() });
+    } catch (err: any) {
+      logger.error('Backup', 'Failed to restore backup', { error: err.message });
+      res.status(500).json({ error: 'RESTORE_FAILED', message: err.message });
+    }
+  });
+
+  router.get('/system/logs', requireAuth(['owner', 'manager']), (req: Request, res: Response) => {
+    const limit = Math.min(Number(req.query.limit) || 100, 500);
+    const logs = logger.getRecentLogs(limit);
+    res.json({ success: true, count: logs.length, logs });
   });
 
   return router;

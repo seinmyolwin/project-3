@@ -493,6 +493,18 @@ export class LocalRealtimeEventBus {
   /**
    * Clean shutdown of WebSocket server and timers
    */
+  public closeAll(reason = 'Server closing'): void {
+    if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
+    if (this.outboxDrainInterval) clearInterval(this.outboxDrainInterval);
+    if (this.wss) {
+      this.wss.clients.forEach((client) => {
+        try {
+          client.close(1001, reason);
+        } catch {}
+      });
+    }
+  }
+
   public close(): Promise<void> {
     if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
     if (this.outboxDrainInterval) clearInterval(this.outboxDrainInterval);

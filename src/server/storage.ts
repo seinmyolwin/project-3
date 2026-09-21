@@ -16,6 +16,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import initSqlJs, { Database, SqlJsStatic } from 'sql.js';
+import { runtimeConfig } from './config';
 import {
   ServerBusinessEntity,
   ServerBranchEntity,
@@ -36,11 +37,19 @@ export class PersistentSQLiteStorage {
   private initPromise: Promise<void> | null = null;
 
   constructor(customPath?: string) {
-    const defaultDir = path.join(process.cwd(), 'data');
-    if (!fs.existsSync(defaultDir)) {
-      fs.mkdirSync(defaultDir, { recursive: true });
+    this.dbFilePath = customPath || runtimeConfig.databasePath;
+    const parentDir = path.dirname(this.dbFilePath);
+    if (!fs.existsSync(parentDir)) {
+      fs.mkdirSync(parentDir, { recursive: true });
     }
-    this.dbFilePath = customPath || path.join(defaultDir, 'karaoke_ps5_server_db.sqlite');
+  }
+
+  public getDatabasePath(): string {
+    return this.dbFilePath;
+  }
+
+  public isReady(): boolean {
+    return this.isInitialized && this.db !== null;
   }
 
   public async initialize(): Promise<void> {
@@ -49,7 +58,32 @@ export class PersistentSQLiteStorage {
 
     this.initPromise = (async () => {
       if (!SQL) {
-        SQL = await initSqlJs();
+        // Support loading wasm from local directory in standalone executable or packaged environments
+        let wasmBinary: Buffer | undefined;
+        const potentialWasmPaths = [
+          typeof __dirname !== 'undefined' ? path.join(__dirname, 'sql-wasm.wasm') : '',
+          path.join(process.cwd(), 'dist', 'sql-wasm.wasm'),
+          path.join(process.cwd(), 'bin', 'sql-wasm.wasm'),
+          path.join(process.cwd(), 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm'),
+        ].filter(Boolean);
+        for (const p of potentialWasmPaths) {
+          if (fs.existsSync(p)) {
+            try {
+              wasmBinary = fs.readFileSync(p);
+              break;
+            } catch {}
+          }
+        }
+
+        if (wasmBinary) {
+          const arrayBuffer = wasmBinary.buffer.slice(
+            wasmBinary.byteOffset,
+            wasmBinary.byteOffset + wasmBinary.byteLength
+          ) as ArrayBuffer;
+          SQL = await initSqlJs({ wasmBinary: arrayBuffer });
+        } else {
+          SQL = await initSqlJs();
+        }
       }
 
       if (fs.existsSync(this.dbFilePath)) {
@@ -991,6 +1025,72 @@ export class PersistentSQLiteStorage {
   }
 
   /**
+   * SESSION END: Atomically ends session and frees room
+   */
+  public async executeSessionEnd(params: {
+    sessionId: string;
+    businessId: string;
+    branchId: string;
+    roomId: string;
+    totalFeeMMK?: number;
+    userId: string;
+  }): Promise<any> {
+    return this.transaction(async () => {
+      if (!this.db) throw new Error('DB error');
+      const now = new Date().toISOString();
+      
+      this.db.run(`
+        UPDATE sessions SET status = 'completed', end_time = ?, total_fee_mmk = ? WHERE id = ?
+      `, [now, params.totalFeeMMK || 0, params.sessionId]);
+
+      this.db.run(`
+        UPDATE rooms SET status = 'available', active_session_id = NULL, updated_at = ? WHERE id = ?
+      `, [now, params.roomId]);
+
+      this.recordOutboxEvent({
+        businessId: params.businessId,
+        branchId: params.branchId,
+        eventType: 'SESSION_ENDED',
+        entityType: 'SESSION',
+        entityId: params.sessionId,
+        payload: {
+          sessionId: params.sessionId,
+          roomId: params.roomId,
+          status: 'completed',
+          endTime: now,
+        },
+        actorUserId: params.userId,
+      });
+
+      this.recordOutboxEvent({
+        businessId: params.businessId,
+        branchId: params.branchId,
+        eventType: 'ROOM_STATUS_CHANGED',
+        entityType: 'ROOM',
+        entityId: params.roomId,
+        payload: {
+          roomId: params.roomId,
+          status: 'available',
+          activeSessionId: null,
+        },
+        actorUserId: params.userId,
+      });
+
+      return { sessionId: params.sessionId, roomId: params.roomId, status: 'completed', endTime: now };
+    });
+  }
+
+  public async resetRoomStatus(businessId: string, roomId: string): Promise<void> {
+    return this.transaction(async () => {
+      if (!this.db) return;
+      const now = new Date().toISOString();
+      this.db.run(`
+        UPDATE rooms SET status = 'available', active_session_id = NULL, updated_at = ? WHERE id = ? AND business_id = ?
+      `, [now, roomId, businessId]);
+    });
+  }
+
+  /**
    * PAYMENT: Atomically registers bill payment and updates invoice
    */
   public async executePayment(params: {
@@ -1332,12 +1432,62 @@ export class PersistentSQLiteStorage {
     fs.writeFileSync(backupFilePath, buffer);
   }
 
+  public createDefaultBackup(): { fileName: string; filePath: string; sizeBytes: number; createdAt: string } {
+    const timestamp = Date.now();
+    const fileName = `backup_${timestamp}.sqlite`;
+    const filePath = path.join(runtimeConfig.backupDir, fileName);
+    this.exportBackup(filePath);
+    const stats = fs.statSync(filePath);
+    return {
+      fileName,
+      filePath,
+      sizeBytes: stats.size,
+      createdAt: new Date(timestamp).toISOString(),
+    };
+  }
+
+  public listBackups(customDir?: string): { fileName: string; filePath: string; sizeBytes: number; createdAt: string }[] {
+    const targetDir = customDir || runtimeConfig.backupDir;
+    if (!fs.existsSync(targetDir)) return [];
+    const files = fs.readdirSync(targetDir);
+    const backups: { fileName: string; filePath: string; sizeBytes: number; createdAt: string }[] = [];
+
+    for (const file of files) {
+      if (file.endsWith('.sqlite') || file.endsWith('.db')) {
+        const fullPath = path.join(targetDir, file);
+        try {
+          const stat = fs.statSync(fullPath);
+          backups.push({
+            fileName: file,
+            filePath: fullPath,
+            sizeBytes: stat.size,
+            createdAt: stat.mtime.toISOString(),
+          });
+        } catch {}
+      }
+    }
+
+    return backups.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
   public restoreBackup(backupFilePath: string): void {
     if (!SQL) throw new Error('SQL engine uninitialized');
     if (!fs.existsSync(backupFilePath)) throw new Error('Backup file does not exist: ' + backupFilePath);
     const fileBuffer = fs.readFileSync(backupFilePath);
     this.db = new SQL.Database(fileBuffer);
     this.flushToDisk();
+  }
+
+  public close(): void {
+    this.flushToDisk();
+    if (this.db) {
+      try {
+        this.db.close();
+      } catch {}
+      this.db = null;
+      this.isInitialized = false;
+      this.initPromise = null;
+    }
   }
 }
 
