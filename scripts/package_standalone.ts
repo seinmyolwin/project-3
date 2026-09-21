@@ -72,9 +72,11 @@ function packagePhase23Standalone() {
   const seaConfigFile = path.join(rootDir, 'sea-config.json');
   const seaBlobFile = path.join(distDir, 'sea-prep.blob');
   const targetExe = path.join(releaseDir, 'KaraokePS5CommerceHub.exe');
-  const tempExe = path.join(rootDir, 'temp_node', 'node.exe');
+  const baseNodeExe = fs.existsSync(path.join(rootDir, 'temp_node', 'node.exe'))
+    ? path.join(rootDir, 'temp_node', 'node.exe')
+    : path.join(binDir, 'node.exe');
 
-  if (fs.existsSync(tempExe)) {
+  if (fs.existsSync(baseNodeExe)) {
     console.log('[BUILD] Generating Node Single Executable Application (SEA) for Windows...');
     fs.writeFileSync(seaConfigFile, JSON.stringify({
       main: 'dist/server-sea.cjs',
@@ -84,7 +86,7 @@ function packagePhase23Standalone() {
 
     try {
       execSync(`node --experimental-sea-config ${seaConfigFile}`, { stdio: 'inherit' });
-      fs.copyFileSync(tempExe, targetExe);
+      fs.copyFileSync(baseNodeExe, targetExe);
 
       execSync(`npx postject "${targetExe}" NODE_SEA_BLOB "${seaBlobFile}" --sentinel-fuse NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2`, {
         stdio: 'inherit'
@@ -96,11 +98,8 @@ function packagePhase23Standalone() {
   }
 
   // 6. Bundle Zero-Install Windows Runtime (bin/node.exe)
-  if (fs.existsSync(tempExe)) {
-    fs.copyFileSync(tempExe, path.join(releaseDir, 'bin', 'node.exe'));
-    console.log('✓ Zero-Install Windows Runtime (bin/node.exe) bundled in release/bin/.');
-  } else if (fs.existsSync(path.join(binDir, 'node.exe'))) {
-    fs.copyFileSync(path.join(binDir, 'node.exe'), path.join(releaseDir, 'bin', 'node.exe'));
+  if (fs.existsSync(baseNodeExe)) {
+    fs.copyFileSync(baseNodeExe, path.join(releaseDir, 'bin', 'node.exe'));
     console.log('✓ Zero-Install Windows Runtime (bin/node.exe) bundled in release/bin/.');
   }
 
