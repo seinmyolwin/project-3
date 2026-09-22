@@ -70,8 +70,13 @@ export const Navbar: React.FC<NavbarProps> = ({
       {/* Top Banner with Neon Night Theme */}
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 bg-[#0b0f19] border-b border-cyan-900/40">
         <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 via-purple-600 to-pink-500 font-extrabold text-white shadow-lg neon-glow-cyan">
-            ရွှေ
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#07090e] border border-cyan-500/40 shadow-lg neon-glow-cyan overflow-hidden">
+            <img
+              src="/src/assets/images/shwe_thiri_logo_1790061980846.jpg"
+              alt="Shwe Thiri Logo"
+              className="h-full w-full object-cover"
+              referrerPolicy="no-referrer"
+            />
           </div>
           <div>
             <div className="flex items-center gap-2">
