@@ -36,6 +36,7 @@ import { Navbar, ActiveTab } from './components/Navbar';
 import { PINModal } from './components/PINLoginModal';
 import { ReceiptModal } from './components/ReceiptModal';
 import { LANConnectionModal } from './components/LANConnectionModal';
+import { GlobalSearchModal } from './components/GlobalSearchModal';
 import { RoomsView } from './components/views/RoomsView';
 import { PosView } from './components/views/PosView';
 import { StaffView } from './components/views/StaffView';
@@ -82,6 +83,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
   const [isPINModalOpen, setIsPINModalOpen] = useState<boolean>(false);
   const [isLANModalOpen, setIsLANModalOpen] = useState<boolean>(false);
+  const [isSearchModalOpen, setIsSearchModalOpen] = useState<boolean>(false);
   const [activeInvoiceReceipt, setActiveInvoiceReceipt] = useState<Invoice | null>(null);
 
   // Load all tables from IndexedDB
@@ -227,6 +229,7 @@ export default function App() {
         onToggleLang={() => setLang(l => (l === 'my' ? 'en' : 'my'))}
         settings={settings}
         onOpenLANModal={() => setIsLANModalOpen(true)}
+        onOpenSearchModal={() => setIsSearchModalOpen(true)}
       />
 
       {/* Main Content Viewport */}
@@ -377,6 +380,16 @@ export default function App() {
         isOpen={isLANModalOpen}
         onClose={() => setIsLANModalOpen(false)}
         lang={lang}
+      />
+
+      <GlobalSearchModal
+        isOpen={isSearchModalOpen}
+        onClose={() => setIsSearchModalOpen(false)}
+        customers={customers}
+        invoices={invoices}
+        staff={staff}
+        lang={lang}
+        onSelectInvoice={inv => setActiveInvoiceReceipt(inv)}
       />
     </div>
   );

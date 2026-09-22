@@ -832,7 +832,7 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
               return (
                 <div
                   key={room.id}
-                  className={`flex flex-col justify-between rounded-3xl border bg-[#0b0f19] p-5 shadow-xl transition-all hover:border-cyan-500/50 ${
+                  className={`relative overflow-hidden flex flex-col justify-between rounded-3xl border bg-[#0b0f19] p-5 shadow-xl transition-all hover:border-cyan-500/50 ${
                     room.status === 'occupied' || activeSession
                       ? isOvertime
                         ? 'border-pink-500/60 ring-2 ring-pink-500/20'
@@ -840,7 +840,42 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
                       : 'border-slate-800'
                   }`}
                 >
-                  <div>
+                  {/* Background Video for Occupied Rooms based on Room Type */}
+                  {activeSession && (
+                    <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none opacity-60">
+                      {room.type === 'ktv' ? (
+                        <video
+                          autoPlay
+                          loop
+                          muted
+                          playsInline
+                          className="w-full h-full object-cover scale-110 filter contrast-125 saturate-150"
+                          src="https://assets.mixkit.co/videos/preview/mixkit-disc-jockey-working-in-a-nightclub-41315-large.mp4"
+                        />
+                      ) : room.type === 'massage' ? (
+                        <video
+                          autoPlay
+                          loop
+                          muted
+                          playsInline
+                          className="w-full h-full object-cover scale-110 filter brightness-90 contrast-110"
+                          src="https://assets.mixkit.co/videos/preview/mixkit-hands-massaging-a-person-s-back-42998-large.mp4"
+                        />
+                      ) : (
+                        <video
+                          autoPlay
+                          loop
+                          muted
+                          playsInline
+                          className="w-full h-full object-cover scale-110 filter brightness-90"
+                          src="https://assets.mixkit.co/videos/preview/mixkit-abstract-laser-lights-background-41484-large.mp4"
+                        />
+                      )}
+                      <div className="absolute inset-0 bg-gradient-to-t from-[#0b0f19] via-[#0b0f19]/50 to-[#0b0f19]/30" />
+                    </div>
+                  )}
+
+                  <div className="relative z-10">
                     {/* Header */}
                     <div className="flex items-start justify-between gap-2 border-b border-slate-800/80 pb-3">
                       <div>

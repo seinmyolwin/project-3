@@ -14,6 +14,7 @@ import {
   Lock,
   Globe,
   Radio,
+  Search,
 } from 'lucide-react';
 
 export type ActiveTab =
@@ -36,6 +37,7 @@ interface NavbarProps {
   onToggleLang: () => void;
   settings: ShopSettings | null;
   onOpenLANModal: () => void;
+  onOpenSearchModal: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -47,6 +49,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onToggleLang,
   settings,
   onOpenLANModal,
+  onOpenSearchModal,
 }) => {
   const isMm = lang === 'my';
 
@@ -82,6 +85,14 @@ export const Navbar: React.FC<NavbarProps> = ({
               >
                 <Radio className="h-3.5 w-3.5 animate-pulse text-cyan-400" />
                 <span>Offline Connection</span>
+              </button>
+              <button
+                onClick={onOpenSearchModal}
+                className="inline-flex items-center gap-1.5 rounded-full bg-purple-500/15 px-3.5 py-1 text-xs font-bold text-purple-300 border border-purple-500/40 hover:bg-purple-500/25 active:scale-95 transition-all cursor-pointer min-h-[36px]"
+                title="Global Search (Customers, Invoices, Staff)"
+              >
+                <Search className="h-3.5 w-3.5 text-purple-400" />
+                <span>{isMm ? 'အမြန်ရှာရန်' : 'Quick Search'}</span>
               </button>
             </div>
             <p className="text-xs text-slate-400 hidden sm:block font-medium">
