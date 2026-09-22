@@ -11,16 +11,40 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
+        includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'logo.jpg', 'logo_app.jpg'],
         manifest: {
           id: '/',
-          name: 'Shwe Thiri ERP',
-          short_name: 'ShweThiri',
-          description: '100% Offline Production ERP for Myanmar Business',
+          name: 'ရွှေသီရိ - KTV, Spa & Service ERP',
+          short_name: 'Shwe Thiri',
+          description: '100% Offline Standalone Production ERP for Myanmar Business',
           theme_color: '#0b0f19',
-          background_color: '#0b0f19',
+          background_color: '#07090e',
           display: 'standalone',
           start_url: '/',
           scope: '/',
+          icons: [
+            {
+              src: '/pwa-192x192.png',
+              sizes: '192x192',
+              type: 'image/png',
+              purpose: 'any',
+            },
+            {
+              src: '/pwa-512x512.png',
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'any',
+            },
+            {
+              src: '/pwa-maskable-512x512.png',
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'maskable',
+            },
+          ],
+        },
+        workbox: {
+          globPatterns: ['**/*.{js,css,html,ico,png,jpg,svg,woff,woff2}'],
         },
         devOptions: {
           enabled: true,

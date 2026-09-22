@@ -1,17 +1,33 @@
 {
-  "name": "Shwe Thiri Spa & KTV ERP",
+  "id": "/",
+  "name": "ရွှေသီရိ - KTV, Spa & Service ERP",
   "short_name": "Shwe Thiri",
+  "description": "100% Offline Standalone Production ERP for Myanmar Business",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#07090e",
   "theme_color": "#0b0f19",
   "orientation": "any",
+  "categories": ["business", "finance", "productivity"],
   "icons": [
     {
-      "src": "/src/assets/images/shwe_thiri_app_logo_1790062277255.jpg",
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
       "sizes": "512x512",
-      "type": "image/jpeg",
-      "purpose": "any maskable"
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }

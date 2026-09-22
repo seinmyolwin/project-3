@@ -38,6 +38,7 @@ import { ReceiptModal } from './components/ReceiptModal';
 import { LANConnectionModal } from './components/LANConnectionModal';
 import { GlobalSearchModal } from './components/GlobalSearchModal';
 import { SetupWizardModal } from './components/SetupWizardModal';
+import { PWAInstallModal } from './components/PWAInstallModal';
 import { RoomsView } from './components/views/RoomsView';
 import { PosView } from './components/views/PosView';
 import { StaffView } from './components/views/StaffView';
@@ -85,6 +86,7 @@ export default function App() {
   const [isLANModalOpen, setIsLANModalOpen] = useState<boolean>(false);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState<boolean>(false);
   const [isSetupWizardOpen, setIsSetupWizardOpen] = useState<boolean>(false);
+  const [isPWAModalOpen, setIsPWAModalOpen] = useState<boolean>(false);
   const [activeInvoiceReceipt, setActiveInvoiceReceipt] = useState<Invoice | null>(null);
 
   // Load all tables from IndexedDB
@@ -232,6 +234,7 @@ export default function App() {
         onOpenLANModal={() => setIsLANModalOpen(true)}
         onOpenSearchModal={() => setIsSearchModalOpen(true)}
         onOpenSetupWizard={() => setIsSetupWizardOpen(true)}
+        onOpenPWAModal={() => setIsPWAModalOpen(true)}
       />
 
       {/* Main Content Viewport */}
@@ -390,6 +393,12 @@ export default function App() {
           onClose={() => setIsSetupWizardOpen(false)}
         />
       )}
+
+      <PWAInstallModal
+        lang={lang}
+        isOpenManual={isPWAModalOpen}
+        onCloseManual={() => setIsPWAModalOpen(false)}
+      />
     </div>
   );
 }

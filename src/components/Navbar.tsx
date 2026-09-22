@@ -18,6 +18,8 @@ import {
   Search,
   Sparkles,
   BookOpen,
+  Smartphone,
+  Download,
 } from 'lucide-react';
 
 export type ActiveTab =
@@ -40,6 +42,7 @@ interface NavbarProps {
   onOpenLANModal: () => void;
   onOpenSearchModal: () => void;
   onOpenSetupWizard: () => void;
+  onOpenPWAModal?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -53,6 +56,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenLANModal,
   onOpenSearchModal,
   onOpenSetupWizard,
+  onOpenPWAModal,
 }) => {
   const isMm = lang === 'my';
   const [imgSrc, setImgSrc] = useState<string>(logoImg);
@@ -128,6 +132,16 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <Sparkles className="h-3.5 w-3.5 text-slate-950 animate-bounce" />
                 <span>{isMm ? 'စတင်အသုံးပြုရန်' : 'Setup Wizard'}</span>
               </button>
+              {onOpenPWAModal && (
+                <button
+                  onClick={onOpenPWAModal}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-cyan-500 via-blue-600 to-purple-600 px-3.5 py-1 text-xs font-black text-white border border-cyan-400/50 shadow-md hover:from-cyan-400 hover:to-purple-500 active:scale-95 transition-all cursor-pointer min-h-[36px]"
+                  title="Install Standalone Offline App"
+                >
+                  <Download className="h-3.5 w-3.5 text-white" />
+                  <span>{isMm ? 'App ထည့်သွင်းရန်' : 'Install App'}</span>
+                </button>
+              )}
             </div>
             <p className="text-xs text-slate-400 hidden sm:block font-medium">
               Neon Night Entertainment POS & Accounting ERP
