@@ -64,8 +64,14 @@ export const StaffView: React.FC<StaffViewProps> = ({
   const [adjustmentAmount, setAdjustmentAmount] = useState<number>(0);
   const [adjustmentReason, setAdjustmentReason] = useState<string>('');
 
-  // Settlement Form State
   const todayStr = new Date().toISOString().split('T')[0];
+
+  const [isSalaryModalOpen, setIsSalaryModalOpen] = useState(false);
+  const [salaryAmount, setSalaryAmount] = useState<number>(0);
+  const [salaryMonthYear, setSalaryMonthYear] = useState<string>(todayStr.slice(0, 7));
+  const [salaryReason, setSalaryReason] = useState<string>('');
+
+  // Settlement Form State
   const [isSettlementModalOpen, setIsSettlementModalOpen] = useState(false);
   const [settlementPeriodStart, setSettlementPeriodStart] = useState<string>('2026-01-01');
   const [settlementPeriodEnd, setSettlementPeriodEnd] = useState<string>(todayStr);
@@ -134,6 +140,26 @@ export const StaffView: React.FC<StaffViewProps> = ({
       onRefresh();
     } catch (err: any) {
       alert('Error recording adjustment: ' + err.message);
+    }
+  };
+
+  // Handle Monthly Salary Credit Submission
+  const handleRecordSalary = async () => {
+    if (!currentSelectedStaff || salaryAmount <= 0) return;
+    try {
+      await db.recordStaffSalaryTransaction({
+        staffId: currentSelectedStaff.id,
+        amountMMK: salaryAmount,
+        monthYear: salaryMonthYear,
+        reason: salaryReason.trim() || `Monthly Base Salary (${salaryMonthYear}) - အခြေခံလစာ`,
+        currentUser,
+      });
+      setIsSalaryModalOpen(false);
+      setSalaryAmount(0);
+      setSalaryReason('');
+      onRefresh();
+    } catch (err: any) {
+      alert('Error recording salary credit: ' + err.message);
     }
   };
 
@@ -303,10 +329,24 @@ export const StaffView: React.FC<StaffViewProps> = ({
                           : `${formatMMK(member.defaultCommissionRule.value)} (သတ်မှတ်နှုန်း)`}
                       </span>
                     </div>
+                    {member.baseSalaryMMK !== undefined && member.baseSalaryMMK > 0 && (
+                      <div className="flex justify-between border-t border-gray-200/60 pt-1">
+                        <span>{isMm ? 'အခြေခံ လစာ:' : 'Base Salary:'}</span>
+                        <span className="font-bold text-indigo-700 font-mono">
+                          {formatMMK(member.baseSalaryMMK)}
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Financial Metrics */}
                   <div className="mt-3 space-y-1.5 text-xs">
+                    {totals.totalSalaryMMK > 0 && (
+                      <div className="flex justify-between text-indigo-700 font-medium">
+                        <span>{isMm ? 'ထည့်သွင်းပြီး လစာ:' : 'Total Salary Credited:'}</span>
+                        <span className="font-bold font-mono">+{formatMMK(totals.totalSalaryMMK)}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between text-gray-600">
                       <span>{isMm ? 'ရရှိပြီး ကော်မရှင်စုစုပေါင်း:' : 'Total Commission:'}</span>
                       <span className="font-semibold text-gray-900">{formatMMK(totals.totalCommissionsMMK)}</span>
@@ -392,7 +432,19 @@ export const StaffView: React.FC<StaffViewProps> = ({
               </select>
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (currentSelectedStaff) {
+                    setSalaryAmount(currentSelectedStaff.baseSalaryMMK || 0);
+                  }
+                  setIsSalaryModalOpen(true);
+                }}
+                className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100"
+              >
+                + {isMm ? 'လစာ ထည့်ရန်' : 'Record Salary'}
+              </button>
               <button
                 type="button"
                 onClick={() => setIsAdvanceModalOpen(true)}
@@ -419,7 +471,11 @@ export const StaffView: React.FC<StaffViewProps> = ({
           </div>
 
           {/* Balance Cards Bar */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            <div className="rounded-xl bg-indigo-50 p-3 border border-indigo-100">
+              <span className="text-[11px] font-semibold text-indigo-800">{isMm ? 'လစာ' : 'Salary'}</span>
+              <p className="text-base font-extrabold text-indigo-950 mt-0.5">{formatMMK(ledgerTotals.totalSalaryMMK)}</p>
+            </div>
             <div className="rounded-xl bg-emerald-50 p-3 border border-emerald-100">
               <span className="text-[11px] font-semibold text-emerald-800">{isMm ? 'စုစုပေါင်း ကော်မရှင်' : 'Commissions'}</span>
               <p className="text-base font-extrabold text-emerald-950 mt-0.5">{formatMMK(ledgerTotals.totalCommissionsMMK)}</p>
@@ -472,7 +528,9 @@ export const StaffView: React.FC<StaffViewProps> = ({
                       <td className="py-2.5 px-3">
                         <span
                           className={`inline-block rounded-md px-2 py-0.5 text-[10px] font-bold uppercase ${
-                            entry.type === 'commission'
+                            entry.type === 'salary'
+                              ? 'bg-indigo-100 text-indigo-800'
+                              : entry.type === 'commission'
                               ? 'bg-emerald-100 text-emerald-800'
                               : entry.type === 'bonus'
                               ? 'bg-blue-100 text-blue-800'
@@ -485,7 +543,7 @@ export const StaffView: React.FC<StaffViewProps> = ({
                               : 'bg-rose-100 text-rose-800'
                           }`}
                         >
-                          {entry.type.replace('_', ' ')}
+                          {entry.type === 'salary' ? (isMm ? 'လစာ' : 'Salary') : entry.type.replace('_', ' ')}
                         </span>
                       </td>
                       <td className="py-2.5 px-3 font-medium text-gray-900">{entry.notes}</td>
@@ -850,6 +908,95 @@ export const StaffView: React.FC<StaffViewProps> = ({
         </div>
       )}
 
+      {/* RECORD SALARY MODAL */}
+      {isSalaryModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-center justify-between border-b border-gray-100 pb-3">
+              <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                <span className="text-indigo-600 font-extrabold text-lg">MMK</span>
+                <span>{isMm ? 'လစာ စာရင်းထည့်သွင်းခြင်း' : 'Record Monthly Salary Credit'}</span>
+              </h3>
+              <button onClick={() => setIsSalaryModalOpen(false)}>
+                <X className="h-5 w-5 text-gray-400" />
+              </button>
+            </div>
+            <div className="space-y-4 text-xs">
+              <p className="text-gray-600 font-semibold">
+                Staff: <span className="text-indigo-800 font-bold">{currentSelectedStaff?.name}</span>
+                {currentSelectedStaff?.baseSalaryMMK ? (
+                  <span className="ml-2 text-gray-500 font-normal">
+                    (Base: {formatMMK(currentSelectedStaff.baseSalaryMMK)})
+                  </span>
+                ) : null}
+              </p>
+              <div>
+                <label className="mb-1 block font-semibold text-gray-700">
+                  {isMm ? 'လစာ ကာလ (ခုနှစ်-လ)' : 'Salary Month / Period'}
+                </label>
+                <input
+                  type="month"
+                  value={salaryMonthYear}
+                  onChange={e => setSalaryMonthYear(e.target.value)}
+                  className="w-full rounded-xl border border-gray-200 bg-gray-50 p-2.5 text-xs font-bold text-gray-900 font-mono"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block font-semibold text-gray-700">
+                  {isMm ? 'လစာ ပမာဏ (ကျပ်)' : 'Salary Amount (MMK)'}
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="5000"
+                  value={salaryAmount || ''}
+                  onChange={e => setSalaryAmount(Math.max(0, parseInt(e.target.value) || 0))}
+                  placeholder="e.g. 250000"
+                  className="w-full rounded-xl border border-gray-200 bg-gray-50 p-2.5 text-sm font-bold text-indigo-900 font-mono"
+                />
+              </div>
+              {currentSelectedStaff?.baseSalaryMMK && (
+                <button
+                  type="button"
+                  onClick={() => setSalaryAmount(currentSelectedStaff.baseSalaryMMK || 0)}
+                  className="text-[11px] text-indigo-600 hover:text-indigo-800 font-semibold underline"
+                >
+                  {isMm ? 'သတ်မှတ်ထားသော အခြေခံလစာ သုံးမည်' : 'Set to default base salary'} ({formatMMK(currentSelectedStaff.baseSalaryMMK)})
+                </button>
+              )}
+              <div>
+                <label className="mb-1 block font-semibold text-gray-700">
+                  {isMm ? 'မှတ်ချက်' : 'Notes / Description'}
+                </label>
+                <input
+                  type="text"
+                  value={salaryReason}
+                  onChange={e => setSalaryReason(e.target.value)}
+                  placeholder={`e.g. Monthly salary for ${salaryMonthYear}`}
+                  className="w-full rounded-xl border border-gray-200 bg-gray-50 p-2 text-xs"
+                />
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-2 border-t border-gray-100 pt-4">
+              <button
+                type="button"
+                onClick={() => setIsSalaryModalOpen(false)}
+                className="rounded-xl border border-gray-200 px-4 py-2 text-xs font-semibold text-gray-600"
+              >
+                {isMm ? 'မလုပ်တော့ပါ' : 'Cancel'}
+              </button>
+              <button
+                type="button"
+                onClick={handleRecordSalary}
+                className="rounded-xl bg-indigo-600 px-5 py-2 text-xs font-bold text-white hover:bg-indigo-700"
+              >
+                {isMm ? 'အတည်ပြုမည်' : 'Save Salary Credit'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* FULL / PARTIAL SETTLEMENT MODAL */}
       {isSettlementModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
@@ -923,6 +1070,12 @@ export const StaffView: React.FC<StaffViewProps> = ({
 
               {/* Summary Calculation Breakdown */}
               <div className="space-y-1.5 rounded-xl bg-gray-50 p-3 border border-gray-200">
+                {settlementBreakdown.totalSalaryMMK > 0 && (
+                  <div className="flex justify-between text-indigo-700">
+                    <span>{isMm ? 'အခြေခံလစာ ပေါင်းငွေ:' : 'Base Salary:'}</span>
+                    <span className="font-bold font-mono">+{formatMMK(settlementBreakdown.totalSalaryMMK)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-gray-600">
                   <span>{isMm ? 'ကော်မရှင် စုစုပေါင်း (Gross):' : 'Gross Commission:'}</span>
                   <span className="font-bold text-emerald-800 font-mono">

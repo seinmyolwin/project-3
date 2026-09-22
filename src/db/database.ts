@@ -1654,6 +1654,63 @@ export class MyanmarBusinessDB extends Dexie {
   }
 
   /**
+   * ATOMIC TRANSACTION: Record Monthly Salary Credit to Staff Ledger
+   */
+  async recordStaffSalaryTransaction(params: {
+    staffId: string;
+    amountMMK: number;
+    monthYear?: string; // e.g. "2025-03"
+    reason?: string;
+    currentUser: { id: string; name: string; role: any };
+  }): Promise<StaffLedgerEntry> {
+    return this.transaction('rw', [
+      this.staff,
+      this.staffLedger,
+      this.auditLogs,
+    ], async () => {
+      const staff = await this.staff.get(params.staffId);
+      if (!staff) throw new Error('Staff member not found');
+
+      const now = new Date().toISOString();
+      const amount = Math.max(0, roundMMK(params.amountMMK));
+      if (amount <= 0) throw new Error('Salary amount must be positive');
+
+      const ledgerEntryId = 'led_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+      const notes = params.reason || `Monthly Salary (${params.monthYear || now.slice(0, 7)}) - လစာ`;
+
+      const entry: StaffLedgerEntry = {
+        id: ledgerEntryId,
+        staffId: staff.id,
+        staffName: staff.name,
+        type: 'salary',
+        amountMMK: amount,
+        direction: 'credit',
+        isSettled: false,
+        notes,
+        date: now.split('T')[0],
+        createdBy: params.currentUser.name,
+        createdAt: now,
+      };
+
+      await this.staffLedger.add(entry);
+
+      await this.auditLogs.add({
+        id: 'aud_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+        timestamp: now,
+        userId: params.currentUser.id,
+        userName: params.currentUser.name,
+        userRole: params.currentUser.role,
+        action: 'RECORD_SALARY_CREDIT',
+        entity: 'StaffLedger',
+        entityId: entry.id,
+        newValue: JSON.stringify({ staff: staff.name, amountMMK: amount, notes }),
+      });
+
+      return entry;
+    });
+  }
+
+  /**
    * ATOMIC TRANSACTION: Staff Commission & Payout Settlement
    * - Uses existing posted ledger entries (never recalculates historical commission using current settings)
    * - Calculates net payable: Gross Commission + Bonus - Deductions - Advances - Previous Settlements

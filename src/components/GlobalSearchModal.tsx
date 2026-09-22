@@ -141,10 +141,10 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
                       >
                         <div>
                           <div className="font-bold text-white text-xs group-hover:text-cyan-300">{c.name}</div>
-                          <div className="text-[11px] text-slate-400 font-mono">{c.phone} • Tier: {c.tier}</div>
+                          <div className="text-[11px] text-slate-400 font-mono">{c.phone} • {(c as any).type || 'Customer'}</div>
                         </div>
                         <div className="flex items-center gap-1 text-xs text-cyan-400 font-semibold">
-                          <span>{formatMMK(c.totalSpentMMK || 0)}</span>
+                          <span>{formatMMK((c as any).totalSpentMMK || c.currentBalanceMMK || 0)}</span>
                           <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-1 transition-transform" />
                         </div>
                       </div>
@@ -175,7 +175,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({
                           <div className="text-[11px] text-slate-400">{inv.customerName || 'General Customer'} • {inv.createdAt.split('T')[0]}</div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="font-bold text-emerald-400 text-xs font-mono">{formatMMK(inv.netTotalMMK)}</span>
+                          <span className="font-bold text-emerald-400 text-xs font-mono">{formatMMK(inv.totalMMK)}</span>
                           <ExternalLink className="h-3.5 w-3.5 text-slate-500 group-hover:text-purple-400" />
                         </div>
                       </div>

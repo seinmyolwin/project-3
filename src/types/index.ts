@@ -53,7 +53,7 @@ export interface CommissionRule {
   ruleId?: string;
 }
 
-export type StaffRole = 'therapist' | 'masseuse' | 'ktv_host' | 'receptionist' | 'cleaner' | 'bartender';
+export type StaffRole = 'therapist' | 'masseuse' | 'ktv_host' | 'receptionist' | 'cleaner' | 'bartender' | 'waiter';
 export type StaffStatus = 'available' | 'in_service' | 'off_duty';
 
 export interface StaffMember {
@@ -68,6 +68,7 @@ export interface StaffMember {
   defaultCommissionRule: CommissionRule;
   commissionRuleId?: string;
   customServiceCommissions?: Record<string, CommissionRule>; // serviceId -> CommissionRule
+  baseSalaryMMK?: number;
   isActive: boolean;
   joinedDate: string;
   notes?: string;
@@ -340,6 +341,7 @@ export interface CustomerCreditLedger {
 }
 
 export type StaffLedgerType = 
+  | 'salary'
   | 'commission' 
   | 'bonus' 
   | 'deduction' 
@@ -373,6 +375,8 @@ export interface StaffSettlement {
   periodStart: string;
   periodEnd: string;
   settlementDate?: string;
+  baseSalaryMMK?: number;
+  totalSalaryMMK?: number;
   grossCommissionMMK?: number;
   totalCommissionMMK: number;
   totalBonusMMK: number;

@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { UserAccount, ShopSettings } from '../types';
 import { Language } from '../utils/translations';
+import logoImg from '../assets/images/shwe_thiri_logo_1790061980846.jpg';
 import {
   LayoutGrid,
   ShoppingBag,
@@ -15,6 +16,8 @@ import {
   Globe,
   Radio,
   Search,
+  Sparkles,
+  BookOpen,
 } from 'lucide-react';
 
 export type ActiveTab =
@@ -23,9 +26,7 @@ export type ActiveTab =
   | 'staff'
   | 'customers'
   | 'expenses'
-  | 'cashClosing'
-  | 'reports'
-  | 'masterData'
+  | 'records'
   | 'settings';
 
 interface NavbarProps {
@@ -38,6 +39,7 @@ interface NavbarProps {
   settings: ShopSettings | null;
   onOpenLANModal: () => void;
   onOpenSearchModal: () => void;
+  onOpenSetupWizard: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -50,8 +52,11 @@ export const Navbar: React.FC<NavbarProps> = ({
   settings,
   onOpenLANModal,
   onOpenSearchModal,
+  onOpenSetupWizard,
 }) => {
   const isMm = lang === 'my';
+  const [imgSrc, setImgSrc] = useState<string>(logoImg);
+  const [logoFailed, setLogoFailed] = useState(false);
 
   const navItems = [
     { id: 'rooms' as ActiveTab, icon: LayoutGrid, labelEn: 'Rooms & Sessions', labelMm: 'အခန်းနှင့် ဆက်ရှင်' },
@@ -59,10 +64,8 @@ export const Navbar: React.FC<NavbarProps> = ({
     { id: 'staff' as ActiveTab, icon: Users, labelEn: 'Staff & Commissions', labelMm: 'ဝန်ထမ်းနှင့် ကော်မရှင်' },
     { id: 'customers' as ActiveTab, icon: CreditCard, labelEn: 'Customers & Credit', labelMm: 'ဖောက်သည်နှင့် ကြွေးကျန်' },
     { id: 'expenses' as ActiveTab, icon: ReceiptText, labelEn: 'Expenses', labelMm: 'ကုန်ကျစရိတ်' },
-    { id: 'cashClosing' as ActiveTab, icon: BadgePercent, labelEn: 'Cash Closing', labelMm: 'နေ့စဉ်စာရင်းပိတ်' },
-    { id: 'reports' as ActiveTab, icon: TrendingUp, labelEn: 'Reports & P&L', labelMm: 'အစီရင်ခံစာ' },
-    { id: 'masterData' as ActiveTab, icon: Database, labelEn: 'Master Data', labelMm: 'အခြေခံဒေတာများ' },
-    { id: 'settings' as ActiveTab, icon: ShieldCheck, labelEn: 'System & Backup', labelMm: 'စနစ်နှင့် မိတ္တူ' },
+    { id: 'records' as ActiveTab, icon: BookOpen, labelEn: 'Records', labelMm: 'မှတ်တမ်း' },
+    { id: 'settings' as ActiveTab, icon: ShieldCheck, labelEn: 'Settings', labelMm: 'ဆက်တင်' },
   ];
 
   return (
@@ -70,13 +73,31 @@ export const Navbar: React.FC<NavbarProps> = ({
       {/* Top Banner with Neon Night Theme */}
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 bg-[#0b0f19] border-b border-cyan-900/40">
         <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#07090e] border border-cyan-500/40 shadow-lg neon-glow-cyan overflow-hidden">
-            <img
-              src="/src/assets/images/shwe_thiri_logo_1790061980846.jpg"
-              alt="Shwe Thiri Logo"
-              className="h-full w-full object-cover"
-              referrerPolicy="no-referrer"
-            />
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#07090e] border border-cyan-500/40 shadow-lg neon-glow-cyan overflow-hidden shrink-0">
+            {!logoFailed ? (
+              <img
+                src={imgSrc}
+                alt="Shwe Thiri Logo"
+                className="h-full w-full object-cover"
+                referrerPolicy="no-referrer"
+                onError={() => {
+                  setImgSrc((prev) => {
+                    if (prev !== '/logo.jpg' && prev !== '/logo_app.jpg') {
+                      return '/logo.jpg';
+                    }
+                    if (prev === '/logo.jpg') {
+                      return '/logo_app.jpg';
+                    }
+                    setLogoFailed(true);
+                    return prev;
+                  });
+                }}
+              />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-amber-400 via-amber-500 to-yellow-600 text-slate-950 font-black text-base tracking-tight shadow-inner">
+                ST
+              </div>
+            )}
           </div>
           <div>
             <div className="flex items-center gap-2">
@@ -98,6 +119,14 @@ export const Navbar: React.FC<NavbarProps> = ({
               >
                 <Search className="h-3.5 w-3.5 text-purple-400" />
                 <span>{isMm ? 'အမြန်ရှာရန်' : 'Quick Search'}</span>
+              </button>
+              <button
+                onClick={onOpenSetupWizard}
+                className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-cyan-500 px-3.5 py-1 text-xs font-black text-slate-950 border border-emerald-400/50 shadow-md hover:from-emerald-400 hover:to-cyan-400 active:scale-95 transition-all cursor-pointer min-h-[36px]"
+                title="Step-by-step Setup Wizard & Clear Demo Data"
+              >
+                <Sparkles className="h-3.5 w-3.5 text-slate-950 animate-bounce" />
+                <span>{isMm ? 'စတင်အသုံးပြုရန်' : 'Setup Wizard'}</span>
               </button>
             </div>
             <p className="text-xs text-slate-400 hidden sm:block font-medium">

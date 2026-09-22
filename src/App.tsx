@@ -37,15 +37,15 @@ import { PINModal } from './components/PINLoginModal';
 import { ReceiptModal } from './components/ReceiptModal';
 import { LANConnectionModal } from './components/LANConnectionModal';
 import { GlobalSearchModal } from './components/GlobalSearchModal';
+import { SetupWizardModal } from './components/SetupWizardModal';
 import { RoomsView } from './components/views/RoomsView';
 import { PosView } from './components/views/PosView';
 import { StaffView } from './components/views/StaffView';
 import { CustomersView } from './components/views/CustomersView';
 import { ExpensesView } from './components/views/ExpensesView';
-import { CashClosingView } from './components/views/CashClosingView';
-import { ReportsView } from './components/views/ReportsView';
 import { SettingsAuditView } from './components/views/SettingsAuditView';
 import { MasterDataView } from './components/views/MasterDataView';
+import { RecordsView } from './components/views/RecordsView';
 
 export default function App() {
   // Application State
@@ -84,6 +84,7 @@ export default function App() {
   const [isPINModalOpen, setIsPINModalOpen] = useState<boolean>(false);
   const [isLANModalOpen, setIsLANModalOpen] = useState<boolean>(false);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState<boolean>(false);
+  const [isSetupWizardOpen, setIsSetupWizardOpen] = useState<boolean>(false);
   const [activeInvoiceReceipt, setActiveInvoiceReceipt] = useState<Invoice | null>(null);
 
   // Load all tables from IndexedDB
@@ -230,6 +231,7 @@ export default function App() {
         settings={settings}
         onOpenLANModal={() => setIsLANModalOpen(true)}
         onOpenSearchModal={() => setIsSearchModalOpen(true)}
+        onOpenSetupWizard={() => setIsSetupWizardOpen(true)}
       />
 
       {/* Main Content Viewport */}
@@ -296,8 +298,8 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'cashClosing' && (
-          <CashClosingView
+        {activeTab === 'records' && (
+          <RecordsView
             closings={closings}
             invoices={invoices}
             expenses={expenses}
@@ -308,25 +310,20 @@ export default function App() {
             currentUser={effectiveUser}
             lang={lang}
             onRefresh={refreshData}
-          />
-        )}
-
-        {activeTab === 'reports' && (
-          <ReportsView
-            invoices={invoices}
-            expenses={expenses}
             staff={staff}
-            staffLedger={staffLedger}
             sessions={sessions}
             customers={customers}
-            creditLedger={creditLedger}
-            currentUser={effectiveUser}
-            lang={lang}
           />
         )}
 
-        {activeTab === 'masterData' && (
-          <MasterDataView
+        {activeTab === 'settings' && (
+          <SettingsAuditView
+            users={users}
+            auditLogs={auditLogs}
+            settings={settings}
+            currentUser={effectiveUser}
+            lang={lang}
+            onRefresh={refreshData}
             staff={staff}
             staffTypes={staffTypes}
             rooms={rooms}
@@ -339,20 +336,6 @@ export default function App() {
             paymentMethods={paymentMethods}
             expenseCategories={expenseCategories}
             commissionRules={commissionRules}
-            currentUser={effectiveUser}
-            lang={lang}
-            onRefresh={refreshData}
-          />
-        )}
-
-        {activeTab === 'settings' && (
-          <SettingsAuditView
-            users={users}
-            auditLogs={auditLogs}
-            settings={settings}
-            currentUser={effectiveUser}
-            lang={lang}
-            onRefresh={refreshData}
           />
         )}
       </main>
@@ -391,6 +374,22 @@ export default function App() {
         lang={lang}
         onSelectInvoice={inv => setActiveInvoiceReceipt(inv)}
       />
+
+      {isSetupWizardOpen && (
+        <SetupWizardModal
+          currentUser={effectiveUser}
+          lang={lang}
+          onCompleted={async (newOwnerUser) => {
+            await refreshData();
+            if (newOwnerUser) {
+              setCurrentUser(newOwnerUser);
+            }
+            setIsSetupWizardOpen(false);
+            setActiveTab('rooms');
+          }}
+          onClose={() => setIsSetupWizardOpen(false)}
+        />
+      )}
     </div>
   );
 }

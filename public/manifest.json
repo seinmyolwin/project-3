@@ -1,0 +1,17 @@
+{
+  "name": "Shwe Thiri Spa & KTV ERP",
+  "short_name": "Shwe Thiri",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#07090e",
+  "theme_color": "#0b0f19",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/src/assets/images/shwe_thiri_app_logo_1790062277255.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    }
+  ]
+}

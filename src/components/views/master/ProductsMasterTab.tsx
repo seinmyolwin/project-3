@@ -469,7 +469,7 @@ export const ProductsMasterTab: React.FC<ProductsMasterTabProps> = ({
                     value={formName}
                     onChange={(e) => setFormName(e.target.value)}
                     placeholder="e.g. Heineken Beer Can"
-                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none font-medium"
                   />
                 </div>
 
@@ -483,7 +483,7 @@ export const ProductsMasterTab: React.FC<ProductsMasterTabProps> = ({
                     value={formNameMm}
                     onChange={(e) => setFormNameMm(e.target.value)}
                     placeholder="ဥပမာ - ဟိုင်းနီးကန်း ဘီယာဘူး"
-                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none font-medium"
                   />
                 </div>
               </div>
@@ -499,7 +499,7 @@ export const ProductsMasterTab: React.FC<ProductsMasterTabProps> = ({
                     value={formSKU}
                     onChange={(e) => setFormSKU(e.target.value.toUpperCase())}
                     placeholder="e.g. BEER-HK-01"
-                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs font-mono uppercase focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs font-mono uppercase text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none font-medium"
                   />
                 </div>
 
@@ -511,7 +511,7 @@ export const ProductsMasterTab: React.FC<ProductsMasterTabProps> = ({
                   <select
                     value={formCategoryId}
                     onChange={(e) => setFormCategoryId(e.target.value)}
-                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none bg-white font-medium text-gray-800"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none font-medium"
                   >
                     <option value="">{isMm ? '-- ကဏ္ဍရွေးချယ်ပါ --' : '-- Select Category --'}</option>
                     {productCategories.map((c) => (
@@ -535,7 +535,7 @@ export const ProductsMasterTab: React.FC<ProductsMasterTabProps> = ({
                     step="500"
                     value={formCostPrice}
                     onChange={(e) => setFormCostPrice(Number(e.target.value))}
-                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none font-medium"
                   />
                 </div>
 
@@ -550,7 +550,7 @@ export const ProductsMasterTab: React.FC<ProductsMasterTabProps> = ({
                     required
                     value={formSellingPrice}
                     onChange={(e) => setFormSellingPrice(Number(e.target.value))}
-                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs font-bold focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs font-bold text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none font-medium"
                   />
                 </div>
               </div>

@@ -454,7 +454,7 @@ export const ServicesMasterTab: React.FC<ServicesMasterTabProps> = ({
                     value={formName}
                     onChange={(e) => setFormName(e.target.value)}
                     placeholder="e.g. Traditional Thai Massage"
-                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 placeholder-gray-400 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none font-medium"
                   />
                 </div>
 
@@ -468,7 +468,7 @@ export const ServicesMasterTab: React.FC<ServicesMasterTabProps> = ({
                     value={formNameMm}
                     onChange={(e) => setFormNameMm(e.target.value)}
                     placeholder="ဥပမာ - ထိုင်းရိုးရာအကြောပြင်အနှိပ်"
-                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 placeholder-gray-400 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none font-medium"
                   />
                 </div>
               </div>
@@ -482,7 +482,7 @@ export const ServicesMasterTab: React.FC<ServicesMasterTabProps> = ({
                   <select
                     value={formCategoryId}
                     onChange={(e) => setFormCategoryId(e.target.value)}
-                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none bg-white font-medium text-gray-800"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none font-medium"
                   >
                     <option value="">{isMm ? '-- ကဏ္ဍရွေးချယ်ပါ --' : '-- Select Category --'}</option>
                     {serviceCategories.map((c) => (
@@ -505,7 +505,7 @@ export const ServicesMasterTab: React.FC<ServicesMasterTabProps> = ({
                         e.target.value as 'duration_based' | 'fixed' | 'hourly'
                       )
                     }
-                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none bg-white font-medium text-gray-800"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none font-medium"
                   >
                     <option value="duration_based">Duration Based (အချိန်အလိုက်)</option>
                     <option value="fixed">Fixed Price (ပုံသေဈေး)</option>
@@ -527,7 +527,7 @@ export const ServicesMasterTab: React.FC<ServicesMasterTabProps> = ({
                     required
                     value={formPriceMMK}
                     onChange={(e) => setFormPriceMMK(Number(e.target.value))}
-                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs font-semibold focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-900 placeholder-gray-400 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none font-medium"
                   />
                 </div>
 
@@ -542,7 +542,7 @@ export const ServicesMasterTab: React.FC<ServicesMasterTabProps> = ({
                     step="5"
                     value={formDurationMinutes}
                     onChange={(e) => setFormDurationMinutes(Number(e.target.value))}
-                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 placeholder-gray-400 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none font-medium"
                   />
                 </div>
               </div>
@@ -556,7 +556,7 @@ export const ServicesMasterTab: React.FC<ServicesMasterTabProps> = ({
                   <select
                     value={formCommissionRuleId}
                     onChange={(e) => setFormCommissionRuleId(e.target.value)}
-                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none bg-white font-medium text-gray-800"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none font-medium"
                   >
                     <option value="">{isMm ? '-- ပုံသေရာခိုင်နှုန်းဖြင့် သုံးမည် --' : '-- Default Standard Rate --'}</option>
                     {commissionRules.map((rule) => (
@@ -577,7 +577,7 @@ export const ServicesMasterTab: React.FC<ServicesMasterTabProps> = ({
                     max="100"
                     value={formCommissionValue}
                     onChange={(e) => setFormCommissionValue(Number(e.target.value))}
-                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 placeholder-gray-400 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none font-medium"
                   />
                 </div>
               </div>

@@ -61,6 +61,7 @@ export const StaffMasterTab: React.FC<StaffMasterTabProps> = ({
   const [formPhone, setFormPhone] = useState('');
   const [formAddress, setFormAddress] = useState('');
   const [formStaffTypeId, setFormStaffTypeId] = useState('');
+  const [formBaseSalary, setFormBaseSalary] = useState<number>(0);
   const [formJoinedDate, setFormJoinedDate] = useState(
     new Date().toISOString().split('T')[0]
   );
@@ -110,6 +111,7 @@ export const StaffMasterTab: React.FC<StaffMasterTabProps> = ({
     setFormPhone('');
     setFormAddress('');
     setFormStaffTypeId(staffTypes[0]?.id || '');
+    setFormBaseSalary(staffTypes[0]?.baseSalaryMMK || 0);
     setFormJoinedDate(new Date().toISOString().split('T')[0]);
     setFormStatus('available');
     setFormCommissionRuleId(commissionRules[0]?.id || '');
@@ -120,12 +122,14 @@ export const StaffMasterTab: React.FC<StaffMasterTabProps> = ({
   };
 
   const handleOpenEdit = (member: StaffMember) => {
+    const matchedType = staffTypes.find(t => t.id === member.staffTypeId);
     setEditingStaff(member);
     setFormName(member.name);
     setFormNameMm(member.nameMm || '');
     setFormPhone(member.phone);
     setFormAddress(member.address || '');
     setFormStaffTypeId(member.staffTypeId || '');
+    setFormBaseSalary(member.baseSalaryMMK !== undefined ? member.baseSalaryMMK : (matchedType?.baseSalaryMMK || 0));
     setFormJoinedDate(
       member.joinedDate || new Date().toISOString().split('T')[0]
     );
@@ -185,6 +189,7 @@ export const StaffMasterTab: React.FC<StaffMasterTabProps> = ({
           address: formAddress.trim(),
           staffTypeId: formStaffTypeId || undefined,
           role: roleSlug,
+          baseSalaryMMK: formBaseSalary > 0 ? formBaseSalary : undefined,
           joinedDate: formJoinedDate,
           status: formStatus,
           commissionRuleId: formCommissionRuleId || undefined,
@@ -203,6 +208,7 @@ export const StaffMasterTab: React.FC<StaffMasterTabProps> = ({
           address: formAddress.trim(),
           staffTypeId: formStaffTypeId || undefined,
           role: roleSlug,
+          baseSalaryMMK: formBaseSalary > 0 ? formBaseSalary : undefined,
           joinedDate: formJoinedDate,
           status: formStatus,
           commissionRuleId: formCommissionRuleId || undefined,
@@ -327,6 +333,7 @@ export const StaffMasterTab: React.FC<StaffMasterTabProps> = ({
                 <th className="py-3 px-4">{isMm ? 'ဝန်ထမ်းအမည်' : 'Staff Member'}</th>
                 <th className="py-3 px-4">{isMm ? 'ဆက်သွယ်ရန်' : 'Contact & Address'}</th>
                 <th className="py-3 px-4">{isMm ? 'ရာထူးအမျိုးအစား' : 'Staff Classification'}</th>
+                <th className="py-3 px-4">{isMm ? 'လစာ' : 'Base Salary'}</th>
                 <th className="py-3 px-4">{isMm ? 'လက်ရှိအခြေအနေ' : 'Live Status'}</th>
                 <th className="py-3 px-4">{isMm ? 'ကော်မရှင်စည်းမျဉ်း' : 'Default Commission'}</th>
                 <th className="py-3 px-4">{isMm ? 'ဝင်ရောက်ရက်' : 'Joined Date'}</th>
@@ -337,7 +344,7 @@ export const StaffMasterTab: React.FC<StaffMasterTabProps> = ({
             <tbody className="divide-y divide-gray-100 text-xs text-gray-700">
               {filteredStaff.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-8 text-center text-gray-400">
+                  <td colSpan={9} className="py-8 text-center text-gray-400">
                     {isMm ? 'ရှာဖွေမှုနှင့် ကိုက်ညီသော ဝန်ထမ်းမှတ်တမ်း မရှိပါ' : 'No staff members found matching criteria.'}
                   </td>
                 </tr>
@@ -347,6 +354,7 @@ export const StaffMasterTab: React.FC<StaffMasterTabProps> = ({
                   const commRuleObj = commissionRules.find(
                     (r) => r.id === (member.commissionRuleId || member.defaultCommissionRule?.ruleId)
                   );
+                  const effectiveSalary = member.baseSalaryMMK !== undefined ? member.baseSalaryMMK : (staffTypeObj?.baseSalaryMMK || 0);
 
                   return (
                     <tr
@@ -389,6 +397,15 @@ export const StaffMasterTab: React.FC<StaffMasterTabProps> = ({
                               : member.role || 'Therapist'}
                           </span>
                         </span>
+                      </td>
+
+                      {/* Base Salary */}
+                      <td className="py-3.5 px-4 font-semibold text-gray-900 text-xs">
+                        {effectiveSalary > 0 ? (
+                          <span>{effectiveSalary.toLocaleString()} MMK</span>
+                        ) : (
+                          <span className="text-gray-400 font-normal">{isMm ? 'သတ်မှတ်မထားပါ' : 'None'}</span>
+                        )}
                       </td>
 
                       {/* Live Status */}
@@ -541,7 +558,7 @@ export const StaffMasterTab: React.FC<StaffMasterTabProps> = ({
                     value={formName}
                     onChange={(e) => setFormName(e.target.value)}
                     placeholder="e.g. Ma Hnin Nu"
-                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 placeholder-gray-400 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none font-medium"
                   />
                 </div>
 
@@ -555,7 +572,7 @@ export const StaffMasterTab: React.FC<StaffMasterTabProps> = ({
                     value={formNameMm}
                     onChange={(e) => setFormNameMm(e.target.value)}
                     placeholder="ဥပမာ - မနှင်းနု"
-                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 placeholder-gray-400 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none font-medium"
                   />
                 </div>
               </div>
@@ -572,7 +589,7 @@ export const StaffMasterTab: React.FC<StaffMasterTabProps> = ({
                     value={formPhone}
                     onChange={(e) => setFormPhone(e.target.value)}
                     placeholder="09-xxxxxxxxx"
-                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 placeholder-gray-400 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none font-medium"
                   />
                 </div>
 
@@ -585,7 +602,7 @@ export const StaffMasterTab: React.FC<StaffMasterTabProps> = ({
                     type="date"
                     value={formJoinedDate}
                     onChange={(e) => setFormJoinedDate(e.target.value)}
-                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none font-medium"
                   />
                 </div>
               </div>
@@ -600,7 +617,7 @@ export const StaffMasterTab: React.FC<StaffMasterTabProps> = ({
                   value={formAddress}
                   onChange={(e) => setFormAddress(e.target.value)}
                   placeholder={isMm ? 'မြို့နယ်၊ တိုင်းဒေသကြီး' : 'Township, City'}
-                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none"
+                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 placeholder-gray-400 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none font-medium"
                 />
               </div>
 
@@ -612,8 +629,15 @@ export const StaffMasterTab: React.FC<StaffMasterTabProps> = ({
                   </label>
                   <select
                     value={formStaffTypeId}
-                    onChange={(e) => setFormStaffTypeId(e.target.value)}
-                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none bg-white font-medium text-gray-800"
+                    onChange={(e) => {
+                      const typeId = e.target.value;
+                      setFormStaffTypeId(typeId);
+                      const selectedT = staffTypes.find(t => t.id === typeId);
+                      if (selectedT && selectedT.baseSalaryMMK) {
+                        setFormBaseSalary(selectedT.baseSalaryMMK);
+                      }
+                    }}
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none font-medium"
                   >
                     <option value="">{isMm ? '-- ရာထူးရွေးချယ်ပါ --' : '-- Select Type --'}</option>
                     {staffTypes.map((t) => (
@@ -624,6 +648,24 @@ export const StaffMasterTab: React.FC<StaffMasterTabProps> = ({
                   </select>
                 </div>
 
+                {/* Base Salary MMK */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    {isMm ? 'အခြေခံ လစာ (ကျပ်)' : 'Base Monthly Salary (MMK)'}
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={5000}
+                    value={formBaseSalary}
+                    onChange={(e) => setFormBaseSalary(Number(e.target.value))}
+                    placeholder="e.g. 250000"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none font-semibold"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {/* Status */}
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1">
@@ -636,7 +678,7 @@ export const StaffMasterTab: React.FC<StaffMasterTabProps> = ({
                         e.target.value as StaffStatus
                       )
                     }
-                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none bg-white font-medium text-gray-800"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none font-medium"
                   >
                     <option value="available">{isMm ? 'အားလပ်နေသည် (Available)' : 'Available'}</option>
                     <option value="in_service">{isMm ? 'ဝန်ဆောင်မှုပေးနေသည် (In Service)' : 'In Service'}</option>
@@ -653,7 +695,7 @@ export const StaffMasterTab: React.FC<StaffMasterTabProps> = ({
                 <select
                   value={formCommissionRuleId}
                   onChange={(e) => setFormCommissionRuleId(e.target.value)}
-                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none bg-white font-medium text-gray-800"
+                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none font-medium"
                 >
                   <option value="">{isMm ? '-- ကော်မရှင်စည်းမျဉ်း ရွေးချယ်ပါ --' : '-- Select Commission Rule --'}</option>
                   {commissionRules.map((rule) => (
@@ -674,7 +716,7 @@ export const StaffMasterTab: React.FC<StaffMasterTabProps> = ({
                   value={formNotes}
                   onChange={(e) => setFormNotes(e.target.value)}
                   placeholder={isMm ? 'ကျွမ်းကျင်မှု၊ အထူးပြုဝန်ဆောင်မှုများ...' : 'Skills, customer preferences, remarks...'}
-                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none"
+                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 placeholder-gray-400 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none font-medium"
                 />
               </div>
 

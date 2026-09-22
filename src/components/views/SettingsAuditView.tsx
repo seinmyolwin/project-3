@@ -1,5 +1,22 @@
 import React, { useState } from 'react';
-import { UserAccount, AuditLog, ShopSettings, UserRole } from '../../types';
+import {
+  UserAccount,
+  AuditLog,
+  ShopSettings,
+  UserRole,
+  StaffMember,
+  StaffType,
+  Room,
+  TableRecord,
+  ServiceItem,
+  ServiceCategory,
+  ProductItem,
+  ProductCategory,
+  Customer,
+  PaymentMethodRecord,
+  ExpenseCategoryRecord,
+  CommissionRuleRecord,
+} from '../../types';
 import { db } from '../../db/database';
 import { Language } from '../../utils/translations';
 import {
@@ -15,8 +32,10 @@ import {
   Lock,
   Plus,
   Key,
+  Database,
 } from 'lucide-react';
 import { seedForceDemoData } from '../../db/seedData';
+import { MasterDataView } from './MasterDataView';
 
 interface SettingsAuditViewProps {
   users: UserAccount[];
@@ -25,6 +44,18 @@ interface SettingsAuditViewProps {
   currentUser: UserAccount;
   lang: Language;
   onRefresh: () => void;
+  staff?: StaffMember[];
+  staffTypes?: StaffType[];
+  rooms?: Room[];
+  tables?: TableRecord[];
+  services?: ServiceItem[];
+  serviceCategories?: ServiceCategory[];
+  products?: ProductItem[];
+  productCategories?: ProductCategory[];
+  customers?: Customer[];
+  paymentMethods?: PaymentMethodRecord[];
+  expenseCategories?: ExpenseCategoryRecord[];
+  commissionRules?: CommissionRuleRecord[];
 }
 
 export const SettingsAuditView: React.FC<SettingsAuditViewProps> = ({
@@ -34,10 +65,22 @@ export const SettingsAuditView: React.FC<SettingsAuditViewProps> = ({
   currentUser,
   lang,
   onRefresh,
+  staff = [],
+  staffTypes = [],
+  rooms = [],
+  tables = [],
+  services = [],
+  serviceCategories = [],
+  products = [],
+  productCategories = [],
+  customers = [],
+  paymentMethods = [],
+  expenseCategories = [],
+  commissionRules = [],
 }) => {
   const isMm = lang === 'my';
 
-  const [activeTab, setActiveTab] = useState<'audit' | 'users' | 'backup' | 'shop'>('audit');
+  const [activeTab, setActiveTab] = useState<'master' | 'shop' | 'users' | 'audit' | 'backup'>('master');
   const [auditFilter, setAuditFilter] = useState<string>('all');
 
   // Shop Settings Form State
@@ -214,10 +257,11 @@ export const SettingsAuditView: React.FC<SettingsAuditViewProps> = ({
 
         <div className="flex flex-wrap gap-1.5">
           {[
-            { id: 'audit', icon: FileText, labelEn: 'Audit Trail', labelMm: 'စာရင်းစစ်မှတ်တမ်း' },
-            { id: 'users', icon: Users, labelEn: 'User Roles & PINs', labelMm: 'အသုံးပြုသူနှင့် PIN' },
-            { id: 'backup', icon: Download, labelEn: 'Backup & Restore', labelMm: 'မိတ္တူကူး/ပြန်သွင်း' },
+            { id: 'master', icon: Database, labelEn: 'Master Data', labelMm: 'အခြေခံဒေတာများ' },
             { id: 'shop', icon: Store, labelEn: 'Shop Profile', labelMm: 'ဆိုင်အချက်အလက်' },
+            { id: 'users', icon: Users, labelEn: 'User Roles & PINs', labelMm: 'အသုံးပြုသူနှင့် PIN' },
+            { id: 'audit', icon: FileText, labelEn: 'Audit Trail', labelMm: 'စာရင်းစစ်မှတ်တမ်း' },
+            { id: 'backup', icon: Download, labelEn: 'Backup & Restore', labelMm: 'မိတ္တူကူး/ပြန်သွင်း' },
           ].map(tab => {
             const Icon = tab.icon;
             return (
@@ -225,7 +269,7 @@ export const SettingsAuditView: React.FC<SettingsAuditViewProps> = ({
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold transition-all ${
+                className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold transition-all cursor-pointer ${
                   activeTab === tab.id
                     ? 'bg-emerald-600 text-white shadow-xs'
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -238,6 +282,27 @@ export const SettingsAuditView: React.FC<SettingsAuditViewProps> = ({
           })}
         </div>
       </div>
+
+      {/* 0. Master Data Tab */}
+      {activeTab === 'master' && (
+        <MasterDataView
+          staff={staff}
+          staffTypes={staffTypes}
+          rooms={rooms}
+          tables={tables}
+          services={services}
+          serviceCategories={serviceCategories}
+          products={products}
+          productCategories={productCategories}
+          customers={customers}
+          paymentMethods={paymentMethods}
+          expenseCategories={expenseCategories}
+          commissionRules={commissionRules}
+          currentUser={currentUser}
+          lang={lang}
+          onRefresh={onRefresh}
+        />
+      )}
 
       {/* 1. Audit Trail Tab */}
       {activeTab === 'audit' && (

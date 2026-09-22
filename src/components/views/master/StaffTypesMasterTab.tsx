@@ -389,8 +389,8 @@ export const StaffTypesMasterTab: React.FC<StaffTypesMasterTabProps> = ({
                     required
                     value={formCode}
                     onChange={(e) => setFormCode(e.target.value.toUpperCase())}
-                    placeholder="e.g. ST-THERAPIST"
-                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs font-mono focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none uppercase"
+                    placeholder="ST-6874"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs font-mono text-gray-900 placeholder-gray-400 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none uppercase"
                   />
                 </div>
 
@@ -405,7 +405,7 @@ export const StaffTypesMasterTab: React.FC<StaffTypesMasterTabProps> = ({
                     step="1000"
                     value={formBaseSalaryMMK}
                     onChange={(e) => setFormBaseSalaryMMK(Number(e.target.value))}
-                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 placeholder-gray-400 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none font-medium"
                   />
                 </div>
               </div>
@@ -421,7 +421,7 @@ export const StaffTypesMasterTab: React.FC<StaffTypesMasterTabProps> = ({
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
                   placeholder="e.g. Senior Therapist"
-                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
+                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 placeholder-gray-400 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none font-medium"
                 />
               </div>
 
@@ -435,7 +435,7 @@ export const StaffTypesMasterTab: React.FC<StaffTypesMasterTabProps> = ({
                   value={formNameMm}
                   onChange={(e) => setFormNameMm(e.target.value)}
                   placeholder="ဥပမာ - ဝါရင့် အကြောပြင်ပညာရှင်"
-                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
+                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 placeholder-gray-400 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none font-medium"
                 />
               </div>
 
@@ -452,7 +452,7 @@ export const StaffTypesMasterTab: React.FC<StaffTypesMasterTabProps> = ({
                         e.target.value as 'percentage' | 'fixed' | 'percentage_plus_fixed' | 'tiered'
                       )
                     }
-                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none bg-white font-medium text-gray-800"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none font-medium"
                   >
                     <option value="percentage">{isMm ? 'ရာခိုင်နှုန်း (%)' : 'Percentage (%)'}</option>
                     <option value="fixed">{isMm ? 'ပုံသေငွေပမာဏ (MMK)' : 'Fixed Amount (MMK)'}</option>
@@ -472,7 +472,7 @@ export const StaffTypesMasterTab: React.FC<StaffTypesMasterTabProps> = ({
                     min="0"
                     value={formCommissionValue}
                     onChange={(e) => setFormCommissionValue(Number(e.target.value))}
-                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 placeholder-gray-400 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none font-medium"
                   />
                 </div>
               </div>
@@ -487,7 +487,7 @@ export const StaffTypesMasterTab: React.FC<StaffTypesMasterTabProps> = ({
                   value={formDescription}
                   onChange={(e) => setFormDescription(e.target.value)}
                   placeholder={isMm ? 'လုပ်ငန်းတာဝန် အသေးစိတ်...' : 'Responsibilities, experience required...'}
-                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
+                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 placeholder-gray-400 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none font-medium"
                 />
               </div>
 

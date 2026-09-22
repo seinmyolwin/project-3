@@ -12,6 +12,7 @@ import {
 } from '../../types';
 import { formatMMK, deriveCustomerLedgerBalances, calculateCustomerAgingReport } from '../../domain/financial';
 import { Language } from '../../utils/translations';
+import { db } from '../../db/database';
 import {
   TrendingUp,
   Download,
@@ -24,6 +25,18 @@ import {
   Award,
   CreditCard,
   ShieldAlert,
+  Trophy,
+  Crown,
+  Medal,
+  Sparkles,
+  Sliders,
+  CheckCircle2,
+  Zap,
+  X,
+  Check,
+  Gift,
+  ChevronDown,
+  Info,
 } from 'lucide-react';
 
 interface ReportsViewProps {
@@ -36,6 +49,7 @@ interface ReportsViewProps {
   creditLedger?: (CustomerCreditLedger | CustomerLedgerEntry)[];
   currentUser: UserAccount;
   lang: Language;
+  onRefresh?: () => void;
 }
 
 export const ReportsView: React.FC<ReportsViewProps> = ({
@@ -46,11 +60,36 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   sessions,
   customers = [],
   creditLedger = [],
+  currentUser,
   lang,
+  onRefresh,
 }) => {
   const isMm = lang === 'my';
 
   const [dateFilter, setDateFilter] = useState<'today' | '7days' | 'month' | 'all'>('month');
+
+  // Performance Award Selector State
+  const now = new Date();
+  const todayStr = now.toISOString().split('T')[0];
+  const currentMonthYYYYMM = now.toISOString().slice(0, 7);
+
+  const [selectedPerformanceMonth, setSelectedPerformanceMonth] = useState<string>(currentMonthYYYYMM);
+  const [weightRevenue, setWeightRevenue] = useState<number>(40);
+  const [weightSessions, setWeightSessions] = useState<number>(30);
+  const [weightCommission, setWeightCommission] = useState<number>(30);
+  const [awardAmountMMK, setAwardAmountMMK] = useState<number>(50000);
+  const [isCriteriaOpen, setIsCriteriaOpen] = useState<boolean>(false);
+  const [awardModalCandidate, setAwardModalCandidate] = useState<any | null>(null);
+  const [awardNotification, setAwardNotification] = useState<string | null>(null);
+
+  // Month options for quick picker
+  const monthOptions = Array.from({ length: 12 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    return d.toISOString().slice(0, 7);
+  });
+  if (!monthOptions.includes(selectedPerformanceMonth)) {
+    monthOptions.unshift(selectedPerformanceMonth);
+  }
 
   // Customer Credit & Debt Aging Aggregations
   const activeCustomers = customers.filter(c => c.isActive !== false);
@@ -81,9 +120,6 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   const debtorsCount = customerCreditSummaries.filter(item => item.derived.netOutstandingDebtMMK > 0).length;
 
   // Date filtering logic
-  const now = new Date();
-  const todayStr = now.toISOString().split('T')[0];
-
   const getStartDate = () => {
     if (dateFilter === 'today') return todayStr;
     if (dateFilter === '7days') {
@@ -141,23 +177,112 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   const totalOperatingCosts = totalCommissionsIncurred + totalBonusesIncurred + totalOperatingExpenses;
   const netOperatingProfit = grossProfit - totalOperatingCosts;
 
-  // Staff Performance Ranking
-  const staffStats = staff.map(stf => {
-    const comms = filteredStaffLedger
+  // Staff Performance Ranking & Auto-Award Evaluation Logic
+  const activeStaffList = staff.filter(s => s.isActive !== false);
+
+  const perfInvoices = invoices.filter(
+    inv => inv.status === 'paid' && inv.createdAt.startsWith(selectedPerformanceMonth)
+  );
+
+  const perfSessions = sessions.filter(
+    s => s.status === 'completed' &&
+         ((s.createdAt && s.createdAt.startsWith(selectedPerformanceMonth)) ||
+          (s.startTime && s.startTime.startsWith(selectedPerformanceMonth)))
+  );
+
+  const perfLedger = staffLedger.filter(
+    e => (e.date && e.date.startsWith(selectedPerformanceMonth)) ||
+         (e.createdAt && e.createdAt.startsWith(selectedPerformanceMonth))
+  );
+
+  const getSessionValue = (s: SessionRecord): number => {
+    const base = (s.basePriceMMK || 0) + (s.roomSurchargeMMK || 0);
+    const orders = (s.orderItems || []).reduce((sum, item) => sum + (item.totalPriceMMK || 0), 0);
+    const extensions = (s.extensions || []).reduce((sum, ext) => sum + (ext.extensionPriceMMK || 0), 0);
+    return base + orders + extensions;
+  };
+
+  const rawStaffPerformance = activeStaffList.map(stf => {
+    const staffSess = perfSessions.filter(s =>
+      s.assignedStaff.some(as => as.staffId === stf.id)
+    );
+    const sessionsCount = staffSess.length;
+
+    let salesRevenueMMK = 0;
+    for (const s of staffSess) {
+      salesRevenueMMK += getSessionValue(s);
+    }
+
+    const commissionEarnedMMK = perfLedger
       .filter(e => e.staffId === stf.id && e.type === 'commission')
       .reduce((sum, e) => sum + e.amountMMK, 0);
 
-    // Count sessions assigned
-    const completedSessions = sessions.filter(
-      s => s.status === 'completed' && s.assignedStaff.some(as => as.staffId === stf.id)
+    return {
+      staff: stf,
+      sessionsCount,
+      salesRevenueMMK,
+      commissionEarnedMMK,
+    };
+  });
+
+  const maxSales = Math.max(...rawStaffPerformance.map(d => d.salesRevenueMMK), 1);
+  const maxSessions = Math.max(...rawStaffPerformance.map(d => d.sessionsCount), 1);
+  const maxCommissions = Math.max(...rawStaffPerformance.map(d => d.commissionEarnedMMK), 1);
+
+  const totalWeights = (weightRevenue + weightSessions + weightCommission) || 100;
+
+  const rankedCandidates = rawStaffPerformance.map(st => {
+    const salesScore = (st.salesRevenueMMK / maxSales) * 100;
+    const sessionScore = (st.sessionsCount / maxSessions) * 100;
+    const commScore = (st.commissionEarnedMMK / maxCommissions) * 100;
+
+    const compositeScore = Math.round(
+      ((salesScore * weightRevenue) + (sessionScore * weightSessions) + (commScore * weightCommission)) / (totalWeights / 100)
+    );
+
+    const existingAward = staffLedger.find(
+      e => e.staffId === st.staff.id &&
+           e.type === 'bonus' &&
+           e.notes.includes('Performance Award Winner') &&
+           e.notes.includes(selectedPerformanceMonth)
     );
 
     return {
-      staff: stf,
-      sessionsCount: completedSessions.length,
-      commissionEarned: comms,
+      ...st,
+      salesScore,
+      sessionScore,
+      commScore,
+      compositeScore,
+      alreadyAwarded: !!existingAward,
+      awardedEntry: existingAward,
     };
-  }).sort((a, b) => b.commissionEarned - a.commissionEarned);
+  }).sort((a, b) => b.compositeScore - a.compositeScore || b.salesRevenueMMK - a.salesRevenueMMK || b.sessionsCount - a.sessionsCount);
+
+  const topWinner = rankedCandidates[0];
+
+  const handleConfirmAwardBonus = async () => {
+    if (!awardModalCandidate) return;
+    try {
+      const reasonText = `Performance Award Winner (${selectedPerformanceMonth}) - စွမ်းဆောင်ရည်ဆုကြေး`;
+      await db.recordStaffAdjustmentTransaction({
+        staffId: awardModalCandidate.staff.id,
+        type: 'bonus',
+        amountMMK: awardAmountMMK,
+        reason: reasonText,
+        currentUser,
+      });
+
+      setAwardNotification(
+        isMm
+          ? `${awardModalCandidate.staff.name} အား ${selectedPerformanceMonth} လအတွက် စွမ်းဆောင်ရည်ဆုကြေး ${formatMMK(awardAmountMMK)} ကျပ် အောင်မြင်စွာ ပေးအပ်လိုက်ပြီး ဝန်ထမ်းစာရင်းရှင်းတမ်း (Staff Ledger) ထဲသို့ အလိုအလျောက် ထည့်ပေါင်းပေးလိုက်ပါသည်။`
+          : `Successfully awarded ${formatMMK(awardAmountMMK)} performance bonus to ${awardModalCandidate.staff.name} for ${selectedPerformanceMonth}! Added to staff ledger.`
+      );
+      setAwardModalCandidate(null);
+      if (onRefresh) onRefresh();
+    } catch (err: any) {
+      alert('Error recording performance award: ' + err.message);
+    }
+  };
 
   // CSV Exporter (100% Client-Side)
   const handleExportCSV = () => {
@@ -370,50 +495,397 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
           </div>
         </div>
 
-        {/* Staff Performance Leaderboard (5 cols on lg) */}
-        <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-xs lg:col-span-5 space-y-4">
-          <div className="flex items-center gap-2 border-b border-gray-100 pb-2">
-            <Award className="h-4 w-4 text-amber-500" />
-            <h3 className="text-sm font-bold text-gray-900">
-              {isMm ? 'ဝန်ထမ်းစွမ်းဆောင်ရည်နှင့် ကော်မရှင်ဇယား' : 'Staff Commission Leaderboard'}
-            </h3>
+        {/* Staff Performance Award Auto-Selector (5 cols on lg) */}
+        <div className="rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50/50 via-white to-amber-50/20 p-5 shadow-xs lg:col-span-5 space-y-4 relative">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-amber-200/60 pb-3">
+            <div className="flex items-center gap-2">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500 text-amber-950 shadow-xs">
+                <Trophy className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-extrabold text-amber-950 flex items-center gap-1.5">
+                  <span>{isMm ? 'စွမ်းဆောင်ရည် အကောင်းဆုံး ဝန်ထမ်းဆု ရွေးချယ်မှု စနစ်' : 'Staff Performance Award Engine'}</span>
+                  <Crown className="h-4 w-4 text-amber-500 fill-amber-400" />
+                </h3>
+                <p className="text-[11px] text-amber-800/80 font-medium">
+                  {isMm ? 'မှတ်တမ်းများမှ ကာလအလိုက် အကောင်းဆုံး ဝန်ထမ်းအား အလိုအလျောက် ရွေးထုတ်စနစ်' : 'Auto-evaluate performance & grant monthly bonus to ledger'}
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setIsCriteriaOpen(!isCriteriaOpen)}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-amber-300 bg-white px-2.5 py-1.5 text-xs font-bold text-amber-900 hover:bg-amber-100/60 shadow-2xs transition-all"
+              title="Configure Custom Evaluation Criteria & Weights"
+            >
+              <Sliders className="h-3.5 w-3.5 text-amber-600" />
+              <span>{isMm ? 'သတ်မှတ်ချက်များ' : 'Criteria'}</span>
+              <ChevronDown className={`h-3 w-3 text-amber-600 transition-transform ${isCriteriaOpen ? 'rotate-180' : ''}`} />
+            </button>
           </div>
 
-          <div className="space-y-2 text-xs">
-            {staffStats.map((st, idx) => (
-              <div
-                key={st.staff.id}
-                className="flex items-center justify-between rounded-xl border border-gray-100 bg-gray-50/70 p-3"
+          {/* Month Selector Bar */}
+          <div className="flex items-center justify-between bg-white/90 p-2.5 rounded-xl border border-amber-200/80 text-xs">
+            <span className="font-bold text-amber-950 flex items-center gap-1.5">
+              <Calendar className="h-3.5 w-3.5 text-amber-600" />
+              <span>{isMm ? 'ဆုပေးရွေးချယ်မည့် ကာလ:' : 'Evaluation Month:'}</span>
+            </span>
+
+            <div className="flex items-center gap-2">
+              <select
+                value={selectedPerformanceMonth}
+                onChange={e => setSelectedPerformanceMonth(e.target.value)}
+                className="rounded-lg border border-amber-300 bg-amber-50/50 px-2.5 py-1 font-extrabold text-amber-950 text-xs focus:ring-2 focus:ring-amber-500 outline-none"
               >
-                <div className="flex items-center gap-2.5">
-                  <span
-                    className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold ${
-                      idx === 0
-                        ? 'bg-amber-400 text-amber-950'
-                        : idx === 1
-                        ? 'bg-slate-300 text-slate-800'
-                        : 'bg-gray-200 text-gray-600'
-                    }`}
-                  >
-                    {idx + 1}
+                {monthOptions.map(m => (
+                  <option key={m} value={m}>
+                    {m} {m === currentMonthYYYYMM ? `(${isMm ? 'လက်ရှိလ' : 'Current'})` : ''}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="month"
+                value={selectedPerformanceMonth}
+                onChange={e => e.target.value && setSelectedPerformanceMonth(e.target.value)}
+                className="rounded-lg border border-amber-300 bg-amber-50/50 px-2 py-1 text-xs text-amber-950 font-mono outline-none"
+              />
+            </div>
+          </div>
+
+          {/* Award Notification Message */}
+          {awardNotification && (
+            <div className="flex items-start justify-between rounded-xl bg-emerald-50 border border-emerald-300 p-3 text-xs text-emerald-900 shadow-xs">
+              <div className="flex items-start gap-2">
+                <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-0.5 shrink-0" />
+                <p className="font-medium">{awardNotification}</p>
+              </div>
+              <button
+                onClick={() => setAwardNotification(null)}
+                className="text-emerald-700 hover:text-emerald-950 font-bold ml-2"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+
+          {/* Criteria Customizer Drawer */}
+          {isCriteriaOpen && (
+            <div className="rounded-xl border border-amber-300 bg-white p-3.5 space-y-3 shadow-md text-xs animate-fadeIn">
+              <div className="flex items-center justify-between border-b border-gray-100 pb-1.5">
+                <span className="font-extrabold text-amber-950 flex items-center gap-1.5">
+                  <Sliders className="h-3.5 w-3.5 text-amber-600" />
+                  <span>{isMm ? 'ပိုင်ရှင် စိတ်ကြိုက် စွမ်းဆောင်ရည် သတ်မှတ်ချက် အလေးချိန်များ (%)' : 'Custom Evaluation Criteria & Weights (%)'}</span>
+                </span>
+                <span className="text-[10px] text-amber-700 font-bold bg-amber-100 px-2 py-0.5 rounded-full">
+                  Total: {weightRevenue + weightSessions + weightCommission}%
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-gray-700 block">
+                    {isMm ? '၁. ရောင်းရငွေ အလေးချိန် (%)' : '1. Revenue Weight (%)'}
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={weightRevenue}
+                    onChange={e => setWeightRevenue(Math.max(0, parseInt(e.target.value) || 0))}
+                    className="w-full rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-bold text-gray-900 focus:border-amber-500 outline-none"
+                  />
+                  <span className="text-[10px] text-gray-400 block">{isMm ? 'ဝယ်ယူမှု စုစုပေါင်း' : 'Sales share'}</span>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-gray-700 block">
+                    {isMm ? '၂. အကြိမ်ရေ အလေးချိန် (%)' : '2. Session Count Weight (%)'}
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={weightSessions}
+                    onChange={e => setWeightSessions(Math.max(0, parseInt(e.target.value) || 0))}
+                    className="w-full rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-bold text-gray-900 focus:border-amber-500 outline-none"
+                  />
+                  <span className="text-[10px] text-gray-400 block">{isMm ? 'ဝန်ဆောင်မှု အကြိမ်ရေ' : 'Session volume'}</span>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-gray-700 block">
+                    {isMm ? '၃. ကော်မရှင် အလေးချိန် (%)' : '3. Commission Weight (%)'}
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={weightCommission}
+                    onChange={e => setWeightCommission(Math.max(0, parseInt(e.target.value) || 0))}
+                    className="w-full rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-bold text-gray-900 focus:border-amber-500 outline-none"
+                  />
+                  <span className="text-[10px] text-gray-400 block">{isMm ? 'ကော်မရှင် ရရှိငွေ' : 'Commission earned'}</span>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-gray-100 flex items-center justify-between">
+                <div>
+                  <label className="text-[11px] font-extrabold text-amber-950 block">
+                    {isMm ? 'သတ်မှတ် စွမ်းဆောင်ရည် ဆုကြေးငွေ (MMK):' : 'Award Bonus Amount (MMK):'}
+                  </label>
+                  <input
+                    type="number"
+                    step="5000"
+                    value={awardAmountMMK}
+                    onChange={e => setAwardAmountMMK(Math.max(0, parseInt(e.target.value) || 0))}
+                    className="w-40 rounded-lg border border-amber-300 px-2.5 py-1 text-xs font-extrabold text-amber-900 font-mono bg-amber-50/50 outline-none"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsCriteriaOpen(false)}
+                  className="rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-extrabold text-amber-950 hover:bg-amber-400 shadow-2xs"
+                >
+                  {isMm ? 'အတည်ပြုမည်' : 'Save Criteria'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Winner Spotlight Banner (#1 Performer) */}
+          {topWinner ? (
+            <div className="rounded-2xl border-2 border-amber-400 bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-500 p-4 text-amber-950 shadow-md relative overflow-hidden">
+              <div className="absolute top-2 right-2 opacity-20 pointer-events-none">
+                <Crown className="h-20 w-20 text-amber-900" />
+              </div>
+
+              <div className="relative z-10 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 bg-amber-950/90 text-amber-300 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider shadow-xs">
+                    <Sparkles className="h-3 w-3 text-amber-400" />
+                    <span>{selectedPerformanceMonth} {isMm ? 'စွမ်းဆောင်ရည် အကောင်းဆုံး ဆုရှင်' : 'Top Performer'}</span>
+                  </div>
+                  <span className="bg-amber-950 text-amber-300 font-black px-2.5 py-1 rounded-full text-xs font-mono">
+                    {topWinner.compositeScore} / 100 {isMm ? 'မှတ်' : 'Pts'}
                   </span>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-950 text-amber-300 font-black text-xl shadow-inner border border-amber-300/40">
+                    🥇
+                  </div>
                   <div>
-                    <h5 className="font-bold text-gray-900">{st.staff.name}</h5>
-                    <span className="text-[10px] text-gray-500 uppercase">{st.staff.role}</span>
+                    <h4 className="text-lg font-black text-amber-950 leading-tight">
+                      {topWinner.staff.name}
+                    </h4>
+                    <span className="text-xs font-bold text-amber-900/80 uppercase">
+                      {topWinner.staff.role} • {topWinner.staff.phone || 'No Phone'}
+                    </span>
                   </div>
                 </div>
 
-                <div className="text-right">
-                  <span className="font-extrabold text-emerald-800 font-mono block">
-                    {formatMMK(st.commissionEarned)}
+                {/* Metrics Breakdown */}
+                <div className="grid grid-cols-3 gap-2 text-center bg-amber-950/10 p-2 rounded-xl border border-amber-900/10">
+                  <div>
+                    <span className="text-[10px] text-amber-900 font-bold block">{isMm ? 'ရောင်းရငွေ' : 'Revenue'}</span>
+                    <span className="text-xs font-extrabold font-mono text-amber-950">{formatMMK(topWinner.salesRevenueMMK)}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-amber-900 font-bold block">{isMm ? 'အကြိမ်ရေ' : 'Sessions'}</span>
+                    <span className="text-xs font-extrabold font-mono text-amber-950">{topWinner.sessionsCount}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-amber-900 font-bold block">{isMm ? 'ကော်မရှင်' : 'Commission'}</span>
+                    <span className="text-xs font-extrabold font-mono text-amber-950">{formatMMK(topWinner.commissionEarnedMMK)}</span>
+                  </div>
+                </div>
+
+                {/* Award Action Button */}
+                <div className="pt-1">
+                  {topWinner.alreadyAwarded ? (
+                    <div className="flex items-center justify-center gap-1.5 rounded-xl bg-emerald-900/90 text-emerald-200 py-2 px-3 text-xs font-bold border border-emerald-400/50 shadow-inner">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                      <span>
+                        {isMm
+                          ? `${selectedPerformanceMonth} အတွက် ဆုကြေး (${formatMMK(topWinner.awardedEntry?.amountMMK || awardAmountMMK)}) စာရင်းရှင်းတမ်း (Ledger) ထဲသို့ ပေးအပ်ပြီးပါပြီ`
+                          : `Bonus (${formatMMK(topWinner.awardedEntry?.amountMMK || awardAmountMMK)}) credited to staff ledger!`}
+                      </span>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setAwardModalCandidate(topWinner)}
+                      className="w-full flex items-center justify-center gap-2 rounded-xl bg-amber-950 text-amber-300 hover:bg-black py-2.5 px-4 text-xs font-black shadow-lg active:scale-98 transition-all cursor-pointer border border-amber-400/40"
+                    >
+                      <Gift className="h-4 w-4 text-amber-400 animate-bounce" />
+                      <span>
+                        {isMm
+                          ? `စွမ်းဆောင်ရည်ဆုကြေး (${formatMMK(awardAmountMMK)}) အတည်ပြု ပေးအပ်မည်`
+                          : `Award ${formatMMK(awardAmountMMK)} Performance Bonus to Ledger`}
+                      </span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="p-6 text-center text-xs text-gray-400 bg-white rounded-xl border border-dashed border-gray-200">
+              {isMm ? 'ရွေးချယ်ထားသော လတွင် ဝန်ထမ်း မှတ်တမ်း မရှိသေးပါ' : 'No staff performance records for selected month.'}
+            </div>
+          )}
+
+          {/* Full Ranked Leaderboard */}
+          <div className="space-y-2 text-xs pt-1">
+            <span className="font-extrabold text-amber-950 block text-xs uppercase tracking-wider">
+              {isMm ? 'ဝန်ထမ်းများ စွမ်းဆောင်ရည် အဆင့်သတ်မှတ်ချက်' : 'Full Performance Leaderboard'}
+            </span>
+
+            {rankedCandidates.map((st, idx) => (
+              <div
+                key={st.staff.id}
+                className={`flex items-center justify-between rounded-xl border p-3 transition-all ${
+                  idx === 0
+                    ? 'border-amber-300 bg-amber-50/80 shadow-2xs'
+                    : 'border-gray-200 bg-white hover:bg-gray-50'
+                }`}
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span
+                    className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-black shrink-0 ${
+                      idx === 0
+                        ? 'bg-amber-400 text-amber-950 shadow-xs'
+                        : idx === 1
+                        ? 'bg-slate-300 text-slate-900'
+                        : idx === 2
+                        ? 'bg-amber-200 text-amber-900'
+                        : 'bg-gray-100 text-gray-600'
+                    }`}
+                  >
+                    {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : idx + 1}
                   </span>
-                  <span className="text-[10px] text-gray-400">{st.sessionsCount} sessions</span>
+
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <h5 className="font-extrabold text-gray-900 truncate">{st.staff.name}</h5>
+                      <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.2 rounded font-mono shrink-0">
+                        {st.compositeScore} pts
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-gray-500 uppercase block truncate">{st.staff.role}</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 text-right shrink-0">
+                  <div>
+                    <span className="font-bold text-emerald-800 font-mono block">
+                      {formatMMK(st.commissionEarnedMMK)}
+                    </span>
+                    <span className="text-[10px] text-gray-400 font-mono">{st.sessionsCount} sess • {formatMMK(st.salesRevenueMMK)}</span>
+                  </div>
+
+                  {!st.alreadyAwarded ? (
+                    <button
+                      onClick={() => setAwardModalCandidate(st)}
+                      className="rounded-lg bg-amber-500 hover:bg-amber-600 text-amber-950 px-2 py-1 text-[11px] font-extrabold shadow-2xs shrink-0"
+                      title="Grant Performance Bonus"
+                    >
+                      {isMm ? 'ဆုပေးမည်' : 'Award'}
+                    </button>
+                  ) : (
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full shrink-0">
+                      {isMm ? 'ပေးပြီး' : 'Awarded'}
+                    </span>
+                  )}
                 </div>
               </div>
             ))}
           </div>
         </div>
       </div>
+
+      {/* Confirmation Modal for Performance Award */}
+      {awardModalCandidate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fadeIn">
+          <div className="w-full max-w-md rounded-2xl border border-amber-300 bg-white p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500 text-amber-950 font-bold">
+                  <Gift className="h-6 w-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-gray-900">
+                    {isMm ? 'စွမ်းဆောင်ရည်ဆုကြေး အတည်ပြု ပေးအပ်ခြင်း' : 'Grant Performance Bonus'}
+                  </h3>
+                  <p className="text-xs text-gray-500">
+                    {isMm ? 'ဝန်ထမ်းစာရင်းရှင်းတမ်း (Staff Ledger) ထဲသို့ ဆုကြေးထည့်သွင်းမည်' : 'Credit performance award directly to staff ledger'}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setAwardModalCandidate(null)}
+                className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="rounded-xl bg-amber-50/80 p-4 border border-amber-200 space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-gray-600">{isMm ? 'ဆုရ ဝန်ထမ်း:' : 'Winner Staff:'}</span>
+                <span className="font-extrabold text-amber-950 text-sm">{awardModalCandidate.staff.name}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">{isMm ? 'သက်ဆိုင်ရာ ကာလ/လ:' : 'Evaluation Month:'}</span>
+                <span className="font-extrabold font-mono text-gray-900">{selectedPerformanceMonth}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">{isMm ? 'စွမ်းဆောင်ရည် အမှတ်:' : 'Performance Score:'}</span>
+                <span className="font-extrabold font-mono text-amber-800">{awardModalCandidate.compositeScore} / 100 Pts</span>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-gray-800 block">
+                {isMm ? 'ပေးအပ်မည့် ဆုကြေးငွေ ပမာဏ (MMK):' : 'Bonus Award Amount (MMK):'}
+              </label>
+              <input
+                type="number"
+                step="5000"
+                value={awardAmountMMK}
+                onChange={e => setAwardAmountMMK(Math.max(0, parseInt(e.target.value) || 0))}
+                className="w-full rounded-xl border border-amber-300 bg-amber-50/50 p-2.5 text-base font-extrabold text-amber-950 font-mono focus:ring-2 focus:ring-amber-500 outline-none"
+              />
+            </div>
+
+            <div className="rounded-xl bg-blue-50 border border-blue-200 p-3 text-[11px] text-blue-900 flex items-start gap-2">
+              <Info className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
+              <p>
+                {isMm
+                  ? 'ဤဆုကြေးငွေကို ဝန်ထမ်း၏ စာရင်းရှင်းတမ်း (Staff Ledger) ထဲသို့ "bonus" အဖြစ် ထည့်သွင်းပေးမည်ဖြစ်ပြီး သက်ဆိုင်ရာ လအတွက် လစာ/ကော်မရှင် စာရင်းရှင်းတမ်း (Monthly Settlement Payout) တွင် အလိုအလျောက် ပေါင်းစပ်ပေးသွားမည်ဖြစ်ပါသည်။'
+                  : 'This award bonus will be credited to the staff ledger and automatically included in their monthly payout settlement calculation.'}
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setAwardModalCandidate(null)}
+                className="rounded-xl border border-gray-300 px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-100"
+              >
+                {isMm ? 'မလုပ်ဆောင်ပါ' : 'Cancel'}
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmAwardBonus}
+                className="rounded-xl bg-amber-500 hover:bg-amber-600 px-5 py-2 text-xs font-black text-amber-950 shadow-md active:scale-95 transition-all flex items-center gap-1.5"
+              >
+                <Check className="h-4 w-4" />
+                <span>{isMm ? 'အတည်ပြု ပေးအပ်မည်' : 'Confirm & Credit Bonus'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Customer Credit Portfolio & Debt Aging Summary */}
       <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-xs space-y-4">

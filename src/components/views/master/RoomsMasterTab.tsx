@@ -511,7 +511,7 @@ export const RoomsMasterTab: React.FC<RoomsMasterTabProps> = ({
                     value={formRoomNumber}
                     onChange={(e) => setFormRoomNumber(e.target.value.toUpperCase())}
                     placeholder="e.g. VIP-01"
-                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs font-mono focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs font-mono text-gray-900 placeholder-gray-400 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none font-medium"
                   />
                 </div>
 
@@ -525,7 +525,7 @@ export const RoomsMasterTab: React.FC<RoomsMasterTabProps> = ({
                     min="1"
                     value={formCapacity}
                     onChange={(e) => setFormCapacity(Number(e.target.value))}
-                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 placeholder-gray-400 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none font-medium"
                   />
                 </div>
               </div>
@@ -542,7 +542,7 @@ export const RoomsMasterTab: React.FC<RoomsMasterTabProps> = ({
                     value={formName}
                     onChange={(e) => setFormName(e.target.value)}
                     placeholder="e.g. VIP Suite 1 (Rose)"
-                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 placeholder-gray-400 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none font-medium"
                   />
                 </div>
 
@@ -556,7 +556,7 @@ export const RoomsMasterTab: React.FC<RoomsMasterTabProps> = ({
                     value={formNameMm}
                     onChange={(e) => setFormNameMm(e.target.value)}
                     placeholder="ဥပမာ - နှင်းဆီ (VIP အခန်း ၁)"
-                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 placeholder-gray-400 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none font-medium"
                   />
                 </div>
               </div>
@@ -570,7 +570,7 @@ export const RoomsMasterTab: React.FC<RoomsMasterTabProps> = ({
                   <select
                     value={formType}
                     onChange={(e) => setFormType(e.target.value as any)}
-                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none bg-white font-medium text-gray-800"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none font-medium"
                   >
                     <option value="vip_suite">VIP Suite</option>
                     <option value="massage_bed">Massage Bed</option>
@@ -588,7 +588,7 @@ export const RoomsMasterTab: React.FC<RoomsMasterTabProps> = ({
                   <select
                     value={formStatus}
                     onChange={(e) => setFormStatus(e.target.value as any)}
-                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none bg-white font-medium text-gray-800"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none font-medium"
                   >
                     <option value="available">AVAILABLE (အားလပ်နေ)</option>
                     <option value="occupied">OCCUPIED (အသုံးပြုနေ)</option>
@@ -611,7 +611,7 @@ export const RoomsMasterTab: React.FC<RoomsMasterTabProps> = ({
                     step="1000"
                     value={formHourlyRateMMK}
                     onChange={(e) => setFormHourlyRateMMK(Number(e.target.value))}
-                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 placeholder-gray-400 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none font-medium"
                   />
                 </div>
 
@@ -625,7 +625,7 @@ export const RoomsMasterTab: React.FC<RoomsMasterTabProps> = ({
                     step="500"
                     value={formSurchargeMMK}
                     onChange={(e) => setFormSurchargeMMK(Number(e.target.value))}
-                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 placeholder-gray-400 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none font-medium"
                   />
                 </div>
               </div>
@@ -640,7 +640,7 @@ export const RoomsMasterTab: React.FC<RoomsMasterTabProps> = ({
                   value={formMaintenanceNotes}
                   onChange={(e) => setFormMaintenanceNotes(e.target.value)}
                   placeholder={isMm ? 'ဥပမာ - အဲကွန်း ပြုပြင်နေဆဲ' : 'e.g. AC servicing, sound test'}
-                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none"
+                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 placeholder-gray-400 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none font-medium"
                 />
               </div>
 

@@ -440,7 +440,7 @@ export const CustomersMasterTab: React.FC<CustomersMasterTabProps> = ({
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
                   placeholder="e.g. U Thant Zin"
-                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none"
+                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 placeholder-gray-400 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none font-medium"
                 />
               </div>
 
@@ -454,7 +454,7 @@ export const CustomersMasterTab: React.FC<CustomersMasterTabProps> = ({
                   value={formNameMm}
                   onChange={(e) => setFormNameMm(e.target.value)}
                   placeholder="ဥပမာ - ဦးသန့်ဇင်"
-                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none"
+                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 placeholder-gray-400 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none font-medium"
                 />
               </div>
 
@@ -469,7 +469,7 @@ export const CustomersMasterTab: React.FC<CustomersMasterTabProps> = ({
                   value={formPhone}
                   onChange={(e) => setFormPhone(e.target.value)}
                   placeholder="09-xxxxxxxxx"
-                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none"
+                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 placeholder-gray-400 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none font-medium"
                 />
               </div>
 
@@ -499,7 +499,7 @@ export const CustomersMasterTab: React.FC<CustomersMasterTabProps> = ({
                       step="10000"
                       value={formCreditLimitMMK}
                       onChange={(e) => setFormCreditLimitMMK(Number(e.target.value))}
-                      className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none bg-white"
+                      className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none font-medium"
                     />
                   </div>
                 )}
@@ -515,7 +515,7 @@ export const CustomersMasterTab: React.FC<CustomersMasterTabProps> = ({
                   onChange={(e) =>
                     setFormStatus(e.target.value as 'active' | 'inactive')
                   }
-                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none bg-white font-medium text-gray-800"
+                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none font-medium"
                 >
                   <option value="active">{isMm ? 'ပုံမှန် (Active)' : 'Active'}</option>
                   <option value="inactive">{isMm ? 'ရပ်နား (Inactive)' : 'Inactive'}</option>

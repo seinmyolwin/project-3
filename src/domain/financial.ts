@@ -755,6 +755,7 @@ export function calculatePaymentSummary(
 }
 
 export interface StaffLedgerTotals {
+  totalSalaryMMK: number;
   totalCommissionsMMK: number;
   totalBonusesMMK: number;
   totalDeductionsMMK: number;
@@ -765,7 +766,7 @@ export interface StaffLedgerTotals {
 
 /**
  * Computes exact staff ledger balance from entries.
- * Credits (shop owes staff): commissions, bonuses.
+ * Credits (shop owes staff): salary, commissions, bonuses.
  * Debits (staff owes shop or shop paid staff): deductions, advances, settlements paid.
  */
 export function calculateStaffLedgerTotals(entries: Array<{
@@ -774,6 +775,7 @@ export function calculateStaffLedgerTotals(entries: Array<{
   direction?: 'credit' | 'debit';
   isSettled?: boolean;
 }>): StaffLedgerTotals {
+  let totalSalaryMMK = 0;
   let totalCommissionsMMK = 0;
   let totalBonusesMMK = 0;
   let totalDeductionsMMK = 0;
@@ -783,6 +785,9 @@ export function calculateStaffLedgerTotals(entries: Array<{
   for (const entry of entries) {
     const amt = Math.max(0, roundMMK(entry.amountMMK));
     switch (entry.type) {
+      case 'salary':
+        totalSalaryMMK += amt;
+        break;
       case 'commission':
         totalCommissionsMMK += amt;
         break;
@@ -808,12 +813,13 @@ export function calculateStaffLedgerTotals(entries: Array<{
     }
   }
 
-  // Net payable = (Commissions + Bonuses) - (Deductions + Advances + Settlements)
-  const totalCredits = totalCommissionsMMK + totalBonusesMMK;
+  // Net payable = (Salary + Commissions + Bonuses) - (Deductions + Advances + Settlements)
+  const totalCredits = totalSalaryMMK + totalCommissionsMMK + totalBonusesMMK;
   const totalDebits = totalDeductionsMMK + totalAdvancesMMK + totalSettlementsPaidMMK;
   const netPayableBalanceMMK = totalCredits - totalDebits;
 
   return {
+    totalSalaryMMK,
     totalCommissionsMMK,
     totalBonusesMMK,
     totalDeductionsMMK,
@@ -824,6 +830,7 @@ export function calculateStaffLedgerTotals(entries: Array<{
 }
 
 export interface DetailedSettlementBreakdown {
+  totalSalaryMMK: number;
   grossCommissionMMK: number;
   totalBonusMMK: number;
   totalDeductionMMK: number;
@@ -857,11 +864,12 @@ export function calculateDetailedSettlementBreakdown(
   }
 
   const totals = calculateStaffLedgerTotals(filtered);
-  const totalEarnedMMK = totals.totalCommissionsMMK + totals.totalBonusesMMK;
+  const totalEarnedMMK = totals.totalSalaryMMK + totals.totalCommissionsMMK + totals.totalBonusesMMK;
   const previousSettlementsMMK = totals.totalSettlementsPaidMMK;
   const netPayableBeforeMMK = totals.netPayableBalanceMMK;
 
   return {
+    totalSalaryMMK: totals.totalSalaryMMK,
     grossCommissionMMK: totals.totalCommissionsMMK,
     totalBonusMMK: totals.totalBonusesMMK,
     totalDeductionMMK: totals.totalDeductionsMMK,

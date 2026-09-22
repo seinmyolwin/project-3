@@ -6,6 +6,56 @@
     color: #f1f5f9;
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
   }
+
+  /* Universal high-contrast input fixes for light containers & modals */
+  .bg-white input,
+  .bg-white textarea,
+  .bg-white select,
+  .bg-gray-50 input,
+  .bg-gray-50 textarea,
+  .bg-gray-50 select,
+  .bg-slate-50 input,
+  .bg-slate-50 textarea,
+  .bg-slate-50 select {
+    color: #0f172a !important;
+    background-color: #ffffff;
+  }
+
+  .bg-white input::placeholder,
+  .bg-white textarea::placeholder,
+  .bg-gray-50 input::placeholder,
+  .bg-gray-50 textarea::placeholder,
+  .bg-slate-50 input::placeholder,
+  .bg-slate-50 textarea::placeholder {
+    color: #64748b !important;
+    opacity: 1;
+  }
+
+  /* Universal high-contrast input fixes for dark containers */
+  .bg-\[\#0b0f19\] input,
+  .bg-\[\#0b0f19\] textarea,
+  .bg-\[\#0b0f19\] select,
+  .bg-\[\#07090e\] input,
+  .bg-\[\#07090e\] textarea,
+  .bg-\[\#07090e\] select,
+  .bg-slate-950 input,
+  .bg-slate-950 textarea,
+  .bg-slate-950 select,
+  .bg-slate-900 input,
+  .bg-slate-900 textarea,
+  .bg-slate-900 select {
+    color: #f8fafc;
+  }
+
+  .bg-\[\#0b0f19\] input::placeholder,
+  .bg-\[\#0b0f19\] textarea::placeholder,
+  .bg-slate-950 input::placeholder,
+  .bg-slate-950 textarea::placeholder,
+  .bg-slate-900 input::placeholder,
+  .bg-slate-900 textarea::placeholder {
+    color: #94a3b8;
+    opacity: 1;
+  }
 }
 
 .neon-glow-cyan {
@@ -39,4 +89,3 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #334155;
 }
-

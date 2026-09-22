@@ -843,7 +843,7 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
                   {/* Background Video for Occupied Rooms based on Room Type */}
                   {activeSession && (
                     <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none opacity-60">
-                      {room.type === 'ktv' ? (
+                      {room.type.includes('ktv') ? (
                         <video
                           autoPlay
                           loop
@@ -852,7 +852,7 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
                           className="w-full h-full object-cover scale-110 filter contrast-125 saturate-150"
                           src="https://assets.mixkit.co/videos/preview/mixkit-disc-jockey-working-in-a-nightclub-41315-large.mp4"
                         />
-                      ) : room.type === 'massage' ? (
+                      ) : room.type.includes('massage') || room.type.includes('spa') ? (
                         <video
                           autoPlay
                           loop
