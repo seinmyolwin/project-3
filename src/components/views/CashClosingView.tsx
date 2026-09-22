@@ -7,16 +7,19 @@ import {
   StaffSettlement,
   CustomerCreditLedger,
   UserAccount,
+  ShopSettings,
 } from '../../types';
 import { db } from '../../db/database';
 import { formatMMK, calculateCashClosing } from '../../domain/financial';
 import { Language } from '../../utils/translations';
+import { CashClosingPrintModal } from '../CashClosingPrintModal';
 import {
   CheckCircle2,
   AlertTriangle,
   Lock,
   TrendingDown,
   TrendingUp,
+  Printer,
 } from 'lucide-react';
 
 interface CashClosingViewProps {
@@ -26,6 +29,7 @@ interface CashClosingViewProps {
   staffLedger: StaffLedgerEntry[];
   settlements: StaffSettlement[];
   creditLedger: CustomerCreditLedger[];
+  settings?: ShopSettings | null;
   currentUser: UserAccount;
   lang: Language;
   onRefresh: () => void;
@@ -38,6 +42,7 @@ export const CashClosingView: React.FC<CashClosingViewProps> = ({
   staffLedger,
   settlements,
   creditLedger,
+  settings,
   currentUser,
   lang,
   onRefresh,
@@ -50,6 +55,7 @@ export const CashClosingView: React.FC<CashClosingViewProps> = ({
   const [actualCountedCash, setActualCountedCash] = useState<number>(0);
   const [closingNotes, setClosingNotes] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'current' | 'history'>('current');
+  const [printModalData, setPrintModalData] = useState<any | null>(null);
 
   // Filter today's transactions
   const dayInvoices = invoices.filter(i => i.createdAt.startsWith(selectedDate) && i.status === 'paid');
@@ -387,14 +393,52 @@ export const CashClosingView: React.FC<CashClosingViewProps> = ({
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={handleExecuteClosing}
-              className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 active:bg-emerald-800"
-            >
-              <Lock className="h-4 w-4" />
-              <span>{isMm ? 'စာရင်းပိတ်၍ အတည်ပြုသိမ်းဆည်းမည်' : 'Close Shift & Lock Drawer'}</span>
-            </button>
+            <div className="mt-6 space-y-3">
+              <button
+                type="button"
+                onClick={handleExecuteClosing}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 active:bg-emerald-800 min-h-[44px]"
+              >
+                <Lock className="h-4 w-4" />
+                <span>{isMm ? 'စာရင်းပိတ်၍ အတည်ပြုသိမ်းဆည်းမည်' : 'Close Shift & Lock Drawer'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setPrintModalData({
+                    date: selectedDate,
+                    shift: 'full_day',
+                    openedAt: `${selectedDate}T09:00:00.000Z`,
+                    closedAt: new Date().toISOString(),
+                    openedBy: currentUser.name,
+                    closedBy: currentUser.name,
+                    openingCashFloatMMK: openingFloat,
+                    cashSalesTotalMMK: cashSalesInflow,
+                    cashCreditRepaymentsMMK: cashDebtRepaymentsInflow,
+                    cashExpensesMMK: cashExpensesOutflow,
+                    cashStaffAdvancesMMK: cashStaffAdvancesOutflow,
+                    cashStaffSettlementsMMK: cashStaffSettlementsOutflow,
+                    expectedCashInDrawerMMK: reconciliation.expectedCashInDrawerMMK,
+                    actualCountedCashMMK: actualCountedCash,
+                    cashDifferenceMMK: reconciliation.cashDifferenceMMK,
+                    differenceReason: closingNotes.trim() || undefined,
+                    kpayTotalMMK: kpayTotal,
+                    waveTotalMMK: waveTotal,
+                    cbpayTotalMMK: otherDigitalTotal,
+                    creditSalesTotalMMK: creditSalesTotal,
+                    totalGrossRevenueMMK,
+                    totalExpensesMMK,
+                    netCashFlowMMK,
+                    notes: closingNotes.trim() || undefined,
+                  });
+                }}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-600 py-3.5 text-xs font-bold text-white shadow-sm hover:bg-cyan-700 active:bg-cyan-800 min-h-[44px]"
+              >
+                <Printer className="h-4 w-4" />
+                <span>{isMm ? 'ယနေ့ ရှင်းတမ်း PDF ပရင့်ထုတ်မည်' : 'Print / Save Today PDF Report'}</span>
+              </button>
+            </div>
           </div>
         </div>
       ) : (
@@ -416,6 +460,7 @@ export const CashClosingView: React.FC<CashClosingViewProps> = ({
                   <th className="py-2.5 px-3">Discrepancy</th>
                   <th className="py-2.5 px-3">Status</th>
                   <th className="py-2.5 px-3">Closed By</th>
+                  <th className="py-2.5 px-3 text-right">PDF Print</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -463,6 +508,16 @@ export const CashClosingView: React.FC<CashClosingViewProps> = ({
                         </span>
                       </td>
                       <td className="py-2.5 px-3 text-gray-500">{cl.closedBy}</td>
+                      <td className="py-2.5 px-3 text-right">
+                        <button
+                          onClick={() => setPrintModalData(cl)}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-cyan-700 active:scale-95 transition-all shadow-xs"
+                          title="Print or Save PDF"
+                        >
+                          <Printer className="h-3.5 w-3.5" />
+                          <span>PDF</span>
+                        </button>
+                      </td>
                     </tr>
                   ))
                 )}
@@ -470,6 +525,17 @@ export const CashClosingView: React.FC<CashClosingViewProps> = ({
             </table>
           </div>
         </div>
+      )}
+
+      {/* Print / PDF Modal */}
+      {printModalData && (
+        <CashClosingPrintModal
+          isOpen={!!printModalData}
+          onClose={() => setPrintModalData(null)}
+          closingData={printModalData}
+          settings={settings || null}
+          lang={lang}
+        />
       )}
     </div>
   );

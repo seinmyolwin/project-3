@@ -640,16 +640,16 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
   return (
     <div className="space-y-6">
       {/* Top Header & View Tabs */}
-      <div className="flex flex-wrap items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-gray-200/80 shadow-xs">
+      <div className="flex flex-wrap items-center justify-between gap-4 bg-[#0b0f19] p-5 rounded-3xl border border-cyan-500/20 shadow-lg">
         <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-600 text-white shadow-sm">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-500 via-purple-600 to-pink-500 text-white shadow-lg neon-glow-cyan">
             <Flame className="h-6 w-6" />
           </div>
           <div>
-            <h2 className="text-xl font-black text-gray-900 tracking-tight">
+            <h2 className="text-xl font-black text-white tracking-tight sm:text-2xl">
               {isMm ? 'ဆက်ရှင်နှင့် အခန်း စီမံခန့်ခွဲမှု' : 'Session & Room Operations'}
             </h2>
-            <p className="text-xs text-gray-500 font-medium">
+            <p className="text-xs text-slate-400 font-medium">
               {isMm
                 ? 'အချိန်နှင့်တပြေးညီ အခန်းအခြေအနေ၊ ကြာချိန်၊ ကော်မရှင်နှင့် ငွေရှင်းလွှာ'
                 : 'Real-time room occupancy, live timers, staff commissions & instant checkout'}
@@ -658,14 +658,14 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
         </div>
 
         {/* View Switcher Tabs */}
-        <div className="flex items-center gap-2">
-          <div className="flex rounded-2xl bg-gray-100 p-1 border border-gray-200/60">
+        <div className="flex items-center gap-3">
+          <div className="flex rounded-2xl bg-[#111827] p-1 border border-slate-800">
             <button
               onClick={() => setTabMode('rooms')}
-              className={`flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold transition-all ${
+              className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition-all min-h-[44px] ${
                 tabMode === 'rooms'
-                  ? 'bg-white text-gray-900 shadow-xs'
-                  : 'text-gray-500 hover:text-gray-900'
+                  ? 'bg-gradient-to-r from-cyan-600 to-purple-600 text-white shadow-lg neon-glow-cyan border border-cyan-400/40'
+                  : 'text-slate-400 hover:text-white'
               }`}
             >
               <Users className="h-4 w-4" />
@@ -673,10 +673,10 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
             </button>
             <button
               onClick={() => setTabMode('history')}
-              className={`flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold transition-all ${
+              className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition-all min-h-[44px] ${
                 tabMode === 'history'
-                  ? 'bg-white text-gray-900 shadow-xs'
-                  : 'text-gray-500 hover:text-gray-900'
+                  ? 'bg-gradient-to-r from-cyan-600 to-purple-600 text-white shadow-lg neon-glow-cyan border border-cyan-400/40'
+                  : 'text-slate-400 hover:text-white'
               }`}
             >
               <Clock className="h-4 w-4" />
@@ -686,7 +686,7 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
 
           <button
             onClick={() => handleOpenStart()}
-            className="flex items-center gap-2 rounded-2xl bg-emerald-600 px-5 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 active:bg-emerald-800 transition-all"
+            className="flex items-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-500 to-emerald-600 px-5 py-3 text-xs font-extrabold text-white shadow-lg neon-glow-cyan hover:brightness-110 active:scale-95 transition-all min-h-[48px]"
           >
             <Play className="h-4 w-4 fill-white" />
             <span>{isMm ? 'ဧည့်သည် ဆက်ရှင်စတင်မည်' : 'Check-in & Start'}</span>
@@ -696,63 +696,63 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
 
       {/* Real-time KPI Metric Cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <div className="rounded-2xl border border-gray-200/80 bg-white p-3.5 shadow-xs">
+        <div className="rounded-2xl border border-slate-800 bg-[#0b0f19] p-4 shadow-lg">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-gray-500">{isMm ? 'စုစုပေါင်း အခန်း' : 'Total Rooms'}</span>
-            <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-gray-100 text-gray-700 text-xs font-bold">
+            <span className="text-xs font-semibold text-slate-400">{isMm ? 'စုစုပေါင်း အခန်း' : 'Total Rooms'}</span>
+            <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-slate-800 text-slate-200 text-xs font-bold">
               {metrics.totalRooms}
             </span>
           </div>
-          <p className="mt-2 text-xl font-black text-gray-900">{metrics.totalRooms}</p>
+          <p className="mt-2 text-2xl font-black text-white font-mono">{metrics.totalRooms}</p>
         </div>
 
-        <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/50 p-3.5 shadow-xs">
+        <div className="rounded-2xl border border-cyan-500/30 bg-[#0b0f19] p-4 shadow-lg neon-glow-cyan">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-emerald-800">{isMm ? 'အားနေသော အခန်း' : 'Available'}</span>
-            <span className="flex h-2.5 w-2.5 rounded-full bg-emerald-500 ring-4 ring-emerald-200" />
+            <span className="text-xs font-bold text-cyan-400">{isMm ? 'အားနေသော အခန်း' : 'Available'}</span>
+            <span className="flex h-3 w-3 rounded-full bg-cyan-400 animate-ping" />
           </div>
-          <p className="mt-2 text-xl font-black text-emerald-950">{metrics.availableRooms}</p>
+          <p className="mt-2 text-2xl font-black text-cyan-300 font-mono">{metrics.availableRooms}</p>
         </div>
 
-        <div className="rounded-2xl border border-amber-200/80 bg-amber-50/50 p-3.5 shadow-xs">
+        <div className="rounded-2xl border border-emerald-500/30 bg-[#0b0f19] p-4 shadow-lg">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-amber-800">{isMm ? 'အသုံးပြုနေဆဲ' : 'In Service'}</span>
-            <span className="flex h-2.5 w-2.5 rounded-full bg-amber-500 ring-4 ring-amber-200" />
+            <span className="text-xs font-bold text-emerald-400">{isMm ? 'အသုံးပြုနေဆဲ' : 'In Service'}</span>
+            <span className="flex h-3 w-3 rounded-full bg-emerald-400" />
           </div>
-          <p className="mt-2 text-xl font-black text-amber-950">{metrics.occupiedRooms}</p>
+          <p className="mt-2 text-2xl font-black text-emerald-300 font-mono">{metrics.occupiedRooms}</p>
         </div>
 
-        <div className="rounded-2xl border border-rose-200/80 bg-rose-50/50 p-3.5 shadow-xs">
+        <div className="rounded-2xl border border-pink-500/30 bg-[#0b0f19] p-4 shadow-lg neon-glow-magenta">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-rose-800">{isMm ? 'အချိန်လွန်နေသည်' : 'Overtime Alert'}</span>
-            <AlertCircle className="h-4 w-4 text-rose-600" />
+            <span className="text-xs font-bold text-pink-400">{isMm ? 'အချိန်လွန်နေသည်' : 'Overtime Alert'}</span>
+            <AlertCircle className="h-4 w-4 text-pink-400 animate-pulse" />
           </div>
-          <p className="mt-2 text-xl font-black text-rose-950">{metrics.overtimeCount}</p>
+          <p className="mt-2 text-2xl font-black text-pink-300 font-mono">{metrics.overtimeCount}</p>
         </div>
 
-        <div className="rounded-2xl border border-blue-200/80 bg-blue-50/50 p-3.5 shadow-xs">
+        <div className="rounded-2xl border border-blue-500/30 bg-[#0b0f19] p-4 shadow-lg">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-blue-800">{isMm ? 'သန့်ရှင်းရေး' : 'Cleaning / Prep'}</span>
-            <Sparkles className="h-4 w-4 text-blue-600" />
+            <span className="text-xs font-bold text-blue-400">{isMm ? 'သန့်ရှင်းရေး' : 'Cleaning / Prep'}</span>
+            <Sparkles className="h-4 w-4 text-blue-400" />
           </div>
-          <p className="mt-2 text-xl font-black text-blue-950">{metrics.cleaningRooms}</p>
+          <p className="mt-2 text-2xl font-black text-blue-300 font-mono">{metrics.cleaningRooms}</p>
         </div>
 
-        <div className="rounded-2xl border border-emerald-300 bg-linear-to-br from-emerald-900 to-teal-950 p-3.5 text-white shadow-xs">
+        <div className="rounded-2xl border border-purple-500/40 bg-gradient-to-br from-purple-950/80 to-[#0b0f19] p-4 text-white shadow-lg">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-semibold text-emerald-200">{isMm ? 'ခန့်မှန်းရငွေ' : 'Running Value'}</span>
-            <DollarSign className="h-4 w-4 text-emerald-400" />
+            <span className="text-[11px] font-semibold text-purple-300">{isMm ? 'ခန့်မှန်းရငွေ' : 'Running Value'}</span>
+            <DollarSign className="h-4 w-4 text-purple-400" />
           </div>
-          <p className="mt-2 text-base font-black truncate">{formatMMK(metrics.totalRunningRevenue)}</p>
+          <p className="mt-2 text-base font-black text-purple-200 font-mono truncate">{formatMMK(metrics.totalRunningRevenue)}</p>
         </div>
       </div>
 
       {tabMode === 'rooms' ? (
         <>
           {/* Filter Bar */}
-          <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3.5 rounded-2xl border border-gray-200/80 shadow-xs">
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-[#0b0f19] p-4 rounded-2xl border border-slate-800 shadow-lg">
             {/* Status Pills */}
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap gap-2">
               {[
                 { id: 'all', label: isMm ? 'အားလုံး' : 'All Rooms' },
                 { id: 'available', label: isMm ? 'အားနေသည်' : 'Available' },
@@ -763,10 +763,10 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
                 <button
                   key={f.id}
                   onClick={() => setRoomFilter(f.id as RoomFilter)}
-                  className={`rounded-xl px-3 py-1.5 text-xs font-bold transition-all ${
+                  className={`rounded-xl px-4 py-2 text-xs font-bold transition-all min-h-[40px] ${
                     roomFilter === f.id
-                      ? 'bg-gray-900 text-white shadow-xs'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      ? 'bg-cyan-500 text-slate-950 font-extrabold shadow-lg neon-glow-cyan'
+                      : 'bg-[#111827] text-slate-300 border border-slate-800 hover:bg-slate-800 hover:text-white'
                   }`}
                 >
                   {f.label}
@@ -775,19 +775,19 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
             </div>
 
             {/* Search Input */}
-            <div className="relative flex-1 min-w-[220px] max-w-xs">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+            <div className="relative flex-1 min-w-[240px] max-w-xs">
+              <Search className="absolute left-3.5 top-3 h-4 w-4 text-slate-400" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 placeholder={isMm ? 'အခန်း၊ ဧည့်သည်၊ ဝန်ထမ်း ရှာရန်...' : 'Search room, customer, staff...'}
-                className="w-full rounded-xl border border-gray-200 bg-gray-50/80 pl-9 pr-3 py-1.5 text-xs text-gray-900 focus:border-emerald-600 focus:bg-white focus:outline-hidden"
+                className="w-full rounded-xl border border-slate-700 bg-[#111827] pl-10 pr-3 py-2 text-xs text-white placeholder-slate-400 focus:border-cyan-400 focus:outline-hidden"
               />
             </div>
           </div>
 
-          {/* Rooms Grid */}
+          {/* Rooms Grid - Responsive, Touch-friendly, High Contrast Neon */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {filteredRooms.map(room => {
               const activeSession = sessions.find(
@@ -807,74 +807,74 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
               // Progress percentage
               const progressPct = Math.min(100, Math.round((elapsedMins / Math.max(1, totalPlannedMins)) * 100));
 
-              let statusBadgeColor = 'bg-emerald-100 text-emerald-800 border-emerald-200';
+              let statusBadgeColor = 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30 neon-glow-cyan';
               let statusLabel = isMm ? 'အဆင်သင့်ရှိ' : 'Available';
 
               if (room.status === 'occupied' || activeSession) {
                 if (isOvertime) {
-                  statusBadgeColor = 'bg-rose-100 text-rose-900 border-rose-300 animate-pulse';
-                  statusLabel = isMm ? 'အချိန်လွန်နေသည်' : 'Overtime';
+                  statusBadgeColor = 'bg-pink-500/20 text-pink-300 border-pink-500/50 neon-glow-magenta animate-pulse';
+                  statusLabel = isMm ? 'အချိန်လွန်နေသည်' : 'OVERTIME';
                 } else if (activeSession?.status === 'extended') {
-                  statusBadgeColor = 'bg-purple-100 text-purple-900 border-purple-300';
-                  statusLabel = isMm ? 'အချိန်တိုးထားသည်' : 'Extended';
+                  statusBadgeColor = 'bg-purple-500/15 text-purple-300 border-purple-500/40';
+                  statusLabel = isMm ? 'အချိန်တိုးထားသည်' : 'EXTENDED';
                 } else {
-                  statusBadgeColor = 'bg-amber-100 text-amber-900 border-amber-300';
-                  statusLabel = isMm ? 'အသုံးပြုနေဆဲ' : 'In Service';
+                  statusBadgeColor = 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40';
+                  statusLabel = isMm ? 'အသုံးပြုနေဆဲ' : 'IN SERVICE';
                 }
               } else if (room.status === 'cleaning') {
-                statusBadgeColor = 'bg-blue-100 text-blue-800 border-blue-200';
-                statusLabel = isMm ? 'သန့်ရှင်းရေး' : 'Cleaning';
+                statusBadgeColor = 'bg-blue-500/15 text-blue-300 border-blue-500/40';
+                statusLabel = isMm ? 'သန့်ရှင်းရေး' : 'CLEANING';
               } else if (room.status === 'maintenance') {
-                statusBadgeColor = 'bg-gray-100 text-gray-700 border-gray-300';
-                statusLabel = isMm ? 'ပြင်ဆင်ဆဲ' : 'Maintenance';
+                statusBadgeColor = 'bg-slate-800 text-slate-400 border-slate-700';
+                statusLabel = isMm ? 'ပြင်ဆင်ဆဲ' : 'MAINTENANCE';
               }
 
               return (
                 <div
                   key={room.id}
-                  className={`flex flex-col justify-between rounded-3xl border bg-white p-4.5 shadow-xs transition-all hover:shadow-md ${
+                  className={`flex flex-col justify-between rounded-3xl border bg-[#0b0f19] p-5 shadow-xl transition-all hover:border-cyan-500/50 ${
                     room.status === 'occupied' || activeSession
                       ? isOvertime
-                        ? 'border-rose-300 ring-2 ring-rose-400/20'
-                        : 'border-amber-300 ring-2 ring-amber-400/20'
-                      : 'border-gray-200/90'
+                        ? 'border-pink-500/60 ring-2 ring-pink-500/20'
+                        : 'border-emerald-500/60 ring-2 ring-emerald-500/20'
+                      : 'border-slate-800'
                   }`}
                 >
                   <div>
                     {/* Header */}
-                    <div className="flex items-start justify-between gap-2 border-b border-gray-100 pb-3">
+                    <div className="flex items-start justify-between gap-2 border-b border-slate-800/80 pb-3">
                       <div>
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-cyan-400">
                           {room.type.replace('_', ' ')} {room.surchargeMMK ? `(+${formatMMK(room.surchargeMMK)})` : ''}
                         </span>
-                        <h3 className="text-base font-black text-gray-900">
+                        <h3 className="text-lg font-black text-white tracking-wide mt-0.5">
                           {isMm ? room.nameMm : room.name}
                         </h3>
                       </div>
                       <span
-                        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-bold ${statusBadgeColor}`}
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-black tracking-wider ${statusBadgeColor}`}
                       >
-                        <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                        <span className="h-2 w-2 rounded-full bg-current animate-ping" />
                         {statusLabel}
                       </span>
                     </div>
 
                     {/* Active Session Content */}
                     {activeSession && runningEstimate ? (
-                      <div className="mt-3 space-y-3">
+                      <div className="mt-4 space-y-3.5">
                         {/* Session code & Customer info */}
                         <div className="flex items-center justify-between">
                           <div className="min-w-0">
-                            <span className="text-[11px] font-mono font-bold text-gray-500">
+                            <span className="text-[11px] font-mono font-bold text-purple-400 bg-purple-950/50 px-2 py-0.5 rounded-md border border-purple-800/40">
                               {activeSession.sessionCode}
                             </span>
-                            <p className="truncate text-xs font-bold text-gray-900">
+                            <p className="truncate text-sm font-extrabold text-white mt-1">
                               {activeSession.customerName}
                             </p>
                           </div>
                           <button
                             onClick={() => setActiveSessionDetail(activeSession)}
-                            className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                            className="rounded-xl p-2 bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white transition-all min-h-[40px] min-w-[40px] flex items-center justify-center"
                             title="View Full Detail"
                           >
                             <Maximize2 className="h-4 w-4" />
@@ -882,34 +882,34 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
                         </div>
 
                         {/* Service Name & Extensions Badge */}
-                        <div className="rounded-xl bg-gray-50 p-2.5 border border-gray-100 space-y-1.5">
+                        <div className="rounded-2xl bg-[#111827] p-3.5 border border-slate-800 space-y-2">
                           <div className="flex items-center justify-between text-xs">
-                            <span className="font-bold text-gray-900 truncate">
+                            <span className="font-extrabold text-cyan-300 truncate">
                               {activeSession.serviceName}
                             </span>
-                            <span className="font-semibold text-gray-600">
+                            <span className="font-mono font-bold text-slate-300">
                               {totalPlannedMins}m
                             </span>
                           </div>
 
                           {/* Live Timer Progress Bar */}
-                          <div className="space-y-1">
-                            <div className="flex items-center justify-between text-[11px] font-medium text-gray-500">
-                              <span className="flex items-center gap-1 font-mono font-bold text-gray-800">
-                                <Clock className="h-3 w-3 text-emerald-600" />
-                                {elapsedMins} mins elapsed
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between text-xs font-semibold text-slate-300">
+                              <span className="flex items-center gap-1.5 font-mono font-bold text-emerald-400">
+                                <Clock className="h-3.5 w-3.5" />
+                                {elapsedMins}m elapsed
                               </span>
-                              <span className={isOvertime ? 'font-bold text-rose-600' : 'text-gray-500'}>
+                              <span className={isOvertime ? 'font-black text-pink-400 animate-pulse' : 'text-slate-400 font-mono'}>
                                 {isOvertime
                                   ? `+${runningEstimate.overtimeMinutes}m OT`
                                   : `${Math.max(0, totalPlannedMins - elapsedMins)}m left`}
                               </span>
                             </div>
-                            <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200">
+                            <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-800">
                               <div
                                 className={`h-full transition-all duration-500 ${
                                   isOvertime
-                                    ? 'bg-rose-500'
+                                    ? 'bg-pink-500 neon-glow-magenta'
                                     : progressPct > 80
                                     ? 'bg-amber-500'
                                     : 'bg-emerald-500'
@@ -921,10 +921,10 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
                         </div>
 
                         {/* Assigned Staff */}
-                        <div className="flex items-center justify-between text-xs text-gray-600">
-                          <div className="flex items-center gap-1 truncate">
-                            <UserCheck className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-                            <span className="truncate font-semibold">
+                        <div className="flex items-center justify-between text-xs text-slate-300">
+                          <div className="flex items-center gap-1.5 truncate">
+                            <UserCheck className="h-4 w-4 text-emerald-400 shrink-0" />
+                            <span className="truncate font-bold text-slate-200">
                               {activeSession.assignedStaff.map(s => s.staffName).join(', ')}
                             </span>
                           </div>
@@ -934,42 +934,42 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
                               setReassignStaffIds(activeSession.assignedStaff.map(s => s.staffId));
                               setReassignReason('');
                             }}
-                            className="text-[10px] font-bold text-emerald-700 hover:underline shrink-0"
+                            className="text-xs font-bold text-cyan-400 hover:underline shrink-0 px-2 py-1 bg-cyan-950/40 rounded-lg border border-cyan-800/40"
                           >
                             {isMm ? 'ဝန်ထမ်းပြောင်း' : 'Change'}
                           </button>
                         </div>
 
-                        {/* Running Estimate Live Bar */}
-                        <div className="flex items-center justify-between rounded-xl bg-emerald-50/80 px-2.5 py-1.5 border border-emerald-200/60 text-xs">
-                          <span className="font-semibold text-emerald-900">
+                        {/* Running Estimate Live Bar with High Contrast Large Typography */}
+                        <div className="flex items-center justify-between rounded-2xl bg-gradient-to-r from-emerald-950/80 to-[#111827] px-3.5 py-2.5 border border-emerald-500/30 text-xs">
+                          <span className="font-bold text-emerald-300">
                             {isMm ? 'လက်ရှိကျသင့်ငွေ:' : 'Running Total:'}
                           </span>
-                          <span className="font-black text-emerald-950">
+                          <span className="font-black text-emerald-400 text-sm font-mono tracking-wide">
                             {formatMMK(runningEstimate.totalEstimatedMMK)}
                           </span>
                         </div>
                       </div>
                     ) : (
-                      <div className="my-8 text-center text-xs text-gray-400">
+                      <div className="my-10 text-center text-xs text-slate-400">
                         {room.status === 'cleaning' ? (
-                          <div className="space-y-1">
-                            <Sparkles className="mx-auto h-6 w-6 text-blue-500" />
-                            <p className="font-semibold text-blue-700">
+                          <div className="space-y-2">
+                            <Sparkles className="mx-auto h-8 w-8 text-blue-400 animate-bounce" />
+                            <p className="font-bold text-blue-300 text-sm">
                               {isMm ? 'သန့်ရှင်းရေး ပြုလုပ်နေသည်' : 'Being cleaned / Sanitized'}
                             </p>
                           </div>
                         ) : room.status === 'maintenance' ? (
-                          <div className="space-y-1">
-                            <AlertCircle className="mx-auto h-6 w-6 text-gray-400" />
-                            <p className="font-semibold text-gray-600">
+                          <div className="space-y-2">
+                            <AlertCircle className="mx-auto h-8 w-8 text-slate-500" />
+                            <p className="font-bold text-slate-400 text-sm">
                               {isMm ? 'ပြုပြင်ထိန်းသိမ်းနေသည်' : 'Under Maintenance'}
                             </p>
                           </div>
                         ) : (
-                          <div className="space-y-1">
-                            <CheckCircle2 className="mx-auto h-6 w-6 text-emerald-500" />
-                            <p className="font-semibold text-gray-700">
+                          <div className="space-y-2">
+                            <CheckCircle2 className="mx-auto h-8 w-8 text-cyan-400" />
+                            <p className="font-bold text-cyan-300 text-sm">
                               {isMm ? 'ဧည့်သည် လက်ခံရန် အသင့်ရှိသည်' : 'Ready for Next Customer'}
                             </p>
                           </div>
@@ -978,11 +978,11 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
                     )}
                   </div>
 
-                  {/* Actions Footer */}
-                  <div className="mt-4 border-t border-gray-100 pt-3">
+                  {/* Actions Footer - Touch Friendly min-h-[48px] */}
+                  <div className="mt-5 border-t border-slate-800 pt-4">
                     {activeSession ? (
-                      <div className="space-y-2">
-                        <div className="grid grid-cols-2 gap-1.5">
+                      <div className="space-y-2.5">
+                        <div className="grid grid-cols-2 gap-2">
                           <button
                             onClick={() => {
                               setExtendSessionModal(activeSession);
@@ -990,27 +990,27 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
                               setExtendCustomPrice('');
                               setExtendReason('');
                             }}
-                            className="flex items-center justify-center gap-1 rounded-xl border border-purple-200 bg-purple-50 py-1.5 text-xs font-bold text-purple-800 hover:bg-purple-100"
+                            className="flex items-center justify-center gap-1.5 rounded-xl border border-purple-500/40 bg-purple-950/40 py-2.5 text-xs font-bold text-purple-300 hover:bg-purple-900/50 min-h-[44px]"
                             title="Extend session duration"
                           >
-                            <Plus className="h-3.5 w-3.5" />
+                            <Plus className="h-4 w-4" />
                             <span>{isMm ? 'အချိန်တိုး' : '+Extend'}</span>
                           </button>
 
                           <button
                             onClick={() => setOrderProductModalSession(activeSession)}
-                            className="flex items-center justify-center gap-1 rounded-xl border border-gray-200 bg-gray-50 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+                            className="flex items-center justify-center gap-1.5 rounded-xl border border-cyan-500/40 bg-cyan-950/40 py-2.5 text-xs font-bold text-cyan-300 hover:bg-cyan-900/50 min-h-[44px]"
                             title="Add food or drinks"
                           >
-                            <ShoppingBag className="h-3.5 w-3.5 text-emerald-600" />
+                            <ShoppingBag className="h-4 w-4" />
                             <span>{isMm ? 'အချိုရည်' : '+Order'}</span>
                           </button>
                         </div>
 
-                        <div className="flex gap-1.5">
+                        <div className="flex gap-2">
                           <button
                             onClick={() => handleOpenCheckout(activeSession)}
-                            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 py-2.5 text-xs font-black text-white shadow-xs hover:bg-emerald-700 active:bg-emerald-800"
+                            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 py-3 text-xs font-black text-white shadow-lg hover:brightness-110 active:scale-95 min-h-[48px]"
                           >
                             <Banknote className="h-4 w-4" />
                             <span>{isMm ? 'ငွေရှင်းမည်' : 'Checkout & Bill'}</span>
@@ -1021,7 +1021,7 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
                               setCancelSessionModal(activeSession);
                               setCancelReason('');
                             }}
-                            className="rounded-xl border border-gray-200 p-2 text-gray-400 hover:bg-rose-50 hover:text-rose-600"
+                            className="rounded-xl border border-slate-700 bg-slate-800 p-3 text-slate-400 hover:bg-pink-950/40 hover:text-pink-400 hover:border-pink-500/40 min-h-[48px] min-w-[48px] flex items-center justify-center"
                             title="Cancel Session"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -1031,7 +1031,7 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
                     ) : room.status === 'cleaning' ? (
                       <button
                         onClick={() => handleMarkReady(room.id)}
-                        className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-2.5 text-xs font-bold text-white hover:bg-blue-700 shadow-xs"
+                        className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-xs font-bold text-white hover:bg-blue-500 shadow-lg min-h-[48px]"
                       >
                         <Sparkles className="h-4 w-4" />
                         <span>{isMm ? 'သန့်ရှင်းရေးပြီးပြီ (အသင့်ဖွင့်မည်)' : 'Mark Ready / Available'}</span>
@@ -1039,7 +1039,7 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
                     ) : (
                       <button
                         onClick={() => handleOpenStart(room)}
-                        className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-gray-900 py-2.5 text-xs font-bold text-white hover:bg-black shadow-xs"
+                        className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-purple-600 py-3 text-xs font-black text-white shadow-lg neon-glow-cyan hover:brightness-110 active:scale-95 min-h-[48px]"
                       >
                         <Play className="h-4 w-4 fill-white" />
                         <span>{isMm ? 'ဧည့်သည် နေရာချမည်' : 'Check-in Customer'}</span>
@@ -1054,16 +1054,16 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
       ) : (
         /* HISTORY TAB */
         <div className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-gray-200/80 shadow-xs">
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-[#0b0f19] p-4 rounded-2xl border border-slate-800 shadow-lg">
             <div className="flex flex-wrap gap-2">
               {['all', 'completed', 'cancelled', 'voided'].map(st => (
                 <button
                   key={st}
                   onClick={() => setHistoryStatusFilter(st)}
-                  className={`rounded-xl px-3 py-1.5 text-xs font-bold capitalize transition-all ${
+                  className={`rounded-xl px-4 py-2 text-xs font-bold capitalize transition-all min-h-[40px] ${
                     historyStatusFilter === st
-                      ? 'bg-gray-900 text-white shadow-xs'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      ? 'bg-cyan-500 text-slate-950 font-extrabold shadow-lg neon-glow-cyan'
+                      : 'bg-[#111827] text-slate-300 border border-slate-800 hover:bg-slate-800 hover:text-white'
                   }`}
                 >
                   {st}
@@ -1072,32 +1072,32 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
             </div>
 
             <div className="relative min-w-[240px]">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+              <Search className="absolute left-3.5 top-3 h-4 w-4 text-slate-400" />
               <input
                 type="text"
                 value={historySearchQuery}
                 onChange={e => setHistorySearchQuery(e.target.value)}
                 placeholder={isMm ? 'ကုဒ်၊ ဧည့်သည်၊ အခန်း ရှာရန်...' : 'Search code, customer, room...'}
-                className="w-full rounded-xl border border-gray-200 bg-gray-50 pl-9 pr-3 py-1.5 text-xs text-gray-900 focus:outline-hidden"
+                className="w-full rounded-xl border border-slate-700 bg-[#111827] pl-10 pr-3 py-2 text-xs text-white placeholder-slate-400 focus:outline-hidden"
               />
             </div>
           </div>
 
-          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xs">
-            <table className="w-full text-left text-xs text-gray-700">
-              <thead className="border-b border-gray-200 bg-gray-50 text-[11px] font-bold text-gray-500 uppercase">
+          <div className="overflow-hidden rounded-2xl border border-slate-800 bg-[#0b0f19] shadow-lg">
+            <table className="w-full text-left text-xs text-slate-300">
+              <thead className="border-b border-slate-800 bg-[#111827] text-[11px] font-bold text-slate-400 uppercase">
                 <tr>
-                  <th className="px-4 py-3">{isMm ? 'ဆက်ရှင် ကုဒ်' : 'Code'}</th>
-                  <th className="px-4 py-3">{isMm ? 'အခန်း / နေရာ' : 'Room'}</th>
-                  <th className="px-4 py-3">{isMm ? 'ဧည့်သည်' : 'Customer'}</th>
-                  <th className="px-4 py-3">{isMm ? 'ဝန်ဆောင်မှု' : 'Service'}</th>
-                  <th className="px-4 py-3">{isMm ? 'ဝန်ထမ်း' : 'Staff'}</th>
-                  <th className="px-4 py-3">{isMm ? 'ကြာချိန်' : 'Duration'}</th>
-                  <th className="px-4 py-3">{isMm ? 'အခြေအနေ' : 'Status'}</th>
-                  <th className="px-4 py-3 text-right">{isMm ? 'လုပ်ဆောင်ချက်' : 'Actions'}</th>
+                  <th className="px-4 py-3.5">{isMm ? 'ဆက်ရှင် ကုဒ်' : 'Code'}</th>
+                  <th className="px-4 py-3.5">{isMm ? 'အခန်း / နေရာ' : 'Room'}</th>
+                  <th className="px-4 py-3.5">{isMm ? 'ဧည့်သည်' : 'Customer'}</th>
+                  <th className="px-4 py-3.5">{isMm ? 'ဝန်ဆောင်မှု' : 'Service'}</th>
+                  <th className="px-4 py-3.5">{isMm ? 'ဝန်ထမ်း' : 'Staff'}</th>
+                  <th className="px-4 py-3.5">{isMm ? 'ကြာချိန်' : 'Duration'}</th>
+                  <th className="px-4 py-3.5">{isMm ? 'အခြေအနေ' : 'Status'}</th>
+                  <th className="px-4 py-3.5 text-right">{isMm ? 'လုပ်ဆောင်ချက်' : 'Actions'}</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-slate-800/60">
                 {filteredHistorySessions.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="px-4 py-8 text-center text-xs text-gray-400">

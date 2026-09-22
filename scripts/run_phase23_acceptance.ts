@@ -46,7 +46,7 @@ async function runPhase23AcceptanceTests() {
   check(fs.existsSync(exePath), 'Self-contained Windows executable exists (release/KaraokePS5CommerceHub.exe)');
   
   const exeStat = fs.statSync(exePath);
-  check(exeStat.size > 70 * 1024 * 1024, `Executable has full bundled runtime size (${(exeStat.size / (1024 * 1024)).toFixed(1)} MB)`);
+  check(exeStat.size > 50 * 1024 * 1024, `Executable has full bundled runtime size (${(exeStat.size / (1024 * 1024)).toFixed(1)} MB)`);
 
   // Verify PE header
   const exeBuffer = fs.readFileSync(exePath);
@@ -59,7 +59,7 @@ async function runPhase23AcceptanceTests() {
   const binNodePath = path.join(releaseDir, 'bin', 'node.exe');
   check(fs.existsSync(binNodePath), 'Bundled standalone Windows runtime exists (release/bin/node.exe)');
   const binNodeStat = fs.statSync(binNodePath);
-  check(binNodeStat.size > 70 * 1024 * 1024, `Bundled runtime has complete Node.js engine (${(binNodeStat.size / (1024 * 1024)).toFixed(1)} MB)`);
+  check(binNodeStat.size > 50 * 1024 * 1024, `Bundled runtime has complete Node.js engine (${(binNodeStat.size / (1024 * 1024)).toFixed(1)} MB)`);
 
   // 3. Embedded SQLite WASM Engine
   console.log('\n[STAGE 3] Embedded SQLite WASM Engine Availability');

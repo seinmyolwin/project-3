@@ -35,6 +35,7 @@ import { Language } from './utils/translations';
 import { Navbar, ActiveTab } from './components/Navbar';
 import { PINModal } from './components/PINLoginModal';
 import { ReceiptModal } from './components/ReceiptModal';
+import { LANConnectionModal } from './components/LANConnectionModal';
 import { RoomsView } from './components/views/RoomsView';
 import { PosView } from './components/views/PosView';
 import { StaffView } from './components/views/StaffView';
@@ -80,6 +81,7 @@ export default function App() {
   // Active Session & User
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
   const [isPINModalOpen, setIsPINModalOpen] = useState<boolean>(false);
+  const [isLANModalOpen, setIsLANModalOpen] = useState<boolean>(false);
   const [activeInvoiceReceipt, setActiveInvoiceReceipt] = useState<Invoice | null>(null);
 
   // Load all tables from IndexedDB
@@ -190,13 +192,13 @@ export default function App() {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-900 text-white">
+      <div className="flex min-h-screen items-center justify-center bg-[#07090e] text-white">
         <div className="text-center space-y-3">
-          <div className="mx-auto h-12 w-12 rounded-2xl bg-amber-500 font-bold text-2xl flex items-center justify-center text-slate-950 animate-pulse">
+          <div className="mx-auto h-14 w-14 rounded-2xl bg-gradient-to-br from-cyan-500 to-purple-600 font-bold text-2xl flex items-center justify-center text-white shadow-lg neon-glow-cyan animate-pulse">
             ရွှေ
           </div>
-          <h2 className="text-lg font-bold">ရွှေသီရိ စီမံခန့်ခွဲမှုစနစ်ကို စတင်နေပါသည်...</h2>
-          <p className="text-xs text-slate-400">Loading offline IndexedDB database...</p>
+          <h2 className="text-lg font-bold tracking-wide text-cyan-300">ရွှေသီရိ စီမံခန့်ခွဲမှုစနစ်ကို စတင်နေပါသည်...</h2>
+          <p className="text-xs text-slate-400">Loading Neon Night POS & Offline DB...</p>
         </div>
       </div>
     );
@@ -214,7 +216,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-gray-900 flex flex-col font-sans selection:bg-emerald-500 selection:text-white">
+    <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col font-sans selection:bg-cyan-500 selection:text-white">
       {/* Top Navigation Bar */}
       <Navbar
         activeTab={activeTab}
@@ -224,6 +226,7 @@ export default function App() {
         lang={lang}
         onToggleLang={() => setLang(l => (l === 'my' ? 'en' : 'my'))}
         settings={settings}
+        onOpenLANModal={() => setIsLANModalOpen(true)}
       />
 
       {/* Main Content Viewport */}
@@ -298,6 +301,7 @@ export default function App() {
             staffLedger={staffLedger}
             settlements={settlements}
             creditLedger={creditLedger}
+            settings={settings}
             currentUser={effectiveUser}
             lang={lang}
             onRefresh={refreshData}
@@ -368,6 +372,12 @@ export default function App() {
           lang={lang}
         />
       )}
+
+      <LANConnectionModal
+        isOpen={isLANModalOpen}
+        onClose={() => setIsLANModalOpen(false)}
+        lang={lang}
+      />
     </div>
   );
 }
