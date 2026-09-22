@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Wifi, Copy, Check, QrCode, Smartphone, Server, Globe, ShieldCheck, X } from 'lucide-react';
+import { Wifi, Copy, Check, ShieldCheck, X } from 'lucide-react';
+import QRCode from 'qrcode';
 import { Language } from '../utils/translations';
 
 interface LANConnectionModalProps {
@@ -16,10 +17,24 @@ export const LANConnectionModal: React.FC<LANConnectionModalProps> = ({
   const isMm = lang === 'my';
   const [copied, setCopied] = useState(false);
   const [currentUrl, setCurrentUrl] = useState('');
+  const [qrDataUrl, setQrDataUrl] = useState<string>('');
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      setCurrentUrl(window.location.origin);
+      const url = window.location.origin;
+      setCurrentUrl(url);
+
+      // Generate local offline QR data URL
+      QRCode.toDataURL(url, {
+        width: 220,
+        margin: 1,
+        color: {
+          dark: '#06b6d4',
+          light: '#0b0f19',
+        },
+      })
+        .then(dataUrl => setQrDataUrl(dataUrl))
+        .catch(err => console.error('Error generating offline QR code:', err));
     }
   }, []);
 
@@ -30,11 +45,6 @@ export const LANConnectionModal: React.FC<LANConnectionModalProps> = ({
   };
 
   if (!isOpen) return null;
-
-  // Generate public QR code URL using api.qrserver.com
-  const qrCodeApiUrl = currentUrl
-    ? `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(currentUrl)}&color=06b6d4&bgcolor=0b0f19`
-    : '';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fadeIn">
@@ -65,17 +75,16 @@ export const LANConnectionModal: React.FC<LANConnectionModalProps> = ({
 
         {/* QR Code Center Display */}
         <div className="flex flex-col items-center justify-center bg-[#07090e] border border-cyan-500/30 rounded-2xl p-5 space-y-3">
-          <div className="bg-white p-3 rounded-2xl shadow-lg border-2 border-cyan-500">
-            {qrCodeApiUrl ? (
+          <div className="bg-[#0b0f19] p-3 rounded-2xl shadow-lg border-2 border-cyan-500">
+            {qrDataUrl ? (
               <img
-                src={qrCodeApiUrl}
+                src={qrDataUrl}
                 alt="LAN Connection QR Code"
-                className="h-44 w-44 object-contain"
-                referrerPolicy="no-referrer"
+                className="h-44 w-44 object-contain rounded-xl"
               />
             ) : (
               <div className="h-44 w-44 flex items-center justify-center bg-slate-900 text-cyan-400 text-xs font-mono">
-                Loading QR...
+                Generating Local QR...
               </div>
             )}
           </div>
@@ -121,4 +130,3 @@ export const LANConnectionModal: React.FC<LANConnectionModalProps> = ({
     </div>
   );
 };
-

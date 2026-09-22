@@ -68,6 +68,8 @@ import {
   MoneyMMK,
 } from '../domain/financial';
 
+import { hashPin } from '../utils/cryptoAuth';
+
 export class MyanmarBusinessDB extends Dexie {
   users!: Table<UserAccount, string>;
   rooms!: Table<Room, string>;
@@ -186,6 +188,36 @@ export class MyanmarBusinessDB extends Dexie {
       backupMetadata: 'id, backupCode, timestamp, schemaVersion, totalRecords',
       settings: 'id, businessId, branchId',
     });
+  }
+
+  /**
+   * Safe one-time migration: Converts legacy plaintext PINs to salted SHA-256 hashes at rest
+   * and removes plaintext pin properties from user database records.
+   */
+  public async migratePlaintextPinsToSaltedHashes(): Promise<number> {
+    const allUsers = await this.users.toArray();
+    let migratedCount = 0;
+
+    for (const user of allUsers) {
+      if (user.pin && (!user.pinHash || !user.pinSalt)) {
+        const { pinHash, pinSalt } = hashPin(user.pin);
+        const updatedUser: UserAccount = {
+          ...user,
+          pinHash,
+          pinSalt,
+        };
+        delete updatedUser.pin;
+        await this.users.put(updatedUser);
+        migratedCount++;
+      } else if (user.pin && user.pinHash && user.pinSalt) {
+        const updatedUser = { ...user };
+        delete updatedUser.pin;
+        await this.users.put(updatedUser);
+        migratedCount++;
+      }
+    }
+
+    return migratedCount;
   }
 
   // ==========================================

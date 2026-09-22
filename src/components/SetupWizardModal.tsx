@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { UserAccount, Room, StaffMember, ServiceItem, ProductItem, ShopSettings } from '../types';
+import { hashPin } from '../utils/cryptoAuth';
 import { Language } from '../utils/translations';
 import { db } from '../db/database';
 import { 
@@ -165,6 +166,11 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
   };
 
   const handleFinishSetup = async () => {
+    if (currentUser.role !== 'owner') {
+      setErrorMsg(isMm ? 'ဆိုင်ရှင် (Owner) သာလျှင် ဤ လုပ်ဆောင်ချက်ကို ပြုလုပ်ခွင့်ရှိပါသည်' : 'Only Shop Owner can perform Live Setup');
+      return;
+    }
+
     if (ownerPassword.trim() !== confirmPassword.trim()) {
       setErrorMsg(isMm ? 'စကားဝှက် နှစ်ခု မတူညီပါ' : 'Passwords do not match');
       return;
@@ -175,39 +181,22 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
       return;
     }
 
+    // Step 3 Confirmation warning
+    const confirmMsg = isMm
+      ? 'ဤလုပ်ဆောင်ချက်သည် ဆိုင်၏ ပင်မ မာစတာဒေတာများနှင့် ဆက်တင်များကို အသစ်အစားထိုးမည်ဖြစ်ပြီး လက်ရှိဒေတာများကို ထိခိုက်စေနိုင်ပါသည်။ ဆက်လက်ဆောင်ရွက်ရန် သေချာပါသလား?'
+      : 'This will replace business setup/master data. Existing data may be affected. Are you sure you want to proceed?';
+
+    if (!window.confirm(confirmMsg)) {
+      return;
+    }
+
     setIsSubmitting(true);
     setErrorMsg('');
 
     try {
-      // 1. Clear all previous demo records
-      await Promise.all([
-        db.users.clear(),
-        db.rooms.clear(),
-        db.diningTables.clear(),
-        db.staff.clear(),
-        db.staffTypes.clear(),
-        db.services.clear(),
-        db.serviceCategories.clear(),
-        db.products.clear(),
-        db.productCategories.clear(),
-        db.sessions.clear(),
-        db.invoices.clear(),
-        db.customers.clear(),
-        db.customerCreditLedger.clear(),
-        db.paymentMethods.clear(),
-        db.expenseCategoriesMaster.clear(),
-        db.commissionRulesMaster.clear(),
-        db.staffLedger.clear(),
-        db.staffSettlements.clear(),
-        db.expenses.clear(),
-        db.cashClosings.clear(),
-        db.auditLogs.clear(),
-        db.settings.clear(),
-      ]);
-
       const now = new Date().toISOString();
 
-      // 2. Build Shop Settings
+      // 1. Build & Validate Shop Settings
       const newSettings: ShopSettings = {
         id: 'settings_main',
         shopName: shopNameEn || 'Shwe Thiri Lounge',
@@ -224,18 +213,20 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
         currencySymbol: 'MMK',
       };
 
-      // 3. Build Owner User Account
+      // 2. Build Owner User Account
+      const { pinHash, pinSalt } = hashPin(ownerPassword.trim());
       const ownerUser: UserAccount = {
         id: 'usr_owner_' + Date.now(),
         name: 'Shop Owner (ဆိုင်ရှင်)',
         username: 'owner',
-        pin: ownerPassword.trim(),
+        pinHash,
+        pinSalt,
         role: 'owner',
         isActive: true,
         createdAt: now,
       };
 
-      // 4. Build Staff Types & Staff Members
+      // 3. Build Staff Types & Staff Members
       const defaultStaffTypes = [
         { id: 'stftype_therapist', name: 'Spa Therapist', commissionPercent: 15, isActive: true },
         { id: 'stftype_waiter', name: 'Waitress / Waiter', commissionPercent: 10, isActive: true },
@@ -255,7 +246,7 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
         joinedDate: now.split('T')[0],
       }));
 
-      // 5. Build Rooms & Dining Tables
+      // 4. Build Rooms & Dining Tables
       const parsedRooms = roomsList
         .filter(r => r.type !== 'dining_table')
         .map((rm, idx) => ({
@@ -284,7 +275,7 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
           isActive: true,
         }));
 
-      // 6. Build Service Categories & Services
+      // 5. Build Service Categories & Services
       const uniqueServiceCats = Array.from(new Set(servicesList.map(s => s.category.trim()))).filter(Boolean);
       const parsedServiceCats = uniqueServiceCats.map((catName, idx) => ({
         id: `srvcat_${idx}_${Date.now()}`,
@@ -308,7 +299,7 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
         };
       });
 
-      // 7. Build Product Categories & Products
+      // 6. Build Product Categories & Products
       const uniqueProdCats = Array.from(new Set(productsList.map(p => p.category.trim()))).filter(Boolean);
       const parsedProdCats = uniqueProdCats.map((catName, idx) => ({
         id: `prodcat_${idx}_${Date.now()}`,
@@ -334,7 +325,7 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
         };
       });
 
-      // 8. Payment Methods Master
+      // 7. Payment Methods Master
       const parsedPaymentMethods = paymentMethodsList.map((pm, idx) => ({
         id: `paym_${idx}_${Date.now()}`,
         name: pm,
@@ -343,7 +334,7 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
         isActive: true,
       }));
 
-      // 9. Default Expense Categories & Commission Rules
+      // 8. Default Expense Categories & Commission Rules
       const defaultExpenseCats = [
         { id: 'expcat_inventory', name: 'Inventory Purchases', nameMm: 'ကုန်ပစ္စည်း ဝယ်ယူစရိတ်', isActive: true },
         { id: 'expcat_utility', name: 'Utilities & Electricity', nameMm: 'လျှပ်စစ်နှင့် ရေဖိုး စရိတ်', isActive: true },
@@ -368,7 +359,7 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
         details: 'Configured live Master Data and launched production environment.',
       };
 
-      // 10. Atomic Transaction Write
+      // 9. ATOMIC TRANSACTION: Only clear tables inside transaction AFTER all validation passes
       await db.transaction('rw', [
         db.settings,
         db.users,
@@ -385,6 +376,22 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
         db.commissionRulesMaster,
         db.auditLogs,
       ], async () => {
+        // Clear inside transaction
+        await db.settings.clear();
+        await db.users.clear();
+        await db.rooms.clear();
+        await db.diningTables.clear();
+        await db.staff.clear();
+        await db.staffTypes.clear();
+        await db.services.clear();
+        await db.serviceCategories.clear();
+        await db.products.clear();
+        await db.productCategories.clear();
+        await db.paymentMethods.clear();
+        await db.expenseCategoriesMaster.clear();
+        await db.commissionRulesMaster.clear();
+
+        // Write validated new records
         await db.settings.put(newSettings);
         await db.users.add(ownerUser);
         if (defaultStaffTypes.length > 0) await db.staffTypes.bulkAdd(defaultStaffTypes as any);

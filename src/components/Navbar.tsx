@@ -22,6 +22,8 @@ import {
   Download,
 } from 'lucide-react';
 
+import { SyncState } from '../services/syncManager';
+
 export type ActiveTab =
   | 'rooms'
   | 'pos'
@@ -43,6 +45,8 @@ interface NavbarProps {
   onOpenSearchModal: () => void;
   onOpenSetupWizard: () => void;
   onOpenPWAModal?: () => void;
+  syncState?: SyncState;
+  syncMessage?: string;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -57,6 +61,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenSearchModal,
   onOpenSetupWizard,
   onOpenPWAModal,
+  syncState = 'LOCAL_ONLY',
+  syncMessage = '',
 }) => {
   const isMm = lang === 'my';
   const [imgSrc, setImgSrc] = useState<string>(logoImg);
@@ -110,11 +116,33 @@ export const Navbar: React.FC<NavbarProps> = ({
               </h1>
               <button
                 onClick={onOpenLANModal}
-                className="inline-flex items-center gap-1.5 rounded-full bg-cyan-500/15 px-3 py-1 text-xs font-bold text-cyan-300 border border-cyan-500/40 neon-glow-cyan hover:bg-cyan-500/25 active:scale-95 transition-all cursor-pointer min-h-[36px]"
-                title="Click to view LAN multi-device connection guide & server address"
+                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold border transition-all cursor-pointer min-h-[36px] ${
+                  syncState === 'ONLINE_LAN' || syncState === 'SYNCED'
+                    ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/25'
+                    : syncState === 'SYNCING' || syncState === 'CONNECTING'
+                    ? 'bg-blue-500/15 text-blue-300 border-blue-500/40 hover:bg-blue-500/25'
+                    : syncState === 'SYNC_PENDING'
+                    ? 'bg-amber-500/15 text-amber-300 border-amber-500/40 hover:bg-amber-500/25'
+                    : 'bg-cyan-500/15 text-cyan-300 border-cyan-500/40 hover:bg-cyan-500/25'
+                }`}
+                title={syncMessage || 'Click to view LAN multi-device connection guide & server address'}
               >
-                <Radio className="h-3.5 w-3.5 animate-pulse text-cyan-400" />
-                <span>Offline Connection</span>
+                <Radio className={`h-3.5 w-3.5 ${
+                  syncState === 'ONLINE_LAN' || syncState === 'SYNCED'
+                    ? 'animate-pulse text-emerald-400'
+                    : syncState === 'SYNCING'
+                    ? 'animate-spin text-blue-400'
+                    : 'animate-pulse text-cyan-400'
+                }`} />
+                <span>
+                  {syncState === 'ONLINE_LAN' || syncState === 'SYNCED'
+                    ? isMm ? 'LAN ဆာဗာ ချိတ်ဆက်ပြီး' : 'LAN Online'
+                    : syncState === 'SYNC_PENDING'
+                    ? isMm ? 'Sync စောင့်ဆိုင်းဆဲ' : 'Sync Pending'
+                    : syncState === 'SYNCING'
+                    ? isMm ? 'Sync လုပ်နေသည်...' : 'Syncing...'
+                    : isMm ? 'Local Offline' : 'Offline Mode'}
+                </span>
               </button>
               <button
                 onClick={onOpenSearchModal}
@@ -124,14 +152,16 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <Search className="h-3.5 w-3.5 text-purple-400" />
                 <span>{isMm ? 'အမြန်ရှာရန်' : 'Quick Search'}</span>
               </button>
-              <button
-                onClick={onOpenSetupWizard}
-                className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-cyan-500 px-3.5 py-1 text-xs font-black text-slate-950 border border-emerald-400/50 shadow-md hover:from-emerald-400 hover:to-cyan-400 active:scale-95 transition-all cursor-pointer min-h-[36px]"
-                title="Step-by-step Setup Wizard & Clear Demo Data"
-              >
-                <Sparkles className="h-3.5 w-3.5 text-slate-950 animate-bounce" />
-                <span>{isMm ? 'စတင်အသုံးပြုရန်' : 'Setup Wizard'}</span>
-              </button>
+              {currentUser?.role === 'owner' && (
+                <button
+                  onClick={onOpenSetupWizard}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-cyan-500 px-3.5 py-1 text-xs font-black text-slate-950 border border-emerald-400/50 shadow-md hover:from-emerald-400 hover:to-cyan-400 active:scale-95 transition-all cursor-pointer min-h-[36px]"
+                  title="Step-by-step Setup Wizard & Setup Data"
+                >
+                  <Sparkles className="h-3.5 w-3.5 text-slate-950 animate-bounce" />
+                  <span>{isMm ? 'စတင်အသုံးပြုရန်' : 'Setup Wizard'}</span>
+                </button>
+              )}
               {onOpenPWAModal && (
                 <button
                   onClick={onOpenPWAModal}

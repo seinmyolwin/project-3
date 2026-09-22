@@ -7,6 +7,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { db } from './db/database';
 import { seedDatabaseIfEmpty } from './db/seedData';
+import { hashPin } from './utils/cryptoAuth';
 import {
   Room,
   SessionRecord,
@@ -39,6 +40,8 @@ import { LANConnectionModal } from './components/LANConnectionModal';
 import { GlobalSearchModal } from './components/GlobalSearchModal';
 import { SetupWizardModal } from './components/SetupWizardModal';
 import { PWAInstallModal } from './components/PWAInstallModal';
+import { syncManager, SyncState } from './services/syncManager';
+import { realtimeClient } from './services/realtimeClient';
 import { RoomsView } from './components/views/RoomsView';
 import { PosView } from './components/views/PosView';
 import { StaffView } from './components/views/StaffView';
@@ -88,6 +91,10 @@ export default function App() {
   const [isSetupWizardOpen, setIsSetupWizardOpen] = useState<boolean>(false);
   const [isPWAModalOpen, setIsPWAModalOpen] = useState<boolean>(false);
   const [activeInvoiceReceipt, setActiveInvoiceReceipt] = useState<Invoice | null>(null);
+
+  // Sync Transport State
+  const [syncState, setSyncState] = useState<SyncState>('LOCAL_ONLY');
+  const [syncMessage, setSyncMessage] = useState<string>('');
 
   // Load all tables from IndexedDB
   const refreshData = useCallback(async () => {
@@ -173,13 +180,14 @@ export default function App() {
     }
   }, []);
 
-  // Initial App Mount
+  // Initial App Mount & Sync Transport Wiring
   useEffect(() => {
     let isMounted = true;
     async function init() {
       setIsLoading(true);
       try {
         await seedDatabaseIfEmpty();
+        await db.migratePlaintextPinsToSaltedHashes();
         await refreshData();
       } catch (err) {
         console.error('Error during initial mount:', err);
@@ -190,8 +198,30 @@ export default function App() {
       }
     }
     init();
+
+    // Start Sync Transport Manager
+    syncManager.start();
+
+    // Sync State Listener
+    const unsubscribeState = syncManager.onStateChange((state, details) => {
+      if (isMounted) {
+        setSyncState(state);
+        setSyncMessage(details?.message || '');
+      }
+    });
+
+    // Realtime Events Listener for Multi-device Instant UI Refresh
+    const unsubscribeRealtime = realtimeClient.onEvent(() => {
+      if (isMounted) {
+        refreshData();
+      }
+    });
+
     return () => {
       isMounted = false;
+      unsubscribeState();
+      unsubscribeRealtime();
+      syncManager.stop();
     };
   }, [refreshData]);
 
@@ -209,13 +239,15 @@ export default function App() {
     );
   }
 
+  const fallbackHash = hashPin('0000', 'salt_fallback_cashier');
   // Active authenticated user fallback
   const effectiveUser: UserAccount = currentUser || {
     id: 'usr_cashier',
     name: 'Daw Khin Khin (ငွေကိုင်)',
     username: 'daw_khin_khin',
     role: 'cashier',
-    pin: '0000',
+    pinHash: fallbackHash.pinHash,
+    pinSalt: fallbackHash.pinSalt,
     isActive: true,
     createdAt: '2026-01-01T00:00:00.000Z',
   };
@@ -233,8 +265,16 @@ export default function App() {
         settings={settings}
         onOpenLANModal={() => setIsLANModalOpen(true)}
         onOpenSearchModal={() => setIsSearchModalOpen(true)}
-        onOpenSetupWizard={() => setIsSetupWizardOpen(true)}
+        onOpenSetupWizard={() => {
+          if (effectiveUser.role !== 'owner') {
+            alert(lang === 'my' ? 'ဆိုင်ရှင် (Owner) သာလျှင် စနစ်ပြင်ဆင်ခြင်း ပြုလုပ်နိုင်ပါသည်' : 'Only Shop Owner can access Setup Wizard');
+            return;
+          }
+          setIsSetupWizardOpen(true);
+        }}
         onOpenPWAModal={() => setIsPWAModalOpen(true)}
+        syncState={syncState}
+        syncMessage={syncMessage}
       />
 
       {/* Main Content Viewport */}

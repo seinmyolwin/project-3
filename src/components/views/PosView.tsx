@@ -57,6 +57,8 @@ import {
   Percent,
 } from 'lucide-react';
 
+import { verifyPin } from '../../utils/cryptoAuth';
+
 interface PosViewProps {
   products: ProductItem[];
   services?: ServiceItem[];
@@ -382,8 +384,9 @@ export const PosView: React.FC<PosViewProps> = ({
       setDiscountAuthError('');
       return;
     }
-    // Check manager PIN from currentUser or default '9999' / '1234'
-    if (discountPin === '9999' || discountPin === '1234' || discountPin === currentUser.pin) {
+    // Check manager/user PIN securely using salted hash verification
+    const isValidPin = verifyPin(discountPin, currentUser.pinHash, currentUser.pinSalt, currentUser.pin);
+    if (isValidPin) {
       setIsDiscountAuthorized(true);
       setShowDiscountPinModal(false);
       setDiscountAuthError('');
@@ -690,7 +693,8 @@ export const PosView: React.FC<PosViewProps> = ({
     }
 
     if (settings?.requirePinForVoid && currentUser.role === 'cashier') {
-      if (voidPin !== '9999' && voidPin !== '1234' && voidPin !== currentUser.pin) {
+      const isValidVoidPin = verifyPin(voidPin, currentUser.pinHash, currentUser.pinSalt, currentUser.pin);
+      if (!isValidVoidPin) {
         setVoidError(isMm ? 'မန်နေဂျာ PIN မှားယွင်းနေပါသည်' : 'Invalid Manager PIN');
         return;
       }

@@ -37,6 +37,8 @@ import {
 import { seedForceDemoData } from '../../db/seedData';
 import { MasterDataView } from './MasterDataView';
 
+import { verifyPin, hashPin } from '../../utils/cryptoAuth';
+
 interface SettingsAuditViewProps {
   users: UserAccount[];
   auditLogs: AuditLog[];
@@ -165,10 +167,15 @@ export const SettingsAuditView: React.FC<SettingsAuditViewProps> = ({
 
   // Reset to Demo Data
   const handleResetDemoData = async () => {
+    if (currentUser.role !== 'owner') {
+      alert(isMm ? 'ဆိုင်ရှင် (Owner) သာလျှင် ဤ လုပ်ဆောင်ချက်ကို ပြုလုပ်ခွင့်ရှိပါသည်' : 'Only Shop Owner can perform Demo Reset');
+      return;
+    }
+
     const confirm = window.confirm(
       isMm
-        ? 'သရုပ်ပြ စမ်းသပ်ဒေတာများ ပြန်လည်ဖြည့်သွင်းရန် သေချာပါသလား?'
-        : 'Reset and populate sample demo data? This will clear current tables.'
+        ? 'သတိပေးချက်: သရုပ်ပြစမ်းသပ်ဒေတာ ပြန်လည်ဖြည့်သွင်းခြင်းသည် လက်ရှိဒေတာများအားလုံးကို ဖျက်ဆီးမည် ဖြစ်ပါသည်။ အမှန်တကယ် ဆက်လက်လုပ်ဆောင်လိုပါသလား?'
+        : 'WARNING: Resetting demo data will clear all business data and restore default sample data. Existing data will be lost. Are you sure you want to proceed?'
     );
     if (!confirm) return;
 
@@ -214,12 +221,14 @@ export const SettingsAuditView: React.FC<SettingsAuditViewProps> = ({
     }
 
     try {
+      const { pinHash, pinSalt } = hashPin(newUserPin.trim());
       const newUser: UserAccount = {
         id: 'usr_' + Date.now(),
         name: newUserName.trim(),
         username: newUserName.toLowerCase().replace(/\s+/g, '_'),
         role: newUserRole,
-        pin: newUserPin.trim(),
+        pinHash,
+        pinSalt,
         isActive: true,
         createdAt: new Date().toISOString(),
       };
@@ -412,8 +421,10 @@ export const SettingsAuditView: React.FC<SettingsAuditViewProps> = ({
                 </div>
 
                 <div className="rounded-xl bg-gray-50 p-2 text-xs text-gray-600 flex justify-between items-center border border-gray-100">
-                  <span>Current PIN:</span>
-                  <span className="font-mono font-bold tracking-widest text-gray-900">{u.pin}</span>
+                  <span>Authentication:</span>
+                  <span className="font-mono font-bold tracking-widest text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                    •••••• (Salted Hash)
+                  </span>
                 </div>
               </div>
             ))}
@@ -495,14 +506,16 @@ export const SettingsAuditView: React.FC<SettingsAuditViewProps> = ({
               >
                 {isMm ? 'အတည်ပြု ပြန်သွင်းမည်' : 'Execute Restore'}
               </button>
-              <button
-                type="button"
-                onClick={handleResetDemoData}
-                className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 text-xs font-semibold text-gray-600 hover:bg-gray-100"
-                title="Reset to fresh demo sample data"
-              >
-                <RefreshCw className="h-4 w-4" />
-              </button>
+              {currentUser.role === 'owner' && (
+                <button
+                  type="button"
+                  onClick={handleResetDemoData}
+                  className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 text-xs font-semibold text-gray-600 hover:bg-gray-100"
+                  title="Reset to fresh demo sample data (Owner Only)"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                </button>
+              )}
             </div>
           </div>
         </div>

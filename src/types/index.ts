@@ -10,7 +10,9 @@ export interface UserAccount {
   id: string;
   name: string;
   username: string;
-  pin: string; // 4-6 digit offline PIN
+  pin?: string; // Legacy plaintext PIN (deprecated, removed after migration)
+  pinHash?: string; // Salted SHA-256 hash at rest
+  pinSalt?: string; // Unique cryptographic salt
   role: UserRole;
   isActive: boolean;
   createdAt: string;

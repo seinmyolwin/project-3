@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { UserAccount } from '../types';
 import { Lock, Delete, X, Check, ShieldCheck } from 'lucide-react';
+import { verifyPin } from '../utils/cryptoAuth';
 
 interface PINModalProps {
   users: UserAccount[];
@@ -47,15 +48,16 @@ export const PINModal: React.FC<PINModalProps> = ({
 
   const handleSubmit = () => {
     if (!selectedUser) {
-      setError('Please select a user');
+      setError('Invalid PIN or account selection');
       return;
     }
-    if (selectedUser.pin === pin) {
+    const isValid = verifyPin(pin, selectedUser.pinHash, selectedUser.pinSalt, selectedUser.pin);
+    if (isValid) {
       onSelectUser(selectedUser);
       if (onSuccess) onSuccess();
       onClose();
     } else {
-      setError('Incorrect PIN. Please try again.');
+      setError('Invalid authentication credential. Please try again.');
       setPin('');
     }
   };

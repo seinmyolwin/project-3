@@ -4,6 +4,7 @@
  */
 
 import { db } from './database';
+import { hashPin } from '../utils/cryptoAuth';
 import {
   UserAccount,
   Room,
@@ -66,13 +67,18 @@ async function internalSeedDatabaseIfEmpty(): Promise<void> {
     currencySymbol: 'MMK',
   };
 
-  // 2. Users (Offline PINs)
+  // 2. Users (Salted SHA-256 PIN Hashes)
+  const ownerHash = hashPin('1234', 'salt_owner_init');
+  const managerHash = hashPin('5678', 'salt_manager_init');
+  const cashierHash = hashPin('0000', 'salt_cashier_init');
+
   const defaultUsers: UserAccount[] = [
     {
       id: 'usr_owner',
       name: 'U Zaw Min (ဦးဇော်မင်း - ဆိုင်ရှင်)',
       username: 'owner',
-      pin: '1234',
+      pinHash: ownerHash.pinHash,
+      pinSalt: ownerHash.pinSalt,
       role: 'owner',
       isActive: true,
       createdAt: now,
@@ -81,7 +87,8 @@ async function internalSeedDatabaseIfEmpty(): Promise<void> {
       id: 'usr_manager',
       name: 'Daw Sandar (ဒေါ်စန္ဒာ - မန်နေဂျာ)',
       username: 'manager',
-      pin: '5678',
+      pinHash: managerHash.pinHash,
+      pinSalt: managerHash.pinSalt,
       role: 'manager',
       isActive: true,
       createdAt: now,
@@ -90,7 +97,8 @@ async function internalSeedDatabaseIfEmpty(): Promise<void> {
       id: 'usr_cashier',
       name: 'Maung Kyaw (မောင်ကျော် - ငွေကိုင်)',
       username: 'cashier',
-      pin: '0000',
+      pinHash: cashierHash.pinHash,
+      pinSalt: cashierHash.pinSalt,
       role: 'cashier',
       isActive: true,
       createdAt: now,

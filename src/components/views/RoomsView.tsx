@@ -16,6 +16,7 @@ import {
   SessionPricingRuleType,
 } from '../../types';
 import { db } from '../../db/database';
+import { syncManager } from '../../services/syncManager';
 import {
   formatMMK,
   calculateDurationMinutes,
@@ -239,7 +240,7 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
     });
 
     try {
-      await db.startSessionTransaction({
+      const sessionParams = {
         session: {
           roomId: room.id,
           roomName: isMm ? room.nameMm : room.name,
@@ -261,13 +262,26 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
           plannedDurationMinutes: plannedDurationMinutes || service.durationMinutes,
           actualDurationMinutes: 0,
           startTime: new Date().toISOString(),
-          status: 'active',
+          status: 'active' as const,
           assignedStaff,
           extensions: [],
           orderItems: [],
           notes: sessionNotes.trim() || undefined,
         },
         currentUser,
+      };
+
+      await syncManager.executeFinancialMutation({
+        operationType: 'SESSION_START',
+        entityType: 'SESSION',
+        payload: {
+          roomId: room.id,
+          customerName: sessionParams.session.customerName,
+          hourlyRateMMK: room.hourlyRateMMK || 0,
+        },
+        localFallbackFn: async () => {
+          return db.startSessionTransaction(sessionParams);
+        },
       });
 
       setIsStartModalOpen(false);
@@ -544,14 +558,35 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
         });
       }
 
-      const result = await db.checkoutSessionTransaction({
+      const checkoutParams = {
         sessionId: checkoutSession.id,
         actualDurationMinutes: actualDuration,
         payments,
         discountType,
         discountValue,
         currentUser,
+      };
+
+      let result: any = null;
+      await syncManager.executeFinancialMutation({
+        operationType: 'SESSION_END',
+        entityType: 'SESSION',
+        entityId: checkoutSession.id,
+        payload: {
+          sessionId: checkoutSession.id,
+          roomId: checkoutSession.roomId,
+          totalFeeMMK: invTotals.totalMMK,
+        },
+        localFallbackFn: async () => {
+          const res = await db.checkoutSessionTransaction(checkoutParams);
+          result = res;
+          return res;
+        },
       });
+
+      if (!result) {
+        result = await db.invoices.where('sessionId').equals(checkoutSession.id).first();
+      }
 
       setCheckoutSession(null);
       onRefresh();
@@ -840,38 +875,17 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
                       : 'border-slate-800'
                   }`}
                 >
-                  {/* Background Video for Occupied Rooms based on Room Type */}
+                  {/* Background Ambient Visual for Occupied Rooms based on Room Type (100% Offline) */}
                   {activeSession && (
-                    <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none opacity-60">
+                    <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none opacity-40">
                       {room.type.includes('ktv') ? (
-                        <video
-                          autoPlay
-                          loop
-                          muted
-                          playsInline
-                          className="w-full h-full object-cover scale-110 filter contrast-125 saturate-150"
-                          src="https://assets.mixkit.co/videos/preview/mixkit-disc-jockey-working-in-a-nightclub-41315-large.mp4"
-                        />
+                        <div className="w-full h-full bg-gradient-to-br from-purple-900/60 via-pink-900/40 to-cyan-900/60 animate-pulse duration-1000" />
                       ) : room.type.includes('massage') || room.type.includes('spa') ? (
-                        <video
-                          autoPlay
-                          loop
-                          muted
-                          playsInline
-                          className="w-full h-full object-cover scale-110 filter brightness-90 contrast-110"
-                          src="https://assets.mixkit.co/videos/preview/mixkit-hands-massaging-a-person-s-back-42998-large.mp4"
-                        />
+                        <div className="w-full h-full bg-gradient-to-br from-emerald-900/50 via-teal-900/40 to-cyan-950/60 animate-pulse duration-3000" />
                       ) : (
-                        <video
-                          autoPlay
-                          loop
-                          muted
-                          playsInline
-                          className="w-full h-full object-cover scale-110 filter brightness-90"
-                          src="https://assets.mixkit.co/videos/preview/mixkit-abstract-laser-lights-background-41484-large.mp4"
-                        />
+                        <div className="w-full h-full bg-gradient-to-br from-cyan-900/60 via-indigo-900/40 to-purple-950/60 animate-pulse duration-2000" />
                       )}
-                      <div className="absolute inset-0 bg-gradient-to-t from-[#0b0f19] via-[#0b0f19]/50 to-[#0b0f19]/30" />
+                      <div className="absolute inset-0 bg-gradient-to-t from-[#0b0f19] via-[#0b0f19]/60 to-[#0b0f19]/30" />
                     </div>
                   )}
 
