@@ -4,6 +4,10 @@
  * Floating point arithmetic for currency is strictly prohibited.
  */
 
+export const APP_VERSION = '1.0.0';
+export const APP_BUILD_DATE = '2026-09-22';
+export const UPDATE_MODE = 'Local package update (Offline-first)';
+
 export type UserRole = 'owner' | 'manager' | 'cashier' | 'receptionist' | 'admin';
 
 export interface UserAccount {
@@ -205,6 +209,7 @@ export interface SessionRecord {
   voidReason?: string;
   startedAt?: string;
   completedAt?: string;
+  finalTotalMMK?: number;
   createdAt: string;
   updatedAt: string;
 }

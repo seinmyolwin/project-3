@@ -243,6 +243,22 @@ export class SyncManager {
               });
             }
           }
+          if (payload.session) {
+            await db.sessions.put(payload.session);
+          }
+          break;
+        }
+
+        case 'SESSION_UPDATED': {
+          if (payload.session) {
+            await db.sessions.put(payload.session);
+          }
+          if (payload.roomId && payload.status) {
+            await db.rooms.update(payload.roomId, {
+              status: payload.status,
+              currentSessionId: payload.sessionId,
+            });
+          }
           break;
         }
 
@@ -255,6 +271,72 @@ export class SyncManager {
                 currentSessionId: undefined,
               });
             }
+          }
+          if (payload.sessionId && payload.endTime) {
+            const sess = await db.sessions.get(payload.sessionId);
+            if (sess) {
+              await db.sessions.update(payload.sessionId, {
+                status: 'completed',
+                endTime: payload.endTime,
+                finalTotalMMK: payload.finalTotalMMK ?? sess.finalTotalMMK,
+              });
+            }
+          }
+          break;
+        }
+
+        case 'ROOM_STATUS_CHANGED': {
+          if (payload.roomId && payload.status) {
+            await db.rooms.update(payload.roomId, {
+              status: payload.status,
+              currentSessionId: payload.currentSessionId,
+            });
+          }
+          break;
+        }
+
+        case 'PAYMENT_CREATED':
+        case 'INVOICE_UPDATED': {
+          if (payload.invoice) {
+            await db.invoices.put(payload.invoice);
+          }
+          if (payload.sale) {
+            await db.sales.put(payload.sale);
+          }
+          if (payload.cashTransaction) {
+            await db.cashTransactions.put(payload.cashTransaction);
+          }
+          break;
+        }
+
+        case 'EXPENSE_CREATED': {
+          if (payload.expense) {
+            await db.expenses.put(payload.expense);
+          }
+          if (payload.cashTransaction) {
+            await db.cashTransactions.put(payload.cashTransaction);
+          }
+          break;
+        }
+
+        case 'CUSTOMER_CREDIT_CREATED':
+        case 'CUSTOMER_PAYMENT_CREATED':
+        case 'CUSTOMER_BALANCE_UPDATED': {
+          if (payload.customer) {
+            await db.customers.put(payload.customer);
+          }
+          if (payload.customerLedgerEntry) {
+            await db.customerLedger.put(payload.customerLedgerEntry);
+          }
+          if (payload.customerCreditLedger) {
+            await db.customerCreditLedger.put(payload.customerCreditLedger);
+          }
+          break;
+        }
+
+        case 'CASH_CLOSING_CREATED': {
+          if (payload.cashClosing) {
+            await db.cashClosings.put(payload.cashClosing);
           }
           break;
         }

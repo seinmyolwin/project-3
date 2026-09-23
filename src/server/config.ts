@@ -92,7 +92,7 @@ export function getRuntimeConfig(): ServerRuntimeConfig {
     configDir,
     distPath,
     appVersion: '1.0.0',
-    appName: 'Karaoke & PS5 Commerce Hub',
+    appName: 'Shwe Thiri Spa & KTV ERP',
     isPackaged: Boolean(process.env.IS_PACKAGED || (process as any).pkg),
   };
 }

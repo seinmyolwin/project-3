@@ -1,4 +1,4 @@
-# Karaoke & PS5 Commerce Hub — Standalone Local Shop Deployment
+# Shwe Thiri Spa & KTV ERP — Standalone Local Shop Deployment
 
 ## Architecture
 ```
@@ -8,7 +8,7 @@
             |                                               |
    PRIMARY SHOP HOST                               SECONDARY LAN CLIENTS
    (Windows PC / POS Station)                      (Cashier Tablet, Mobile, Laptop)
-   - Runs KaraokePS5CommerceHub.exe                - Opens http://<HOST_IP>:3000
+   - Runs ShweThiriERP.exe                         - Opens http://<HOST_IP>:3000
    - Authoritative ACID SQLite DB                  - Real-time WebSocket updates
    - Full Static SPA Frontend                      - Dexie Offline Fallback
    - Automated Local Backups
@@ -18,12 +18,13 @@
 
 ## 1. Quick Start on Windows Host Machine (Zero Prerequisites)
 
-1. **Zero Software Prerequisites:** You do **NOT** need to install Node.js, npm, or any external software.
-2. **Launch Options:**
-   - **Option A (Direct Executable):** Double-click `KaraokePS5CommerceHub.exe`.
+1. **Zero Software Prerequisites:** End users do **NOT** need to install Node.js or any external software to run the standalone executable.
+2. **Developers / Admins:** Use standard `npm` commands (`npm run dev`, `npm run build`, `npm run test`, `npm run package`).
+3. **Launch Options:**
+   - **Option A (Direct Executable):** Double-click `ShweThiriERP.exe` (or `KaraokePS5CommerceHub.exe`).
    - **Option B (Launcher Script):** Double-click `start-shop-hub.bat` (automatically launches the browser).
-3. The server starts immediately and opens `http://localhost:3000` in your default web browser.
-4. **Connecting Secondary LAN Devices (Tablets / Phones):**
+4. The server starts immediately and opens `http://localhost:3000` in your default web browser.
+5. **Connecting Secondary LAN Devices (Tablets / Phones):**
    - Note the host PC's local IP address printed in the console (e.g., `http://192.168.1.50:3000`).
    - Open that URL in any browser on devices connected to the shop's Wi-Fi network.
    - Pair devices via the POS pairing code screen.
@@ -34,7 +35,7 @@
 
 ```
 [Application Directory]
-├── KaraokePS5CommerceHub.exe  <-- Standalone Single Executable Application (Zero-Install)
+├── ShweThiriERP.exe           <-- Standalone Single Executable Application (Zero-Install)
 ├── start-shop-hub.bat         <-- Windows launcher with auto-browser launch
 ├── bin/                       <-- Bundled fallback runtime & WASM assets
 │   ├── node.exe
@@ -58,9 +59,9 @@
 
 When upgrading to a new software release:
 1. Stop the application (press `Ctrl + C` in the console window or close the launcher).
-2. Replace `KaraokePS5CommerceHub.exe`, `dist/`, and `bin/` with the new release files.
+2. Replace `ShweThiriERP.exe`, `dist/`, and `bin/` with the new release files.
 3. **DO NOT delete or touch the `data/` folder.**
-4. Launch `KaraokePS5CommerceHub.exe` or `start-shop-hub.bat`.
+4. Launch `ShweThiriERP.exe` or `start-shop-hub.bat`.
    - Database migrations run automatically and idempotently on startup.
    - All past orders, rooms, tables, financial transactions, and inventory remain 100% intact.
 
@@ -79,3 +80,4 @@ When upgrading to a new software release:
 * Operates with **zero internet connection**.
 * Zero external APIs, zero third-party telemetry, zero cloud dependencies.
 * All financial transactions and stock movements are written directly with ACID atomicity to the local disk.
+

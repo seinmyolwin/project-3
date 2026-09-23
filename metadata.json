@@ -1,6 +1,6 @@
 {
-  "name": "Shwe Thiri - Myanmar Business & Accounting ERP",
-  "description": "100% offline production ERP for Myanmar massage, spa, KTV & service businesses. Complete Master Data management, session tracking, staff commissions, billing, inventory, cash closing, and financial ledger.",
+  "name": "Shwe Thiri Spa & KTV ERP",
+  "description": "100% offline production ERP for Myanmar massage, spa, KTV & service businesses. Master data management, session tracking, staff commissions, billing, inventory, cash closing, and financial ledger.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

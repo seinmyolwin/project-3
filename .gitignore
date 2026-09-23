@@ -6,3 +6,28 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# SQLite & Runtime Data Hygiene
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+*.db
+*.db-journal
+data/*.sqlite*
+data/test_env/
+data/phase23-runtime/
+data/test_ws_*
+data/backups/*.sqlite*
+data/logs/*.log
+release/data/*.sqlite*
+
+# Keep structure only
+!data/.gitkeep
+!data/backups/.gitkeep
+!data/logs/.gitkeep
+!release/data/.gitkeep
+!release/data/backups/.gitkeep
+!release/data/logs/.gitkeep
+

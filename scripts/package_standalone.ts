@@ -71,7 +71,8 @@ function packagePhase23Standalone() {
   // 5. Generate SEA blob & Inject into KaraokePS5CommerceHub.exe
   const seaConfigFile = path.join(rootDir, 'sea-config.json');
   const seaBlobFile = path.join(distDir, 'sea-prep.blob');
-  const targetExe = path.join(releaseDir, 'KaraokePS5CommerceHub.exe');
+  const targetExe = path.join(releaseDir, 'ShweThiriERP.exe');
+  const targetExeLegacy = path.join(releaseDir, 'KaraokePS5CommerceHub.exe');
   const localNodeExe = path.join(binDir, 'node.exe');
 
   console.log('[BUILD] Generating robust Windows x64 self-contained standalone executable bundle...');
@@ -85,8 +86,9 @@ function packagePhase23Standalone() {
   exeBuffer.write('NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2:1', 2000);
 
   fs.writeFileSync(targetExe, exeBuffer);
+  fs.writeFileSync(targetExeLegacy, exeBuffer);
   fs.writeFileSync(localNodeExe, exeBuffer);
-  console.log('✓ Self-contained KaraokePS5CommerceHub.exe successfully generated.');
+  console.log('✓ Self-contained ShweThiriERP.exe successfully generated.');
 
   // 6. Bundle Zero-Install Windows Runtime (bin/node.exe)
   if (fs.existsSync(localNodeExe)) {
@@ -116,20 +118,20 @@ function packagePhase23Standalone() {
 
   // 9. Write production release manifest
   const prodPkg = {
-    name: 'karaoke-ps5-commerce-hub',
+    name: 'shwe-thiri-erp',
     version: '1.0.0',
-    description: '100% Offline Self-Contained Standalone Local Shop Server & POS Hub',
+    description: '100% Offline Self-Contained Standalone Local Shop Server & POS Hub for Myanmar Spa & KTV',
     main: 'dist/server.cjs',
-    executable: 'KaraokePS5CommerceHub.exe',
+    executable: 'ShweThiriERP.exe',
     scripts: {
-      start: 'KaraokePS5CommerceHub.exe',
+      start: 'node dist/server.cjs',
     },
   };
   fs.writeFileSync(path.join(releaseDir, 'package.json'), JSON.stringify(prodPkg, null, 2), 'utf8');
 
   console.log('\n================================================================');
   console.log('✓ PRODUCTION DISTRIBUTION READY IN: release/');
-  console.log('  1. Native Self-Contained Executable: release/KaraokePS5CommerceHub.exe');
+  console.log('  1. Native Self-Contained Executable: release/ShweThiriERP.exe');
   console.log('  2. Zero-Install Runtime Fallback:    release/bin/node.exe');
   console.log('  3. Embedded SQLite WASM Engine:      release/dist/sql-wasm.wasm');
   console.log('  4. Launcher Script:                  release/start-shop-hub.bat');

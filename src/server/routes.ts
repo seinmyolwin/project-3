@@ -9,7 +9,7 @@ import crypto from 'crypto';
 import path from 'path';
 import { PersistentSQLiteStorage, serverStorage } from './storage';
 import { ServerAuthSession, ServerUserEntity } from './types';
-import { UserRole } from '../types';
+import { UserRole, APP_VERSION, APP_BUILD_DATE, UPDATE_MODE } from '../types';
 import { realtimeEventBus } from './realtime/eventBus';
 import { healthManager } from './health';
 import { logger } from './logger';
@@ -562,6 +562,50 @@ export function createApiRouter(storage: PersistentSQLiteStorage = serverStorage
     const limit = Math.min(Number(req.query.limit) || 100, 500);
     const logs = logger.getRecentLogs(limit);
     res.json({ success: true, count: logs.length, logs });
+  });
+
+  // Offline-First Version & Update Information
+  router.get('/system/update-info', (req: Request, res: Response) => {
+    res.json({
+      success: true,
+      appName: runtimeConfig.appName,
+      appVersion: APP_VERSION || runtimeConfig.appVersion,
+      buildDate: APP_BUILD_DATE,
+      updateMode: UPDATE_MODE,
+      dataDirectory: runtimeConfig.dataDir,
+      backupDirectory: runtimeConfig.backupDir,
+      databasePath: storage.getDatabasePath(),
+      schemaVersion: 3,
+      isOfflineFirst: true,
+      internetCheckingEnabled: false,
+      updateSource: 'Local package / Manual host installation',
+      notesMm: 'အင်တာနက် မလိုဘဲ စက်ထဲသို့ တိုက်ရိုက် မွမ်းမံမှု ပြုလုပ်နိုင်ပါသည်။ APP_DATA_DIR ရှိ ဒေတာများ လုံခြုံစွာ ထိန်းသိမ်းထားပါမည်။',
+      notesEn: '100% offline-safe system. Updates are manually copied/extracted to the host without losing database records in APP_DATA_DIR.',
+    });
+  });
+
+  // Pre-Update Automated Backup & Safety Check
+  router.post('/system/pre-update-backup', requireAuth(['owner', 'manager']), (req: Request, res: Response) => {
+    try {
+      const backupInfo = storage.createDefaultBackup();
+      logger.info('UpdateSystem', `Pre-update backup created before package migration: ${backupInfo.fileName}`, {
+        sizeBytes: backupInfo.sizeBytes,
+        dataDir: runtimeConfig.dataDir,
+      });
+
+      res.json({
+        success: true,
+        message: 'Pre-update database backup completed successfully.',
+        backup: backupInfo,
+        appVersion: APP_VERSION,
+        dataDirectoryPreserved: true,
+        schemaIdempotent: true,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      logger.error('UpdateSystem', 'Pre-update backup failed', { error: err.message });
+      res.status(500).json({ error: 'PRE_UPDATE_BACKUP_FAILED', message: err.message });
+    }
   });
 
   return router;

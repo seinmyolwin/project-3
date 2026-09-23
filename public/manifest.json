@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "ရွှေသီရိ - KTV, Spa & Service ERP",
-  "short_name": "Shwe Thiri",
-  "description": "100% Offline Standalone Production ERP for Myanmar Business",
+  "name": "Shwe Thiri Spa & KTV ERP",
+  "short_name": "Shwe Thiri ERP",
+  "description": "100% Offline Standalone Production ERP for Myanmar Spa & KTV Businesses",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

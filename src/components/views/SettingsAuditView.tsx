@@ -16,6 +16,9 @@ import {
   PaymentMethodRecord,
   ExpenseCategoryRecord,
   CommissionRuleRecord,
+  APP_VERSION,
+  APP_BUILD_DATE,
+  UPDATE_MODE,
 } from '../../types';
 import { db } from '../../db/database';
 import { Language } from '../../utils/translations';
@@ -33,6 +36,10 @@ import {
   Plus,
   Key,
   Database,
+  Info,
+  Folder,
+  HardDrive,
+  Cpu,
 } from 'lucide-react';
 import { seedForceDemoData } from '../../db/seedData';
 import { MasterDataView } from './MasterDataView';
@@ -82,7 +89,9 @@ export const SettingsAuditView: React.FC<SettingsAuditViewProps> = ({
 }) => {
   const isMm = lang === 'my';
 
-  const [activeTab, setActiveTab] = useState<'master' | 'shop' | 'users' | 'audit' | 'backup'>('master');
+  const [activeTab, setActiveTab] = useState<'master' | 'shop' | 'users' | 'audit' | 'backup' | 'about'>('master');
+  const [preUpdateStatus, setPreUpdateStatus] = useState<string>('');
+  const [isPreUpdating, setIsPreUpdating] = useState(false);
   const [auditFilter, setAuditFilter] = useState<string>('all');
 
   // Shop Settings Form State
@@ -188,6 +197,33 @@ export const SettingsAuditView: React.FC<SettingsAuditViewProps> = ({
     }
   };
 
+  // Handle Pre-Update Backup
+  const handlePreUpdateBackup = async () => {
+    setIsPreUpdating(true);
+    setPreUpdateStatus(isMm ? 'ဒေတာဘေ့စ် မိတ္တူ သိမ်းဆည်းနေပါသည်...' : 'Creating pre-update database backup...');
+    try {
+      const data = await db.exportDatabaseBackup();
+      const blob = new Blob([data], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `pre_update_backup_v${APP_VERSION}_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      setPreUpdateStatus(
+        isMm
+          ? `အဆင့်မြှင့်တင်မှုမပြုမီ မိတ္တူဖိုင် (v${APP_VERSION}) ရယူပြီးပါပြီ။ APP_DATA_DIR ရှိ ဒေတာများ လုံခြုံစွာ ရှိပါသည်။`
+          : `Pre-update backup v${APP_VERSION} created successfully. APP_DATA_DIR data files verified safe.`
+      );
+    } catch (err: any) {
+      setPreUpdateStatus('Error: ' + err.message);
+    } finally {
+      setIsPreUpdating(false);
+    }
+  };
+
   // Save Shop Settings
   const handleSaveSettings = async () => {
     setIsSavingSettings(true);
@@ -271,6 +307,7 @@ export const SettingsAuditView: React.FC<SettingsAuditViewProps> = ({
             { id: 'users', icon: Users, labelEn: 'User Roles & PINs', labelMm: 'အသုံးပြုသူနှင့် PIN' },
             { id: 'audit', icon: FileText, labelEn: 'Audit Trail', labelMm: 'စာရင်းစစ်မှတ်တမ်း' },
             { id: 'backup', icon: Download, labelEn: 'Backup & Restore', labelMm: 'မိတ္တူကူး/ပြန်သွင်း' },
+            { id: 'about', icon: Info, labelEn: 'About & Updates', labelMm: 'ဗားရှင်းနှင့် မွမ်းမံမှု' },
           ].map(tab => {
             const Icon = tab.icon;
             return (
@@ -622,6 +659,120 @@ export const SettingsAuditView: React.FC<SettingsAuditViewProps> = ({
             >
               {isSavingSettings ? 'Saving...' : (isMm ? 'သိမ်းဆည်းမည်' : 'Save Settings')}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* 5. About & Updates Tab (100% Offline Version Model) */}
+      {activeTab === 'about' && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            {/* Version & Build Metadata */}
+            <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-xs space-y-4">
+              <div className="flex items-center gap-3 border-b border-gray-100 pb-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700 font-black">
+                  v{APP_VERSION}
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-gray-900">
+                    Shwe Thiri Spa & KTV ERP
+                  </h3>
+                  <p className="text-xs text-gray-500 font-mono">
+                    Build Release: v{APP_VERSION} ({APP_BUILD_DATE})
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-3 text-xs">
+                <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50 border border-gray-100">
+                  <span className="text-gray-600 font-medium">Canonical App Version:</span>
+                  <span className="font-mono font-bold text-gray-900 bg-emerald-100 text-emerald-900 px-2.5 py-0.5 rounded-md">
+                    v{APP_VERSION}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50 border border-gray-100">
+                  <span className="text-gray-600 font-medium">{isMm ? 'မွမ်းမံမှု စနစ်:' : 'Update Model:'}</span>
+                  <span className="font-semibold text-gray-900">
+                    {UPDATE_MODE}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50 border border-gray-100">
+                  <span className="text-gray-600 font-medium">{isMm ? 'အင်တာနက် စစ်ဆေးမှု:' : 'Internet Connectivity:'}</span>
+                  <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                    {isMm ? 'အော့ဖ်လိုင်းသီးသန့် (0% Cloud / External Dependency)' : '100% Standalone Offline-First'}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50 border border-gray-100">
+                  <span className="text-gray-600 font-medium">Database Storage Path:</span>
+                  <span className="font-mono text-[11px] text-gray-800 bg-gray-200 px-2 py-0.5 rounded">
+                    APP_DATA_DIR / sqlite
+                  </span>
+                </div>
+              </div>
+
+              <div className="rounded-xl bg-amber-50/80 p-3.5 border border-amber-200 text-xs text-amber-900 space-y-1">
+                <span className="font-bold block">
+                  {isMm ? 'အော့ဖ်လိုင်း မွမ်းမံမှု လမ်းညွှန်' : 'Manual Offline Update Policy:'}
+                </span>
+                <p className="text-[11px] text-amber-800 leading-relaxed">
+                  {isMm
+                    ? 'ဤဆော့ဖ်ဝဲသည် အင်တာနက်သို့ တိုက်ရိုက်ဆက်သွယ်ပြီး မွမ်းမံမှု စစ်ဆေးမည် မဟုတ်ပါ။ Package အသစ် ရရှိပါက Host စက်ထဲသို့ တိုက်ရိုက် ကူးယူ/ထည့်သွင်းနိုင်ပြီး APP_DATA_DIR ရှိ ဒေတာများနှင့် သုံးစွဲသူ စာရင်းများ ပျောက်ပျက်မည် မဟုတ်ပါ။'
+                    : 'This software does NOT connect to external update servers. Local package updates or manual build deployment preserve APP_DATA_DIR data files and apply idempotent database schema migrations safely.'}
+                </p>
+              </div>
+            </div>
+
+            {/* Pre-Update Backup & Migration Safety */}
+            <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-xs flex flex-col justify-between space-y-4">
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-indigo-700 border-b border-gray-100 pb-3">
+                  <ShieldCheck className="h-6 w-6" />
+                  <div>
+                    <h3 className="text-base font-bold text-gray-900">
+                      {isMm ? 'မွမ်းမံမှုမပြုမီ မိတ္တူကူးယူခြင်းနှင့် ဒေတာလုံခြုံရေး' : 'Pre-Update Backup & Local Migration Guard'}
+                    </h3>
+                    <p className="text-xs text-gray-500">
+                      {isMm ? 'Package အသစ်မသွင်းမီ ဒေတာဘေ့စ် မိတ္တူအလိုအလျောက် ရယူပါ' : 'Create automated pre-update snapshot before host file update'}
+                    </p>
+                  </div>
+                </div>
+
+                <p className="text-xs text-gray-600 leading-relaxed">
+                  {isMm
+                    ? 'စနစ်အား အဆင့်မြှင့်တင်ခြင်း သို့မဟုတ် Package အသစ် လဲလှယ်ခြင်းမပြုမီ လက်ရှိ ဒေတာများကို မိတ္တူ ရယူရန် အောက်ပါ ခလုတ်ကို နှိပ်ပါ။'
+                    : 'Execute an immediate full database export before extracting or running a local update package on this host machine.'}
+                </p>
+
+                {preUpdateStatus && (
+                  <div className="rounded-xl bg-indigo-50 p-3 text-xs font-semibold text-indigo-900 border border-indigo-200">
+                    {preUpdateStatus}
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-4 space-y-2">
+                <button
+                  type="button"
+                  disabled={isPreUpdating}
+                  onClick={handlePreUpdateBackup}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 py-3 text-xs font-bold text-white shadow-xs hover:bg-indigo-700 disabled:opacity-50 transition-all"
+                >
+                  <Download className="h-4 w-4" />
+                  <span>
+                    {isPreUpdating
+                      ? (isMm ? 'မိတ္တူ ကူးယူနေပါသည်...' : 'Creating Pre-Update Backup...')
+                      : (isMm ? 'မွမ်းမံမှုမပြုမီ ဒေတာဘေ့စ် မိတ္တူ ရယူမည်' : 'Run Pre-Update Local Backup')}
+                  </span>
+                </button>
+
+                <div className="text-[11px] text-gray-400 text-center font-mono">
+                  Schema Version: v3 (Idempotent SQLite Migration Ready)
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

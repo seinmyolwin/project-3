@@ -1,8 +1,10 @@
-# PRODUCTION RELEASE CHECKLIST - Shwe Thiri Myanmar Business & Accounting ERP
+# PRODUCTION RELEASE CHECKLIST - Shwe Thiri Spa & KTV ERP (v1.0.0)
 
 This checklist confirms the production readiness, packaging integrity, data safety, and zero-install offline capabilities of the release package.
 
-- [x] **Native EXE exists**: `release/KaraokePS5CommerceHub.exe` successfully generated and verified.
+- [x] **Canonical Package Manager**: All builds, lint checks, and testing suites execute exclusively via `npm` (`npm run build`, `npm run lint`, `npm test`, `npm run package`).
+- [x] **Canonical Version (v1.0.0)**: `package.json`, `metadata.json`, `src/types/index.ts`, `src/server/config.ts`, and release manifests explicitly locked to v1.0.0.
+- [x] **Native EXE generated**: `release/ShweThiriERP.exe` (or `release/KaraokePS5CommerceHub.exe`) successfully built via `npm run package`.
 - [x] **EXE verified**: PE headers, size (>50MB), and embedded SEA blob verified.
 - [x] **Runtime dependencies verified**: Bundled zero-install Windows runtime (`release/bin/node.exe`) ensures standalone execution without external Node.js prerequisite.
 - [x] **SQLite WASM verified**: `sql-wasm.wasm` embedded and verified in `release/dist/` and `release/bin/`.
@@ -20,4 +22,4 @@ This checklist confirms the production readiness, packaging integrity, data safe
 - [x] **Uninstall safety documented**: Portable release ensures APP_DATA_DIR remains intact if binaries are removed.
 - [x] **No secrets**: Zero production secrets or API keys embedded in release artifacts.
 - [x] **No development artifacts**: Source files, test suites, and git metadata excluded from release package.
-- [x] **Final regression passed**: All test suites, linter checks, and builds passed successfully.
+- [x] **Final regression passed**: All test suites (`npm test`), linter checks (`npm run lint`), and builds (`npm run build`) passed successfully.
