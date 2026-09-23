@@ -72,6 +72,7 @@ import {
   StaffScheduleRecord,
   StaffAttendanceRecord,
   ServiceConsumableItem,
+  StockMovementRecord,
 } from '../types';
 import {
   calculateSessionPricing,
@@ -146,6 +147,7 @@ export class MyanmarBusinessDB extends Dexie {
   staffSchedules!: Table<StaffScheduleRecord, string>;
   staffAttendance!: Table<StaffAttendanceRecord, string>;
   serviceConsumables!: Table<ServiceConsumableItem, string>;
+  stockMovements!: Table<StockMovementRecord, string>;
 
   constructor() {
     super('MyanmarBusinessERP_DB');
@@ -259,6 +261,11 @@ export class MyanmarBusinessDB extends Dexie {
       staffAttendance: 'id, staffId, date, status, branchId, businessId, createdAt',
       serviceConsumables: 'id, serviceId, productId, branchId, businessId, createdAt',
     });
+
+    // Schema Version 8 (Phase 29.1: Stock Movements & Reversals)
+    this.version(8).stores({
+      stockMovements: 'id, productId, serviceId, sessionId, invoiceId, customerId, staffId, type, date, createdAt',
+    });
   }
 
   /**
@@ -322,11 +329,12 @@ export class MyanmarBusinessDB extends Dexie {
         throw new Error(`Room "${room.name}" is currently under maintenance / out of order.`);
       }
 
-      // 2. Validate assigned staff
+      // 2. Validate assigned staff and check schedule/active assignment conflicts
       if (!params.session.assignedStaff || params.session.assignedStaff.length === 0) {
         throw new Error('At least one staff member must be assigned to the session.');
       }
 
+      const activeSessions = await this.sessions.where('status').equals('active').toArray();
       for (const stf of params.session.assignedStaff) {
         const staffMember = await this.staff.get(stf.staffId);
         if (!staffMember) {
@@ -334,6 +342,10 @@ export class MyanmarBusinessDB extends Dexie {
         }
         if (!staffMember.isActive) {
           throw new Error(`Staff member "${stf.staffName}" is currently inactive.`);
+        }
+        const busySession = activeSessions.find(s => s.assignedStaff.some(as => as.staffId === stf.staffId));
+        if (busySession) {
+          throw new Error(`Staff member "${staffMember.name}" is already busy in active session "${busySession.sessionCode}" (Room: ${busySession.roomName}). Overlapping assignments are prohibited.`);
         }
       }
 
@@ -683,6 +695,7 @@ export class MyanmarBusinessDB extends Dexie {
       this.customers,
       this.customerCreditLedger,
       this.auditLogs,
+      this.bookings,
     ], async () => {
       const session = await this.sessions.get(params.sessionId);
       if (!session) throw new Error('Session not found');
@@ -920,6 +933,9 @@ export class MyanmarBusinessDB extends Dexie {
         await this.staff.update(staffAssignment.staffId, { status: 'available' });
       }
 
+      // Deduct service consumables transactionally
+      await this.deductServiceConsumablesTransaction(session.serviceId, 1, session.id, params.currentUser);
+
       // 6. Update Session
       const completedSession: SessionRecord = {
         ...session,
@@ -942,6 +958,25 @@ export class MyanmarBusinessDB extends Dexie {
         status: 'cleaning', // sets to cleaning after session
         currentSessionId: undefined,
       });
+
+      // Phase 31: Automatically link and complete booking if session is tied to one
+      try {
+        let linkedBooking = session.bookingId ? await this.bookings.get(session.bookingId) : null;
+        if (!linkedBooking) {
+          linkedBooking = await this.bookings.filter(b => b.sessionId === session.id).first();
+        }
+        if (linkedBooking && linkedBooking.status !== 'COMPLETED') {
+          await this.bookings.update(linkedBooking.id, {
+            status: 'COMPLETED',
+            invoiceId,
+            sessionId: session.id,
+            completedAt: now,
+            updatedAt: now,
+          });
+        }
+      } catch (err) {
+        console.warn('Could not complete linked booking:', err);
+      }
 
       // 8. Audit Log
       await this.auditLogs.add({
@@ -1773,6 +1808,44 @@ export class MyanmarBusinessDB extends Dexie {
               });
             }
           }
+        }
+      }
+
+      // 1b. If session-linked and consumables were deducted, reverse service consumable stock and record reversal movements
+      if (invoice.sessionId) {
+        const session = await this.sessions.get(invoice.sessionId);
+        if (session && session.consumablesDeducted) {
+          const consumptionMovements = await this.stockMovements.where('sessionId').equals(session.id).filter(m => m.type === 'consumption').toArray();
+          for (const mov of consumptionMovements) {
+            const prod = await this.products.get(mov.productId);
+            if (prod) {
+              const restoredStock = (prod.stockQty || 0) + Math.abs(mov.quantityChange);
+              await this.products.update(prod.id, { stockQty: restoredStock });
+
+              await this.stockMovements.add({
+                id: `mov_rev_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+                productId: prod.id,
+                productName: prod.name,
+                serviceId: mov.serviceId,
+                sessionId: session.id,
+                invoiceId: invoice.id,
+                customerId: invoice.customerId,
+                customerName: invoice.customerName,
+                staffId: mov.staffId,
+                staffName: mov.staffName,
+                type: 'reversal',
+                quantityChange: Math.abs(mov.quantityChange),
+                previousStock: prod.stockQty || 0,
+                newStock: restoredStock,
+                unit: mov.unit,
+                notes: `Consumable inventory reversal due to void/cancellation: ${params.reason}`,
+                date: now.split('T')[0],
+                createdAt: now,
+                createdBy: params.currentUser.name,
+              });
+            }
+          }
+          await this.sessions.update(session.id, { consumablesDeducted: false });
         }
       }
 
@@ -4070,26 +4143,69 @@ export class MyanmarBusinessDB extends Dexie {
     });
   }
 
-  public async deductServiceConsumablesTransaction(serviceId: string, multiplier: number = 1): Promise<void> {
+  public async deductServiceConsumablesTransaction(
+    serviceId: string,
+    multiplier: number = 1,
+    sessionId?: string,
+    currentUser?: { id: string; name: string }
+  ): Promise<void> {
+    if (sessionId) {
+      const session = await this.sessions.get(sessionId);
+      if (session && session.consumablesDeducted) {
+        return; // Idempotency check: already deducted
+      }
+    }
+
     const consumables = await this.serviceConsumables.where('serviceId').equals(serviceId).toArray();
     if (consumables.length === 0) return;
 
     const settings = await this.settings.toCollection().first();
+    const now = new Date().toISOString();
+    const todayStr = now.split('T')[0];
+    const sessionObj = sessionId ? await this.sessions.get(sessionId) : null;
 
     for (const cons of consumables) {
       const product = await this.products.get(cons.productId);
       if (!product) continue;
 
       const totalDeduction = cons.quantity * multiplier;
-      const newStock = (product.stockQty || 0) - totalDeduction;
+      const prevStock = product.stockQty || 0;
+      const newStock = prevStock - totalDeduction;
 
       if (newStock < 0 && !settings?.allowNegativeStock) {
-        throw new Error(`Insufficient stock for consumable product '${product.name}'. Required: ${totalDeduction}, Available: ${product.stockQty || 0}.`);
+        throw new Error(`Insufficient stock for consumable product '${product.name}'. Required: ${totalDeduction}, Available: ${prevStock}.`);
       }
 
+      const finalStock = settings?.allowNegativeStock ? newStock : Math.max(0, newStock);
       await this.products.update(product.id, {
-        stockQty: settings?.allowNegativeStock ? newStock : Math.max(0, newStock),
+        stockQty: finalStock,
       });
+
+      await this.stockMovements.add({
+        id: `mov_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        productId: product.id,
+        productName: product.name,
+        serviceId,
+        sessionId,
+        invoiceId: sessionObj?.invoiceId,
+        customerId: sessionObj?.customerId,
+        customerName: sessionObj?.customerName,
+        staffId: sessionObj?.assignedStaff?.[0]?.staffId,
+        staffName: sessionObj?.assignedStaff?.[0]?.staffName,
+        type: 'consumption',
+        quantityChange: -totalDeduction,
+        previousStock: prevStock,
+        newStock: finalStock,
+        unit: cons.unit || product.unit,
+        notes: `Service consumable consumption for service ID ${serviceId}`,
+        date: todayStr,
+        createdAt: now,
+        createdBy: currentUser?.name || sessionObj?.completedBy || 'System',
+      });
+    }
+
+    if (sessionObj) {
+      await this.sessions.update(sessionObj.id, { consumablesDeducted: true });
     }
   }
 }

@@ -23,7 +23,22 @@ export interface UserAccount {
 }
 
 export type RoomType = 'massage_bed' | 'foot_hall' | 'vip_suite' | 'ktv_small' | 'ktv_medium' | 'ktv_large' | 'spa_bath';
-export type RoomStatus = 'available' | 'occupied' | 'cleaning' | 'reserved' | 'maintenance';
+export type RoomStatus =
+  | 'available'
+  | 'occupied'
+  | 'cleaning'
+  | 'reserved'
+  | 'maintenance'
+  | 'booked'
+  | 'ending'
+  | 'payment_due'
+  | 'closed'
+  | 'AVAILABLE'
+  | 'OCCUPIED'
+  | 'BOOKED'
+  | 'ENDING'
+  | 'PAYMENT_DUE'
+  | 'CLOSED';
 
 export interface Room {
   id: string;
@@ -32,12 +47,16 @@ export interface Room {
   roomNumber?: string;
   type: RoomType;
   hourlyRateMMK: number; // For hourly charging or 0 for flat session
+  fixedRateMMK?: number;
   surchargeMMK: number; // Extra VIP fee if applicable
   basePriceMMK?: number;
+  minDurationMinutes?: number;
+  gracePeriodMinutes?: number;
   status: RoomStatus;
   currentSessionId?: string;
   capacity: number;
   isActive: boolean;
+  notes?: string;
   maintenanceNotes?: string;
 }
 
@@ -128,6 +147,22 @@ export interface SessionOrderItem {
   quantity: number;
   totalPriceMMK: number;
   addedAt: string;
+}
+
+export interface SessionServiceItem {
+  id: string;
+  sessionId?: string;
+  serviceId: string;
+  name: string;
+  nameMm?: string;
+  unitPriceMMK: number;
+  quantity: number;
+  discountMMK?: number;
+  totalPriceMMK: number;
+  staffId?: string;
+  staffName?: string;
+  addedAt: string;
+  addedBy?: string;
 }
 
 export type SessionPricingRuleType =
@@ -272,9 +307,16 @@ export interface SessionRecord {
   startTime: string;
   endTime?: string;
   status: SessionStatus;
+  bookingId?: string;
   assignedStaff: SessionStaffAssignment[];
   extensions?: SessionExtensionRecord[];
   orderItems: SessionOrderItem[];
+  services?: SessionServiceItem[];
+  
+  // Pause / Resume tracking
+  isPaused?: boolean;
+  pausedAt?: string;
+  totalPausedMinutes?: number;
   
   // Phase 26: Deposits, Transfers, Adjustments & Discounts
   depositAmountMMK?: number;
@@ -288,6 +330,7 @@ export interface SessionRecord {
   
   notes?: string;
   invoiceId?: string;
+  consumablesDeducted?: boolean;
   createdBy?: string;
   startedBy?: string;
   completedBy?: string;
@@ -1155,6 +1198,9 @@ export interface BookingRecord {
   startTime: string; // HH:mm
   endTime: string; // HH:mm
   durationMinutes: number;
+  price?: number;
+  discount?: number;
+  finalAmount?: number;
   status: BookingStatus;
   notes?: string;
   depositAmountMMK?: number;
@@ -1166,6 +1212,7 @@ export interface BookingRecord {
   cancelledAt?: string;
   checkedInAt?: string;
   checkedInBy?: string;
+  completedAt?: string;
   createdBy: string;
   createdAt: string;
   updatedAt: string;
@@ -1454,6 +1501,28 @@ export interface ServiceConsumableItem {
   unit?: string; // e.g. 'ml', 'pcs', 'bottle'
   createdAt: string;
   updatedAt: string;
+}
+
+export interface StockMovementRecord {
+  id: string;
+  productId: string;
+  productName: string;
+  serviceId?: string;
+  sessionId?: string;
+  invoiceId?: string;
+  customerId?: string;
+  customerName?: string;
+  staffId?: string;
+  staffName?: string;
+  type: 'consumption' | 'reversal' | 'adjustment_in' | 'adjustment_out' | 'sale' | 'restock';
+  quantityChange: number;
+  previousStock: number;
+  newStock: number;
+  unit?: string;
+  notes?: string;
+  date: string;
+  createdAt: string;
+  createdBy: string;
 }
 
 export * from './multiDevice';

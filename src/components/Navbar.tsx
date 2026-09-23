@@ -21,11 +21,13 @@ import {
   CalendarDays,
   Smartphone,
   Download,
+  PieChart,
 } from 'lucide-react';
 
 import { SyncState } from '../services/syncManager';
 
 export type ActiveTab =
+  | 'dashboard'
   | 'rooms'
   | 'bookings'
   | 'pos'
@@ -72,6 +74,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [logoFailed, setLogoFailed] = useState(false);
 
   const navItems = [
+    { id: 'dashboard' as ActiveTab, icon: PieChart, labelEn: 'Dashboard', labelMm: 'ဒက်ရှ်ဘုတ်' },
     { id: 'rooms' as ActiveTab, icon: LayoutGrid, labelEn: 'Rooms', labelMm: 'အခန်း' },
     { id: 'bookings' as ActiveTab, icon: CalendarDays, labelEn: 'Bookings', labelMm: 'ချိန်းဆိုမှု' },
     { id: 'pos' as ActiveTab, icon: ShoppingBag, labelEn: 'POS', labelMm: 'အရောင်း' },
@@ -88,7 +91,11 @@ export const Navbar: React.FC<NavbarProps> = ({
       {/* Top Banner with Compact Proportioned Boxes */}
       <div className="flex flex-wrap lg:flex-nowrap items-center justify-between gap-2 px-3 py-2 bg-[#0b0f19] border-b border-cyan-900/30">
         <div className="flex items-center gap-2.5 min-w-0">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#07090e] border border-cyan-500/40 shadow-xs overflow-hidden shrink-0">
+          <div
+            onClick={() => onSelectTab('dashboard')}
+            className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#07090e] border border-cyan-500/40 shadow-xs overflow-hidden shrink-0 cursor-pointer hover:border-cyan-400 transition-all"
+            title="Go to Dashboard"
+          >
             {!logoFailed ? (
               <img
                 src={imgSrc}

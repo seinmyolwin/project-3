@@ -20,6 +20,7 @@ import {
   PricingRoundingRule,
   SessionRecord,
   SessionOrderItem,
+  SessionServiceItem,
   Room,
 } from '../types';
 import { roundMMK, calculateDurationMinutes } from './financial';
@@ -30,33 +31,43 @@ export interface SessionPricingCalculationParams {
   pricingRule?: PricingRule;
   fallbackHourlyRateMMK?: number;
   fallbackBasePriceMMK?: number;
+  fixedRateMMK?: number;
+  minDurationMinutes?: number;
+  gracePeriodMinutes?: number;
   roomSurchargeMMK?: number;
   extensionsTotalMMK?: number;
+  servicesTotalMMK?: number;
+  services?: SessionServiceItem[];
   manualAdjustmentMinutes?: number;
+  pausedMinutes?: number;
   manualRateOverrideMMK?: number;
   discountPercent?: number;
   discountFixedMMK?: number;
   orderItems?: SessionOrderItem[];
   depositAmountMMK?: number;
+  paidAmountMMK?: number;
 }
 
 export interface DetailedSessionPricingResult {
   rawElapsedMinutes: number;
+  pausedMinutes: number;
   adjustedElapsedMinutes: number;
   billableMinutes: number;
   minDurationMinutes: number;
+  gracePeriodMinutes: number;
   appliedRoundingRule: PricingRoundingRule;
   
   // Rate details
   isWeekend: boolean;
   isPeakHour: boolean;
-  rateSource: 'manual_override' | 'peak_rate' | 'weekend_rate' | 'weekday_rate' | 'base_rate' | 'fallback_rate';
+  rateSource: 'manual_override' | 'peak_rate' | 'weekend_rate' | 'weekday_rate' | 'base_rate' | 'fallback_rate' | 'fixed_rate';
   appliedHourlyRateMMK: number;
   
   // Breakdown
   roomTimeFeeMMK: number;
   roomSurchargeMMK: number;
   extensionsFeeMMK: number;
+  servicesTotalMMK: number;
   orderItemsTotalMMK: number;
   grossSubtotalMMK: number;
   
@@ -69,7 +80,9 @@ export interface DetailedSessionPricingResult {
   // Totals & Deposit
   netTotalMMK: number;
   depositAmountMMK: number;
+  paidAmountMMK: number;
   depositDeductedMMK: number;
+  totalPaidAndDepositsMMK: number;
   balanceDueMMK: number; // Amount remaining to be paid
   isPaymentDue: boolean; // True if balanceDueMMK > 0
 }
@@ -155,31 +168,46 @@ export function calculateSessionPricingFromRule(
     pricingRule,
     fallbackHourlyRateMMK = 0,
     fallbackBasePriceMMK = 0,
+    fixedRateMMK = 0,
+    minDurationMinutes,
+    gracePeriodMinutes,
     roomSurchargeMMK = 0,
     extensionsTotalMMK = 0,
+    servicesTotalMMK,
+    services = [],
     manualAdjustmentMinutes = 0,
+    pausedMinutes = 0,
     manualRateOverrideMMK,
     discountPercent = 0,
     discountFixedMMK = 0,
     orderItems = [],
     depositAmountMMK = 0,
+    paidAmountMMK = 0,
   } = params;
 
-  // 1. Calculate Elapsed Duration
+  // 1. Calculate Elapsed Duration (minus any paused time)
   const rawElapsed = calculateDurationMinutes(startTime, endTime);
-  const adjustedElapsed = Math.max(0, rawElapsed + manualAdjustmentMinutes);
+  const netElapsedWithoutPause = Math.max(0, rawElapsed - Math.max(0, pausedMinutes));
+  const adjustedElapsed = Math.max(0, netElapsedWithoutPause + manualAdjustmentMinutes);
 
-  // 2. Rounding & Minimum Duration
-  const minDuration = pricingRule?.minDurationMinutes || 0;
+  // 2. Rounding, Grace Period & Minimum Duration
+  const minDuration = minDurationMinutes ?? pricingRule?.minDurationMinutes ?? 0;
+  const gracePeriod = gracePeriodMinutes ?? pricingRule?.gracePeriodMinutes ?? 10;
   const roundingRule: PricingRoundingRule = pricingRule?.roundingRule || 'exact_minute';
   const block = pricingRule?.additionalBlockMinutes || 1;
 
-  const billableMinutes = applyDurationRounding(
-    adjustedElapsed,
-    roundingRule,
-    minDuration,
-    block
-  );
+  // If session is within grace period and no minimum duration enforced, billable minutes is 0
+  let billableMinutes = 0;
+  if (adjustedElapsed <= gracePeriod && minDuration === 0) {
+    billableMinutes = 0;
+  } else {
+    billableMinutes = applyDurationRounding(
+      adjustedElapsed,
+      roundingRule,
+      minDuration,
+      block
+    );
+  }
 
   // 3. Resolve Rate
   const startDate = new Date(startTime);
@@ -194,7 +222,10 @@ export function calculateSessionPricingFromRule(
   let rateSource: DetailedSessionPricingResult['rateSource'] = 'base_rate';
   let appliedHourlyRateMMK = 0;
 
-  if (manualRateOverrideMMK !== undefined && manualRateOverrideMMK >= 0) {
+  if (fixedRateMMK > 0) {
+    rateSource = 'fixed_rate';
+    appliedHourlyRateMMK = 0;
+  } else if (manualRateOverrideMMK !== undefined && manualRateOverrideMMK >= 0) {
     rateSource = 'manual_override';
     appliedHourlyRateMMK = roundMMK(manualRateOverrideMMK);
   } else if (pricingRule) {
@@ -221,21 +252,28 @@ export function calculateSessionPricingFromRule(
 
   // 4. Calculate Room Time Fee
   let roomTimeFeeMMK = 0;
-  if (appliedHourlyRateMMK > 0) {
+  if (fixedRateMMK > 0) {
+    roomTimeFeeMMK = roundMMK(fixedRateMMK);
+  } else if (appliedHourlyRateMMK > 0) {
     roomTimeFeeMMK = roundMMK((appliedHourlyRateMMK * billableMinutes) / 60);
   } else if (fallbackBasePriceMMK > 0) {
     roomTimeFeeMMK = roundMMK(fallbackBasePriceMMK);
   }
 
-  // 5. Items, Surcharges & Extensions
+  // 5. Items, Services, Surcharges & Extensions
   const validSurcharge = Math.max(0, roundMMK(roomSurchargeMMK));
   const validExtensions = Math.max(0, roundMMK(extensionsTotalMMK));
+  
+  const computedServicesTotalMMK = servicesTotalMMK !== undefined
+    ? Math.max(0, roundMMK(servicesTotalMMK))
+    : services.reduce((sum, item) => sum + Math.max(0, roundMMK(item.totalPriceMMK)), 0);
+
   const orderItemsTotalMMK = orderItems.reduce(
     (sum, item) => sum + Math.max(0, roundMMK(item.totalPriceMMK)),
     0
   );
 
-  const grossSubtotalMMK = roomTimeFeeMMK + validSurcharge + validExtensions + orderItemsTotalMMK;
+  const grossSubtotalMMK = roomTimeFeeMMK + validSurcharge + validExtensions + computedServicesTotalMMK + orderItemsTotalMMK;
 
   // 6. Discounts (Combines rule discounts and manual overrides safely)
   const appliedDiscountPct = Math.max(
@@ -256,14 +294,18 @@ export function calculateSessionPricingFromRule(
   // 7. Net Total & Deposit Deductions
   const netTotalMMK = Math.max(0, grossSubtotalMMK - totalDiscountMMK);
   const validDeposit = Math.max(0, roundMMK(depositAmountMMK));
+  const validPaid = Math.max(0, roundMMK(paidAmountMMK));
+  const totalPaidAndDepositsMMK = validDeposit + validPaid;
   const depositDeductedMMK = Math.min(netTotalMMK, validDeposit);
-  const balanceDueMMK = Math.max(0, netTotalMMK - depositDeductedMMK);
+  const balanceDueMMK = Math.max(0, netTotalMMK - totalPaidAndDepositsMMK);
 
   return {
     rawElapsedMinutes: rawElapsed,
+    pausedMinutes: Math.max(0, pausedMinutes),
     adjustedElapsedMinutes: adjustedElapsed,
     billableMinutes,
     minDurationMinutes: minDuration,
+    gracePeriodMinutes: gracePeriod,
     appliedRoundingRule: roundingRule,
     isWeekend,
     isPeakHour,
@@ -272,6 +314,7 @@ export function calculateSessionPricingFromRule(
     roomTimeFeeMMK,
     roomSurchargeMMK: validSurcharge,
     extensionsFeeMMK: validExtensions,
+    servicesTotalMMK: computedServicesTotalMMK,
     orderItemsTotalMMK,
     grossSubtotalMMK,
     discountPercent: appliedDiscountPct,
@@ -280,7 +323,9 @@ export function calculateSessionPricingFromRule(
     totalDiscountMMK,
     netTotalMMK,
     depositAmountMMK: validDeposit,
+    paidAmountMMK: validPaid,
     depositDeductedMMK,
+    totalPaidAndDepositsMMK,
     balanceDueMMK,
     isPaymentDue: balanceDueMMK > 0,
   };
@@ -305,14 +350,31 @@ export function deriveLiveSessionPricing(
     .filter(d => d.status === 'active')
     .reduce((sum, d) => sum + Math.max(0, d.amountMMK), session.depositAmountMMK || 0);
 
+  // Calculate services total
+  const servicesTotal = (session.services || []).reduce(
+    (sum, s) => sum + Math.max(0, s.totalPriceMMK),
+    0
+  );
+
+  // If session is paused, pause time freezes at pausedAt
+  const effectiveEndTime = session.isPaused && session.pausedAt
+    ? session.pausedAt
+    : (session.endTime || currentTimeISO || new Date().toISOString());
+
   return calculateSessionPricingFromRule({
     startTime: session.startTime,
-    endTime: session.endTime || currentTimeISO || new Date().toISOString(),
+    endTime: effectiveEndTime,
     pricingRule: session.pricingRuleConfig || pricingRule,
     fallbackHourlyRateMMK: session.hourlyRateMMK || session.priceSnapshot?.hourlyRateMMK || room?.hourlyRateMMK || 0,
     fallbackBasePriceMMK: session.basePriceMMK,
+    fixedRateMMK: room?.fixedRateMMK || 0,
+    minDurationMinutes: session.pricingRuleConfig?.minDurationMinutes || room?.minDurationMinutes || 0,
+    gracePeriodMinutes: session.pricingRuleConfig?.gracePeriodMinutes || room?.gracePeriodMinutes || 10,
     roomSurchargeMMK: session.roomSurchargeMMK || room?.surchargeMMK || 0,
     extensionsTotalMMK: extensionsTotal,
+    servicesTotalMMK: servicesTotal,
+    services: session.services || [],
+    pausedMinutes: session.totalPausedMinutes || 0,
     discountPercent: session.discountPercent || 0,
     discountFixedMMK: session.discountMMK || 0,
     orderItems: session.orderItems || [],

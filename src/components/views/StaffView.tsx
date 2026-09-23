@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   StaffMember,
   StaffLedgerEntry,
   StaffSettlement,
   UserAccount,
   PaymentMethod,
+  StaffScheduleRecord,
+  StaffAttendanceRecord,
 } from '../../types';
 import { db } from '../../db/database';
 import {
@@ -50,9 +52,96 @@ export const StaffView: React.FC<StaffViewProps> = ({
   onRefresh,
 }) => {
   const isMm = lang === 'my';
+  const todayStr = new Date().toISOString().split('T')[0];
 
   const [selectedStaffId, setSelectedStaffId] = useState<string>(staff[0]?.id || '');
-  const [activeSubTab, setActiveSubTab] = useState<'roster' | 'ledger' | 'settlements' | 'report'>('roster');
+  const [activeSubTab, setActiveSubTab] = useState<'roster' | 'schedule' | 'attendance' | 'ledger' | 'settlements' | 'report'>('roster');
+
+  const [schedulesList, setSchedulesList] = useState<StaffScheduleRecord[]>([]);
+  const [attendanceList, setAttendanceList] = useState<StaffAttendanceRecord[]>([]);
+
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
+  const [schedStaffId, setSchedStaffId] = useState(staff[0]?.id || '');
+  const [schedDate, setSchedDate] = useState(todayStr);
+  const [schedStartTime, setSchedStartTime] = useState('09:00');
+  const [schedEndTime, setSchedEndTime] = useState('18:00');
+  const [schedBreakStart, setSchedBreakStart] = useState('12:00');
+  const [schedBreakEnd, setSchedBreakEnd] = useState('13:00');
+  const [schedStatus, setSchedStatus] = useState<'working' | 'off' | 'leave' | 'unavailable'>('working');
+  const [schedNotes, setSchedNotes] = useState('');
+
+  const [isAttendanceModalOpen, setIsAttendanceModalOpen] = useState(false);
+  const [attStaffId, setAttStaffId] = useState(staff[0]?.id || '');
+  const [attDate, setAttDate] = useState(todayStr);
+  const [attStatus, setAttStatus] = useState<'checked_in' | 'checked_out' | 'absent'>('checked_in');
+  const [attCheckInTime, setAttCheckInTime] = useState('09:00');
+  const [attCheckOutTime, setAttCheckOutTime] = useState('18:00');
+  const [attNotes, setAttNotes] = useState('');
+
+  const loadSchedulesAndAttendance = useCallback(async () => {
+    try {
+      const [schedules, atts] = await Promise.all([
+        db.staffSchedules.toArray(),
+        db.staffAttendance.toArray(),
+      ]);
+      setSchedulesList(schedules);
+      setAttendanceList(atts);
+    } catch (err) {
+      console.error('Error loading schedule & attendance:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadSchedulesAndAttendance();
+  }, [loadSchedulesAndAttendance]);
+
+  const handleSaveSchedule = async () => {
+    const targetStaff = staff.find(s => s.id === schedStaffId);
+    if (!targetStaff) return;
+    try {
+      await db.recordStaffSchedule({
+        staffId: targetStaff.id,
+        staffName: targetStaff.name,
+        date: schedDate,
+        startTime: schedStartTime,
+        endTime: schedEndTime,
+        breakStart: schedBreakStart,
+        breakEnd: schedBreakEnd,
+        status: schedStatus,
+        notes: schedNotes,
+        currentUser: { id: currentUser.id, name: currentUser.name, role: currentUser.role },
+      });
+      setIsScheduleModalOpen(false);
+      setSchedNotes('');
+      loadSchedulesAndAttendance();
+      onRefresh();
+    } catch (err: any) {
+      alert('Error saving schedule: ' + err.message);
+    }
+  };
+
+  const handleSaveAttendance = async () => {
+    const targetStaff = staff.find(s => s.id === attStaffId);
+    if (!targetStaff) return;
+    try {
+      await db.recordStaffAttendance({
+        staffId: targetStaff.id,
+        staffName: targetStaff.name,
+        date: attDate,
+        checkInTime: attCheckInTime,
+        checkOutTime: attCheckOutTime,
+        status: attStatus,
+        notes: attNotes,
+        currentUser: { id: currentUser.id, name: currentUser.name, role: currentUser.role },
+      });
+      setIsAttendanceModalOpen(false);
+      setAttNotes('');
+      loadSchedulesAndAttendance();
+      onRefresh();
+    } catch (err: any) {
+      alert('Error saving attendance: ' + err.message);
+    }
+  };
 
   // Modals
   const [isAdvanceModalOpen, setIsAdvanceModalOpen] = useState(false);
@@ -63,8 +152,6 @@ export const StaffView: React.FC<StaffViewProps> = ({
   const [adjustmentType, setAdjustmentType] = useState<'bonus' | 'deduction'>('bonus');
   const [adjustmentAmount, setAdjustmentAmount] = useState<number>(0);
   const [adjustmentReason, setAdjustmentReason] = useState<string>('');
-
-  const todayStr = new Date().toISOString().split('T')[0];
 
   const [isSalaryModalOpen, setIsSalaryModalOpen] = useState(false);
   const [salaryAmount, setSalaryAmount] = useState<number>(0);
@@ -253,6 +340,8 @@ export const StaffView: React.FC<StaffViewProps> = ({
         <div className="flex flex-wrap gap-1.5">
           {[
             { id: 'roster', labelEn: 'Staff Roster', labelMm: 'ဝန်ထမ်းစာရင်း' },
+            { id: 'schedule', labelEn: 'Shift Schedule', labelMm: 'အချိန်ဇယား' },
+            { id: 'attendance', labelEn: 'Attendance Timecard', labelMm: 'တက်ရောက်မှု မှတ်တမ်း' },
             { id: 'ledger', labelEn: 'Staff Ledger', labelMm: 'ငွေစာရင်းမှတ်တမ်း' },
             { id: 'settlements', labelEn: 'Settlement History', labelMm: 'ရှင်းပြီးငွေစာရင်းများ' },
             { id: 'report', labelEn: 'Settlement Report', labelMm: 'ရှင်းတမ်း အစီရင်ခံစာ' },
@@ -272,6 +361,135 @@ export const StaffView: React.FC<StaffViewProps> = ({
           ))}
         </div>
       </div>
+
+      {/* Schedule View */}
+      {activeSubTab === 'schedule' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between bg-white p-4 rounded-2xl border border-gray-200 shadow-xs">
+            <div>
+              <h3 className="text-sm font-bold text-gray-900">{isMm ? 'ဝန်ထမ်း အချိန်ဇယားများ' : 'Staff Shift Roster & Schedules'}</h3>
+              <p className="text-xs text-gray-500">{isMm ? 'နေ့စဉ် / အပတ်စဉ် ဝန်ထမ်းအလုပ်ချိန် စီမံခန့်ခွဲရန်' : 'Manage shift start, end times, breaks, and roster availability.'}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsScheduleModalOpen(true)}
+              className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white shadow-sm hover:bg-emerald-700"
+            >
+              <Plus className="h-4 w-4" />
+              <span>{isMm ? 'အလုပ်ချိန် သတ်မှတ်မည်' : 'Add Shift Schedule'}</span>
+            </button>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-xs overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-gray-200 bg-slate-50 text-[11px] font-bold text-gray-600 uppercase tracking-wider">
+                    <th className="py-3 px-4">{isMm ? 'ရက်စွဲ' : 'Date'}</th>
+                    <th className="py-3 px-4">{isMm ? 'ဝန်ထမ်းအမည်' : 'Staff Member'}</th>
+                    <th className="py-3 px-4">{isMm ? 'အလုပ်ချိန်' : 'Shift Hours'}</th>
+                    <th className="py-3 px-4">{isMm ? 'အနားယူချိန်' : 'Break'}</th>
+                    <th className="py-3 px-4">{isMm ? 'အခြေအနေ' : 'Status'}</th>
+                    <th className="py-3 px-4">{isMm ? 'မှတ်ချက်' : 'Notes'}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 font-medium text-gray-700">
+                  {schedulesList.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-gray-400">
+                        {isMm ? 'အချိန်ဇယား မှတ်တမ်း မရှိသေးပါ' : 'No shift schedules recorded yet.'}
+                      </td>
+                    </tr>
+                  ) : (
+                    schedulesList.map(sch => (
+                      <tr key={sch.id} className="hover:bg-slate-50/80">
+                        <td className="py-3 px-4 font-mono">{sch.date}</td>
+                        <td className="py-3 px-4 font-bold text-gray-900">{sch.staffName}</td>
+                        <td className="py-3 px-4 font-mono">{sch.startTime} - {sch.endTime}</td>
+                        <td className="py-3 px-4 font-mono text-gray-500">{sch.breakStart ? `${sch.breakStart} - ${sch.breakEnd}` : 'None'}</td>
+                        <td className="py-3 px-4">
+                          <span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider ${
+                            sch.status === 'working' ? 'bg-emerald-100 text-emerald-800' :
+                            sch.status === 'leave' ? 'bg-amber-100 text-amber-800' :
+                            sch.status === 'unavailable' ? 'bg-rose-100 text-rose-800' : 'bg-gray-100 text-gray-800'
+                          }`}>
+                            {sch.status}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-gray-500">{sch.notes || '-'}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Attendance View */}
+      {activeSubTab === 'attendance' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between bg-white p-4 rounded-2xl border border-gray-200 shadow-xs">
+            <div>
+              <h3 className="text-sm font-bold text-gray-900">{isMm ? 'ဝန်ထမ်း တက်ရောက်မှု မှတ်တမ်း' : 'Staff Attendance & Timecard'}</h3>
+              <p className="text-xs text-gray-500">{isMm ? 'ဝင်ရောက်ချိန် (Check-In) နှင့် ထွက်ခွာချိန် (Check-Out) မှတ်တမ်းများ' : 'Real attendance tracking, check-in, check-out, and punctuality.'}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsAttendanceModalOpen(true)}
+              className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white shadow-sm hover:bg-emerald-700"
+            >
+              <Plus className="h-4 w-4" />
+              <span>{isMm ? 'တက်ရောက်မှု မှတ်တမ်းတင်မည်' : 'Record Attendance'}</span>
+            </button>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-xs overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-gray-200 bg-slate-50 text-[11px] font-bold text-gray-600 uppercase tracking-wider">
+                    <th className="py-3 px-4">{isMm ? 'ရက်စွဲ' : 'Date'}</th>
+                    <th className="py-3 px-4">{isMm ? 'ဝန်ထမ်းအမည်' : 'Staff Member'}</th>
+                    <th className="py-3 px-4">{isMm ? 'ဝင်ချိန်' : 'Check-In'}</th>
+                    <th className="py-3 px-4">{isMm ? 'ထွက်ချိန်' : 'Check-Out'}</th>
+                    <th className="py-3 px-4">{isMm ? 'အခြေအနေ' : 'Status'}</th>
+                    <th className="py-3 px-4">{isMm ? 'မှတ်ချက်' : 'Notes'}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 font-medium text-gray-700">
+                  {attendanceList.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-gray-400">
+                        {isMm ? 'တက်ရောက်မှု မှတ်တမ်း မရှိသေးပါ' : 'No attendance records found.'}
+                      </td>
+                    </tr>
+                  ) : (
+                    attendanceList.map(att => (
+                      <tr key={att.id} className="hover:bg-slate-50/80">
+                        <td className="py-3 px-4 font-mono">{att.date}</td>
+                        <td className="py-3 px-4 font-bold text-gray-900">{att.staffName}</td>
+                        <td className="py-3 px-4 font-mono text-emerald-600 font-semibold">{att.checkInTime || '-'}</td>
+                        <td className="py-3 px-4 font-mono text-rose-600 font-semibold">{att.checkOutTime || '-'}</td>
+                        <td className="py-3 px-4">
+                          <span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider ${
+                            att.status === 'checked_in' ? 'bg-emerald-100 text-emerald-800' :
+                            att.status === 'checked_out' ? 'bg-blue-100 text-blue-800' : 'bg-rose-100 text-rose-800'
+                          }`}>
+                            {att.status.replace('_', ' ')}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-gray-500">{att.notes || '-'}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Roster & Balance View */}
       {activeSubTab === 'roster' && (
@@ -293,7 +511,7 @@ export const StaffView: React.FC<StaffViewProps> = ({
                         {member.role}
                       </span>
                       <h3 className="text-base font-bold text-gray-900">
-                        {isMm ? member.nameMm || member.name : member.name}
+                        {member.name}
                       </h3>
                       <p className="text-[11px] text-gray-500">{member.phone}</p>
                     </div>
@@ -1375,6 +1593,221 @@ export const StaffView: React.FC<StaffViewProps> = ({
                 <span>Method: {viewVoucher.paymentMethod.toUpperCase()}</span>
                 <span>Approved by: {viewVoucher.paidBy}</span>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ADD SHIFT SCHEDULE MODAL */}
+      {isScheduleModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-center justify-between border-b border-gray-100 pb-3">
+              <h3 className="text-base font-bold text-gray-900">{isMm ? 'ဝန်ထမ်း အချိန်ဇယား သတ်မှတ်ရန်' : 'Add Shift Schedule'}</h3>
+              <button onClick={() => setIsScheduleModalOpen(false)}>
+                <X className="h-5 w-5 text-gray-400" />
+              </button>
+            </div>
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="mb-1 block font-bold text-gray-700">{isMm ? 'ဝန်ထမ်း' : 'Staff Member'}</label>
+                <select
+                  value={schedStaffId}
+                  onChange={e => setSchedStaffId(e.target.value)}
+                  className="w-full rounded-xl border border-gray-200 p-2.5 font-medium text-gray-900 bg-white"
+                >
+                  {staff.map(m => (
+                    <option key={m.id} value={m.id}>{m.name} ({m.role})</option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="mb-1 block font-bold text-gray-700">{isMm ? 'ရက်စွဲ' : 'Date'}</label>
+                  <input
+                    type="date"
+                    value={schedDate}
+                    onChange={e => setSchedDate(e.target.value)}
+                    className="w-full rounded-xl border border-gray-200 p-2 font-mono text-gray-900"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block font-bold text-gray-700">{isMm ? 'အခြေအနေ' : 'Status'}</label>
+                  <select
+                    value={schedStatus}
+                    onChange={e => setSchedStatus(e.target.value as any)}
+                    className="w-full rounded-xl border border-gray-200 p-2 font-medium text-gray-900 bg-white"
+                  >
+                    <option value="working">Working</option>
+                    <option value="off">Off</option>
+                    <option value="leave">Leave</option>
+                    <option value="unavailable">Unavailable</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="mb-1 block font-bold text-gray-700">{isMm ? 'စတင်ချိန်' : 'Start Time'}</label>
+                  <input
+                    type="time"
+                    value={schedStartTime}
+                    onChange={e => setSchedStartTime(e.target.value)}
+                    className="w-full rounded-xl border border-gray-200 p-2 font-mono text-gray-900"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block font-bold text-gray-700">{isMm ? 'ပြီးဆုံးချိန်' : 'End Time'}</label>
+                  <input
+                    type="time"
+                    value={schedEndTime}
+                    onChange={e => setSchedEndTime(e.target.value)}
+                    className="w-full rounded-xl border border-gray-200 p-2 font-mono text-gray-900"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="mb-1 block font-bold text-gray-700">{isMm ? 'အနားယူစတင်' : 'Break Start'}</label>
+                  <input
+                    type="time"
+                    value={schedBreakStart}
+                    onChange={e => setSchedBreakStart(e.target.value)}
+                    className="w-full rounded-xl border border-gray-200 p-2 font-mono text-gray-900"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block font-bold text-gray-700">{isMm ? 'အနားယူပြီးဆုံး' : 'Break End'}</label>
+                  <input
+                    type="time"
+                    value={schedBreakEnd}
+                    onChange={e => setSchedBreakEnd(e.target.value)}
+                    className="w-full rounded-xl border border-gray-200 p-2 font-mono text-gray-900"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block font-bold text-gray-700">{isMm ? 'မှတ်ချက်' : 'Notes'}</label>
+                <input
+                  type="text"
+                  value={schedNotes}
+                  onChange={e => setSchedNotes(e.target.value)}
+                  placeholder="Optional shift notes..."
+                  className="w-full rounded-xl border border-gray-200 p-2.5 text-gray-900"
+                />
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-2 border-t border-gray-100 pt-4">
+              <button
+                type="button"
+                onClick={() => setIsScheduleModalOpen(false)}
+                className="rounded-xl border border-gray-200 px-4 py-2 text-xs font-semibold text-gray-600"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveSchedule}
+                className="rounded-xl bg-emerald-600 px-5 py-2 text-xs font-bold text-white hover:bg-emerald-700 shadow-xs"
+              >
+                Save Schedule
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* RECORD ATTENDANCE MODAL */}
+      {isAttendanceModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-center justify-between border-b border-gray-100 pb-3">
+              <h3 className="text-base font-bold text-gray-900">{isMm ? 'တက်ရောက်မှု မှတ်တမ်းတင်ရန်' : 'Record Attendance Timecard'}</h3>
+              <button onClick={() => setIsAttendanceModalOpen(false)}>
+                <X className="h-5 w-5 text-gray-400" />
+              </button>
+            </div>
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="mb-1 block font-bold text-gray-700">{isMm ? 'ဝန်ထမ်း' : 'Staff Member'}</label>
+                <select
+                  value={attStaffId}
+                  onChange={e => setAttStaffId(e.target.value)}
+                  className="w-full rounded-xl border border-gray-200 p-2.5 font-medium text-gray-900 bg-white"
+                >
+                  {staff.map(m => (
+                    <option key={m.id} value={m.id}>{m.name} ({m.role})</option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="mb-1 block font-bold text-gray-700">{isMm ? 'ရက်စွဲ' : 'Date'}</label>
+                  <input
+                    type="date"
+                    value={attDate}
+                    onChange={e => setAttDate(e.target.value)}
+                    className="w-full rounded-xl border border-gray-200 p-2 font-mono text-gray-900"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block font-bold text-gray-700">{isMm ? 'အခြေအနေ' : 'Status'}</label>
+                  <select
+                    value={attStatus}
+                    onChange={e => setAttStatus(e.target.value as any)}
+                    className="w-full rounded-xl border border-gray-200 p-2 font-medium text-gray-900 bg-white"
+                  >
+                    <option value="checked_in">Checked In</option>
+                    <option value="checked_out">Checked Out</option>
+                    <option value="absent">Absent</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="mb-1 block font-bold text-gray-700">{isMm ? 'ဝင်ချိန် (Check-In)' : 'Check-In Time'}</label>
+                  <input
+                    type="time"
+                    value={attCheckInTime}
+                    onChange={e => setAttCheckInTime(e.target.value)}
+                    className="w-full rounded-xl border border-gray-200 p-2 font-mono text-gray-900"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block font-bold text-gray-700">{isMm ? 'ထွက်ချိန် (Check-Out)' : 'Check-Out Time'}</label>
+                  <input
+                    type="time"
+                    value={attCheckOutTime}
+                    onChange={e => setAttCheckOutTime(e.target.value)}
+                    className="w-full rounded-xl border border-gray-200 p-2 font-mono text-gray-900"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block font-bold text-gray-700">{isMm ? 'မှတ်ချက်' : 'Notes'}</label>
+                <input
+                  type="text"
+                  value={attNotes}
+                  onChange={e => setAttNotes(e.target.value)}
+                  placeholder="Optional punctuality or attendance notes..."
+                  className="w-full rounded-xl border border-gray-200 p-2.5 text-gray-900"
+                />
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-2 border-t border-gray-100 pt-4">
+              <button
+                type="button"
+                onClick={() => setIsAttendanceModalOpen(false)}
+                className="rounded-xl border border-gray-200 px-4 py-2 text-xs font-semibold text-gray-600"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveAttendance}
+                className="rounded-xl bg-emerald-600 px-5 py-2 text-xs font-bold text-white hover:bg-emerald-700 shadow-xs"
+              >
+                Save Attendance
+              </button>
             </div>
           </div>
         </div>

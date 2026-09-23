@@ -965,21 +965,21 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                         {agingBucket.bucket0to30MMK > 0 ? (
                           <span className="text-emerald-700 font-medium">{formatMMK(agingBucket.bucket0to30MMK)}</span>
                         ) : (
-                          <span className="text-gray-300">-</span>
+                          <span className="text-gray-400">-</span>
                         )}
                       </td>
                       <td className="py-2.5 px-3 text-center font-mono">
                         {agingBucket.bucket31to60MMK > 0 ? (
                           <span className="text-amber-700 font-medium">{formatMMK(agingBucket.bucket31to60MMK)}</span>
                         ) : (
-                          <span className="text-gray-300">-</span>
+                          <span className="text-gray-400">-</span>
                         )}
                       </td>
                       <td className="py-2.5 px-3 text-center font-mono">
                         {agingBucket.bucket61to90MMK > 0 ? (
                           <span className="text-orange-700 font-semibold">{formatMMK(agingBucket.bucket61to90MMK)}</span>
                         ) : (
-                          <span className="text-gray-300">-</span>
+                          <span className="text-gray-400">-</span>
                         )}
                       </td>
                       <td className="py-2.5 px-3 text-center font-mono">
@@ -988,7 +988,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                             {formatMMK(agingBucket.bucketOver90MMK)}
                           </span>
                         ) : (
-                          <span className="text-gray-300">-</span>
+                          <span className="text-gray-400">-</span>
                         )}
                       </td>
                     </tr>

@@ -29,6 +29,7 @@ import {
   calculateDurationMinutes,
   calculateSessionPricing,
   calculateStaffCommission,
+  calculateSessionRunningEstimate,
 } from '../../domain/financial';
 import { Language } from '../../utils/translations';
 import {
@@ -62,6 +63,7 @@ import {
   Gift,
   Package,
   HeartHandshake,
+  BedDouble,
 } from 'lucide-react';
 
 import { verifyPin } from '../../utils/cryptoAuth';
@@ -129,6 +131,8 @@ export const PosView: React.FC<PosViewProps> = ({
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
   const [customerName, setCustomerName] = useState<string>('Walk-in Customer (ဧည့်သည်)');
   const [customerPhone, setCustomerPhone] = useState<string>('');
+  const [saleMode, setSaleMode] = useState<'walkin' | 'room'>('walkin');
+  const [selectedRoomSessionId, setSelectedRoomSessionId] = useState<string>('');
   
   // Discounts
   const [discountType, setDiscountType] = useState<'percentage' | 'fixed'>('percentage');
@@ -455,6 +459,67 @@ export const PosView: React.FC<PosViewProps> = ({
   // Direct Checkout Execution
   const handleExecuteDirectCheckout = async () => {
     if (cart.length === 0) return;
+
+    if (saleMode === 'room') {
+      try {
+        if (!selectedRoomSessionId) {
+          throw new Error(isMm ? 'ကျေးဇူးပြု၍ အခန်း Active Session ရွေးချယ်ပါ' : 'Please select an active room session');
+        }
+
+        const sess = activeSessions.find(s => s.id === selectedRoomSessionId);
+        if (!sess) {
+          throw new Error(isMm ? 'ရွေးချယ်ထားသော အခန်း/Session ရှာမတွေ့ပါ သို့မဟုတ် Active မဟုတ်ပါ' : 'Selected room/session not found or not active');
+        }
+
+        // Validate cart items and sufficient stock
+        if (cart.length === 0) {
+          throw new Error(isMm ? 'ကျေးဇူးပြု၍ ပစ္စည်းများကို ခြင်းတောင်းထဲသို့ ထည့်ပါ' : 'Cart is empty');
+        }
+
+        for (const item of cart) {
+          if (item.quantity <= 0) {
+            throw new Error(isMm ? 'ပစ္စည်းအရေအတွက် သုညထက် ကြီးရပါမည်' : 'Quantity must be greater than 0');
+          }
+
+          if (item.type !== 'service') {
+            const prod = products.find(p => p.id === (item.productId || item.id));
+            if (!prod) {
+              throw new Error(isMm ? `ကုန်ပစ္စည်း "${item.name}" ကို ရှာမတွေ့ပါ` : `Product "${item.name}" not found`);
+            }
+            if (!settings?.allowNegativeStock && prod.stockQty < item.quantity) {
+              throw new Error(isMm 
+                ? `ပစ္စည်း "${item.name}" မှာ လက်ကျန် မလုံလောက်ပါ။ (လက်ကျန်: ${prod.stockQty}, ဝယ်ယူလိုသည်: ${item.quantity})`
+                : `Insufficient stock for "${item.name}". (Available: ${prod.stockQty}, Requested: ${item.quantity})`
+              );
+            }
+          }
+        }
+
+        const sessionOrderItems = cart.map(it => ({
+          productId: it.productId || it.serviceId || '',
+          name: isMm && it.nameMm ? it.nameMm : it.name,
+          unitPriceMMK: it.unitPriceMMK,
+          costPriceMMK: it.costPriceMMK || 0,
+          quantity: it.quantity,
+          totalPriceMMK: it.quantity * it.unitPriceMMK,
+          addedAt: new Date().toISOString(),
+        }));
+
+        await db.addOrderToSessionTransaction({
+          sessionId: selectedRoomSessionId,
+          items: sessionOrderItems,
+          currentUser,
+        });
+
+        clearCart();
+        onRefresh();
+        alert(isMm ? 'အခန်းဘောင်ချာသို့ ပစ္စည်းများ အောင်မြင်စွာ ထည့်သွင်းပြီးပါပြီ' : 'Products successfully added to room bill/session!');
+        return;
+      } catch (err: any) {
+        alert('Room Order Error: ' + err.message);
+        return;
+      }
+    }
 
     // Verify discount permission if setting enabled
     if (settings?.requirePinForDiscount && directTotals.discountAmountMMK > 0 && !isDiscountAuthorized && currentUser.role === 'cashier') {
@@ -1058,6 +1123,85 @@ export const PosView: React.FC<PosViewProps> = ({
                   >
                     {isMm ? 'ရှင်းလင်းမည်' : 'Clear'}
                   </button>
+                )}
+              </div>
+
+              {/* Sale Mode Selector: Walk-in vs Room Bill */}
+              <div className="mt-3 space-y-2">
+                <div className="flex items-center gap-1.5 bg-gray-100 p-1 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => setSaleMode('walkin')}
+                    className={`flex-1 rounded-lg py-1.5 text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                      saleMode === 'walkin'
+                        ? 'bg-white text-gray-900 shadow-xs'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    <User className="h-3.5 w-3.5 text-emerald-600" />
+                    <span>{isMm ? 'Walk-in အရောင်း' : 'Walk-in Sale'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSaleMode('room')}
+                    className={`flex-1 rounded-lg py-1.5 text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                      saleMode === 'room'
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    <BedDouble className="h-3.5 w-3.5" />
+                    <span>{isMm ? 'အခန်းဘောင်ချာ (Room Bill)' : 'Room Bill'}</span>
+                  </button>
+                </div>
+
+                {saleMode === 'room' && (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 space-y-2">
+                    <label className="block text-[11px] font-bold text-emerald-900">
+                      {isMm ? 'အခန်းနှင့် Active Session ရွေးရန်' : 'Select Active Room / Session'}
+                    </label>
+                    <select
+                      value={selectedRoomSessionId}
+                      onChange={e => {
+                        const sId = e.target.value;
+                        setSelectedRoomSessionId(sId);
+                        const sess = activeSessions.find(s => s.id === sId);
+                        if (sess) {
+                          setCustomerName(sess.customerName || 'Customer');
+                          setSelectedCustomerId(sess.customerId || '');
+                        }
+                      }}
+                      className="w-full rounded-xl border border-emerald-300 bg-white px-2.5 py-1.5 text-xs text-gray-900 font-medium focus:ring-2 focus:ring-emerald-500"
+                    >
+                      <option value="">{isMm ? '-- Active အခန်းများ ရွေးပါ --' : '-- Select Active Room --'}</option>
+                      {activeSessions.map(sess => {
+                        const roomObj = rooms.find(r => r.id === sess.roomId);
+                        const est = calculateSessionRunningEstimate(sess, roomObj?.hourlyRateMMK || 0);
+                        return (
+                          <option key={sess.id} value={sess.id}>
+                            {sess.roomName} — {sess.customerName} ({sess.serviceName}) [Total Bill: {formatMMK(est.totalEstimatedMMK)}]
+                          </option>
+                        );
+                      })}
+                    </select>
+
+                    {selectedRoomSessionId ? (() => {
+                      const sess = activeSessions.find(s => s.id === selectedRoomSessionId);
+                      if (!sess) return null;
+                      const roomObj = rooms.find(r => r.id === sess.roomId);
+                      const est = calculateSessionRunningEstimate(sess, roomObj?.hourlyRateMMK || 0);
+                      return (
+                        <div className="text-[11px] text-emerald-800 flex justify-between items-center pt-1 border-t border-emerald-200/60">
+                          <span>👤 {sess.customerName} • 🕒 Started: {new Date(sess.startTime).toLocaleTimeString()}</span>
+                          <span className="font-bold font-mono">Bill: {formatMMK(est.totalEstimatedMMK)}</span>
+                        </div>
+                      );
+                    })() : (
+                      <p className="text-[10px] text-amber-800">
+                        {isMm ? 'ကျေးဇူးပြု၍ အခန်းတစ်ခန်း ရွေးချယ်ပါ (Active session ရှိရပါမည်)' : 'Please select an active room session for this sale.'}
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
 

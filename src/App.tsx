@@ -4,7 +4,7 @@
  * @license Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { db } from './db/database';
 import { seedDatabaseIfEmpty } from './db/seedData';
 import { hashPin } from './utils/cryptoAuth';
@@ -52,11 +52,59 @@ import { MasterDataView } from './components/views/MasterDataView';
 import { RecordsView } from './components/views/RecordsView';
 import { BookingsView } from './components/views/BookingsView';
 import { MembershipsPackagesView } from './components/views/MembershipsPackagesView';
+import { ReportsView } from './components/views/ReportsView';
+import { DashboardView } from './components/views/DashboardView';
 import { BookingRecord } from './types';
+import { AlertTriangle } from 'lucide-react';
 
 export default function App() {
   // Application State
-  const [activeTab, setActiveTab] = useState<ActiveTab>('rooms');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
+  const [tabHistory, setTabHistory] = useState<ActiveTab[]>(['dashboard']);
+  const lastBackPressTime = useRef<number>(0);
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
+
+  const handleSelectTab = (tab: ActiveTab) => {
+    if (tab === activeTab) return;
+    setTabHistory(prev => [...prev, tab]);
+    setActiveTab(tab);
+    window.history.pushState({ tab }, '', `#${tab}`);
+  };
+
+  useEffect(() => {
+    window.history.replaceState({ tab: activeTab }, '', `#${activeTab}`);
+
+    const handlePopState = (e: PopStateEvent) => {
+      e.preventDefault();
+      if (tabHistory.length > 1) {
+        const newHistory = [...tabHistory];
+        newHistory.pop();
+        const prevTab = newHistory[newHistory.length - 1] || 'dashboard';
+        setTabHistory(newHistory);
+        setActiveTab(prevTab);
+        window.history.pushState({ tab: prevTab }, '', `#${prevTab}`);
+      } else {
+        const now = Date.now();
+        if (now - lastBackPressTime.current < 3000) {
+          setShowExitConfirm(true);
+        } else {
+          lastBackPressTime.current = now;
+          alert(
+            lang === 'my'
+              ? 'App မှထွက်ရန် ၃ စက္ကန့်အတွင်း Back ခလုတ်ကို နှစ်ချက်ထပ်နှိပ်ပါ'
+              : 'Press Back again within 3 seconds to exit.'
+          );
+          window.history.pushState({ tab: activeTab }, '', `#${activeTab}`);
+        }
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [tabHistory, activeTab]);
+
   const [lang, setLang] = useState<Language>('my');
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
@@ -259,12 +307,14 @@ export default function App() {
     createdAt: '2026-01-01T00:00:00.000Z',
   };
 
+  const isMm = lang === 'my';
+
   return (
     <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col font-sans selection:bg-cyan-500 selection:text-white">
       {/* Top Navigation Bar */}
       <Navbar
         activeTab={activeTab}
-        onSelectTab={setActiveTab}
+        onSelectTab={handleSelectTab}
         currentUser={currentUser}
         onOpenPINModal={() => setIsPINModalOpen(true)}
         lang={lang}
@@ -286,6 +336,26 @@ export default function App() {
 
       {/* Main Content Viewport */}
       <main className="flex-1 w-full max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
+        {activeTab === 'dashboard' && (
+          <DashboardView
+            invoices={invoices}
+            sessions={sessions}
+            rooms={rooms}
+            bookings={bookings}
+            products={products}
+            services={services}
+            customers={customers}
+            staff={staff}
+            expenses={expenses}
+            staffLedger={staffLedger}
+            creditLedger={creditLedger}
+            currentUser={effectiveUser}
+            lang={lang}
+            onRefresh={refreshData}
+            onNavigateTab={handleSelectTab}
+            onShowReceipt={inv => setActiveInvoiceReceipt(inv)}
+          />
+        )}
         {activeTab === 'rooms' && (
           <RoomsView
             rooms={rooms}
@@ -298,6 +368,7 @@ export default function App() {
             lang={lang}
             onRefresh={refreshData}
             onShowReceipt={inv => setActiveInvoiceReceipt(inv)}
+            bookings={bookings}
           />
         )}
 
@@ -483,6 +554,41 @@ export default function App() {
         isOpenManual={isPWAModalOpen}
         onCloseManual={() => setIsPWAModalOpen(false)}
       />
+
+      {showExitConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-sm rounded-2xl bg-slate-900 border border-slate-800 p-6 shadow-2xl text-center space-y-4">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-rose-500/20 text-rose-400">
+              <AlertTriangle className="h-6 w-6" />
+            </div>
+            <div>
+              <h3 className="text-base font-extrabold text-white">
+                {isMm ? 'တကယ်ထွက်မှာလား။ (Confirm Exit)' : 'Are you sure you want to exit?'}
+              </h3>
+              <p className="text-xs text-slate-400 mt-1">
+                {isMm ? 'အက်ပ်လီကေးရှင်းမှ ထွက်ရန် သေချာပါသလား။' : 'Do you want to close or exit Shwe Thiri ERP?'}
+              </p>
+            </div>
+            <div className="flex gap-2 justify-center pt-2">
+              <button
+                onClick={() => setShowExitConfirm(false)}
+                className="flex-1 rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-xs font-bold text-slate-300 hover:bg-slate-700"
+              >
+                {isMm ? 'မထွက်ပါ' : 'Cancel'}
+              </button>
+              <button
+                onClick={() => {
+                  window.close();
+                  window.location.href = 'about:blank';
+                }}
+                className="flex-1 rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white hover:bg-rose-700"
+              >
+                {isMm ? 'ထွက်မည်' : 'Exit App'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

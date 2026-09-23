@@ -1,31 +1,39 @@
 /**
  * ============================================================================
- * PHASE 25: BOOKING & APPOINTMENT SERVICE MANAGER
+ * PHASE 31: BOOKING & APPOINTMENT SERVICE MANAGER
  * Handles offline-first booking operations, double booking conflict prevention,
- * tablet-friendly scheduling, and LAN synchronization via SyncManager.
+ * active session conflict validation, finite-state transitions, and LAN sync.
  * ============================================================================
  */
 
 import { db } from '../db/database';
 import { BookingRecord, BookingStatus } from '../types';
 import { syncManager } from './syncManager';
+import {
+  isTimeOverlapping,
+  calculateEndTime,
+  validateBookingStateTransition,
+  calculateBookingPricing,
+} from '../domain/booking';
 
 export interface BookingConflictResult {
   hasConflict: boolean;
   reason?: string;
   conflictingBooking?: BookingRecord;
+  conflictingSessionId?: string;
 }
 
 export class BookingManager {
   /**
-   * Helper to check overlap between two time windows (HH:mm strings or timestamps)
+   * Helper to check overlap between two time windows (HH:mm strings)
    */
   public isTimeOverlapping(startA: string, endA: string, startB: string, endB: string): boolean {
-    return startA < endB && endA > startB;
+    return isTimeOverlapping(startA, endA, startB, endB);
   }
 
   /**
    * Check double-booking conflicts locally in Dexie database
+   * Checks both scheduled bookings AND active running sessions.
    */
   public async checkConflict(params: {
     date: string;
@@ -35,6 +43,7 @@ export class BookingManager {
     staffId?: string;
     excludeBookingId?: string;
   }): Promise<BookingConflictResult> {
+    // 1. Check against active scheduled bookings
     const activeBookings = await db.bookings
       .where('date')
       .equals(params.date)
@@ -65,6 +74,46 @@ export class BookingManager {
       }
     }
 
+    // 2. Check against active running sessions (for today)
+    const todayStr = new Date().toISOString().split('T')[0];
+    if (params.date === todayStr && (params.roomId || params.staffId)) {
+      const activeSessions = await db.sessions
+        .filter((s) => s.status === 'active' || s.status === 'started' || s.status === 'extended')
+        .toArray();
+
+      for (const s of activeSessions) {
+        let sessStartHHMM = '00:00';
+        if (s.startTime.includes('T')) {
+          sessStartHHMM = s.startTime.split('T')[1].slice(0, 5);
+        } else if (s.startTime.includes(':')) {
+          sessStartHHMM = s.startTime.slice(0, 5);
+        }
+
+        const sessEndHHMM = calculateEndTime(sessStartHHMM, s.plannedDurationMinutes || s.actualDurationMinutes || 60);
+
+        if (this.isTimeOverlapping(sessStartHHMM, sessEndHHMM, params.startTime, params.endTime)) {
+          if (params.roomId && s.roomId === params.roomId) {
+            return {
+              hasConflict: true,
+              reason: `အခန်း (${s.roomName || params.roomId}) သည် လက်ရှိတွင် ဝန်ဆောင်မှုပေးနေဆဲဖြစ်ပါသည် (${sessStartHHMM}-${sessEndHHMM})`,
+              conflictingSessionId: s.id,
+            };
+          }
+
+          if (params.staffId && s.assignedStaff) {
+            const isStaffBusy = s.assignedStaff.some((st) => st.staffId === params.staffId);
+            if (isStaffBusy) {
+              return {
+                hasConflict: true,
+                reason: `ဝန်ထမ်းသည် လက်ရှိ Session တွင် တာဝန်ထမ်းဆောင်နေဆဲဖြစ်ပါသည်`,
+                conflictingSessionId: s.id,
+              };
+            }
+          }
+        }
+      }
+    }
+
     return { hasConflict: false };
   }
 
@@ -85,6 +134,10 @@ export class BookingManager {
     startTime: string;
     endTime: string;
     durationMinutes: number;
+    price?: number;
+    discount?: number;
+    finalAmount?: number;
+    status?: BookingStatus;
     notes?: string;
     depositAmountMMK?: number;
     depositPaymentMethod?: string;
@@ -108,6 +161,9 @@ export class BookingManager {
     const bookingCode = `BKG-${Date.now().toString().slice(-6)}`;
     const now = new Date().toISOString();
 
+    const pricing = calculateBookingPricing(params.price || 0, params.discount || 0);
+    const initialStatus: BookingStatus = params.status || 'CONFIRMED';
+
     const bookingRecord: BookingRecord = {
       id: bookingId,
       bookingCode,
@@ -126,7 +182,10 @@ export class BookingManager {
       startTime: params.startTime,
       endTime: params.endTime,
       durationMinutes: params.durationMinutes,
-      status: 'CONFIRMED',
+      price: pricing.price,
+      discount: pricing.discount,
+      finalAmount: params.finalAmount !== undefined ? params.finalAmount : pricing.finalAmount,
+      status: initialStatus,
       notes: params.notes,
       depositAmountMMK: params.depositAmountMMK || 0,
       depositPaymentMethod: params.depositPaymentMethod,
@@ -142,6 +201,10 @@ export class BookingManager {
       payload: {
         ...bookingRecord,
         bookingId,
+      },
+      applyServerResultFn: async (result) => {
+        const authoritativeBooking = result?.booking || bookingRecord;
+        await db.bookings.put(authoritativeBooking);
       },
       offlineMutationFn: async () => {
         await db.bookings.put(bookingRecord);
@@ -172,10 +235,26 @@ export class BookingManager {
     startTime: string;
     endTime: string;
     durationMinutes: number;
+    price?: number;
+    discount?: number;
+    finalAmount?: number;
     notes?: string;
     status?: BookingStatus;
     updatedBy: string;
   }): Promise<{ success: boolean; booking?: BookingRecord; error?: string }> {
+    const existing = await db.bookings.get(params.bookingId);
+    if (!existing) {
+      return { success: false, error: 'Booking not found' };
+    }
+
+    // Validate state transition if status is being changed
+    if (params.status && params.status !== existing.status) {
+      const transitionValidation = validateBookingStateTransition(existing.status, params.status);
+      if (!transitionValidation.valid) {
+        return { success: false, error: transitionValidation.error };
+      }
+    }
+
     const conflict = await this.checkConflict({
       date: params.date,
       startTime: params.startTime,
@@ -190,10 +269,9 @@ export class BookingManager {
     }
 
     const now = new Date().toISOString();
-    const existing = await db.bookings.get(params.bookingId);
-    if (!existing) {
-      return { success: false, error: 'Booking not found' };
-    }
+    const updatedPrice = params.price !== undefined ? params.price : existing.price;
+    const updatedDiscount = params.discount !== undefined ? params.discount : existing.discount;
+    const pricing = calculateBookingPricing(updatedPrice || 0, updatedDiscount || 0);
 
     const updatedBooking: BookingRecord = {
       ...existing,
@@ -209,6 +287,9 @@ export class BookingManager {
       startTime: params.startTime,
       endTime: params.endTime,
       durationMinutes: params.durationMinutes,
+      price: pricing.price,
+      discount: pricing.discount,
+      finalAmount: params.finalAmount !== undefined ? params.finalAmount : pricing.finalAmount,
       status: params.status ?? existing.status,
       notes: params.notes ?? existing.notes,
       updatedAt: now,
@@ -220,6 +301,10 @@ export class BookingManager {
       entityId: params.bookingId,
       payload: {
         ...params,
+      },
+      applyServerResultFn: async (result) => {
+        const authoritativeBooking = result?.booking || updatedBooking;
+        await db.bookings.put(authoritativeBooking);
       },
       offlineMutationFn: async () => {
         await db.bookings.put(updatedBooking);
@@ -234,6 +319,80 @@ export class BookingManager {
   }
 
   /**
+   * Reschedule booking to new date/time or resource
+   */
+  public async rescheduleBooking(params: {
+    bookingId: string;
+    newDate: string;
+    newStartTime: string;
+    newEndTime: string;
+    newDurationMinutes?: number;
+    newRoomId?: string;
+    newRoomName?: string;
+    newStaffId?: string;
+    newStaffName?: string;
+    updatedBy: string;
+  }): Promise<{ success: boolean; booking?: BookingRecord; error?: string }> {
+    const existing = await db.bookings.get(params.bookingId);
+    if (!existing) return { success: false, error: 'Booking not found' };
+
+    if (['COMPLETED', 'CANCELLED', 'NO_SHOW'].includes(existing.status)) {
+      return { success: false, error: `ပြီးဆုံး သို့မဟုတ် ပယ်ဖျက်ထားသော ဘိုကင်အား အချိန်ပြောင်းခွင့်မပြုပါ` };
+    }
+
+    const duration = params.newDurationMinutes || existing.durationMinutes;
+    return this.updateBooking({
+      bookingId: params.bookingId,
+      date: params.newDate,
+      startTime: params.newStartTime,
+      endTime: params.newEndTime,
+      durationMinutes: duration,
+      roomId: params.newRoomId ?? existing.roomId,
+      roomName: params.newRoomName ?? existing.roomName,
+      staffId: params.newStaffId ?? existing.staffId,
+      staffName: params.newStaffName ?? existing.staffName,
+      updatedBy: params.updatedBy,
+    });
+  }
+
+  /**
+   * Confirm a pending booking
+   */
+  public async confirmBooking(bookingId: string, confirmedBy: string): Promise<{ success: boolean; error?: string }> {
+    const existing = await db.bookings.get(bookingId);
+    if (!existing) return { success: false, error: 'Booking not found' };
+
+    const validation = validateBookingStateTransition(existing.status, 'CONFIRMED');
+    if (!validation.valid) return { success: false, error: validation.error };
+
+    const now = new Date().toISOString();
+    const updated: BookingRecord = {
+      ...existing,
+      status: 'CONFIRMED',
+      updatedAt: now,
+    };
+
+    await syncManager.executeMutation({
+      operationType: 'BOOKING_CONFIRM',
+      entityType: 'BOOKING',
+      entityId: bookingId,
+      payload: { bookingId },
+      applyServerResultFn: async (result) => {
+        await db.bookings.update(bookingId, {
+          status: 'CONFIRMED',
+          updatedAt: result?.updatedAt || new Date().toISOString(),
+        });
+      },
+      offlineMutationFn: async () => {
+        await db.bookings.put(updated);
+        return { bookingId, status: 'CONFIRMED' };
+      },
+    });
+
+    return { success: true };
+  }
+
+  /**
    * Cancel booking
    */
   public async cancelBooking(params: {
@@ -243,6 +402,9 @@ export class BookingManager {
   }): Promise<{ success: boolean; error?: string }> {
     const existing = await db.bookings.get(params.bookingId);
     if (!existing) return { success: false, error: 'Booking not found' };
+
+    const validation = validateBookingStateTransition(existing.status, 'CANCELLED');
+    if (!validation.valid) return { success: false, error: validation.error };
 
     const now = new Date().toISOString();
     const updated: BookingRecord = {
@@ -262,9 +424,107 @@ export class BookingManager {
         bookingId: params.bookingId,
         cancellationReason: params.reason,
       },
+      applyServerResultFn: async (result) => {
+        await db.bookings.update(params.bookingId, {
+          status: 'CANCELLED',
+          cancellationReason: params.reason || 'Customer cancelled',
+          cancelledBy: params.cancelledBy,
+          cancelledAt: result?.cancelledAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+      },
       offlineMutationFn: async () => {
         await db.bookings.put(updated);
         return { bookingId: params.bookingId, status: 'CANCELLED' };
+      },
+    });
+
+    return { success: true };
+  }
+
+  /**
+   * Mark booking as NO-SHOW
+   */
+  public async markNoShow(bookingId: string, updatedBy: string): Promise<{ success: boolean; error?: string }> {
+    const existing = await db.bookings.get(bookingId);
+    if (!existing) return { success: false, error: 'Booking not found' };
+
+    const validation = validateBookingStateTransition(existing.status, 'NO_SHOW');
+    if (!validation.valid) return { success: false, error: validation.error };
+
+    const now = new Date().toISOString();
+    const updated: BookingRecord = {
+      ...existing,
+      status: 'NO_SHOW',
+      updatedAt: now,
+    };
+
+    await syncManager.executeMutation({
+      operationType: 'BOOKING_NO_SHOW',
+      entityType: 'BOOKING',
+      entityId: bookingId,
+      payload: { bookingId },
+      applyServerResultFn: async (result) => {
+        await db.bookings.update(bookingId, {
+          status: 'NO_SHOW',
+          updatedAt: result?.updatedAt || new Date().toISOString(),
+        });
+      },
+      offlineMutationFn: async () => {
+        await db.bookings.put(updated);
+        return { bookingId, status: 'NO_SHOW' };
+      },
+    });
+
+    return { success: true };
+  }
+
+  /**
+   * Complete booking (marks finished, records completion timestamp and invoice)
+   */
+  public async completeBooking(params: {
+    bookingId: string;
+    sessionId?: string;
+    invoiceId?: string;
+    completedBy: string;
+  }): Promise<{ success: boolean; error?: string }> {
+    const existing = await db.bookings.get(params.bookingId);
+    if (!existing) return { success: false, error: 'Booking not found' };
+
+    const validation = validateBookingStateTransition(existing.status, 'COMPLETED');
+    if (!validation.valid) return { success: false, error: validation.error };
+
+    const now = new Date().toISOString();
+    const updated: BookingRecord = {
+      ...existing,
+      status: 'COMPLETED',
+      sessionId: params.sessionId || existing.sessionId,
+      invoiceId: params.invoiceId || existing.invoiceId,
+      completedAt: now,
+      updatedAt: now,
+    };
+
+    await syncManager.executeMutation({
+      operationType: 'BOOKING_COMPLETE',
+      entityType: 'BOOKING',
+      entityId: params.bookingId,
+      payload: {
+        bookingId: params.bookingId,
+        sessionId: params.sessionId,
+        invoiceId: params.invoiceId,
+      },
+      applyServerResultFn: async (result) => {
+        await db.bookings.update(params.bookingId, {
+          status: 'COMPLETED',
+          sessionId: result?.sessionId || params.sessionId || existing.sessionId,
+          invoiceId: result?.invoiceId || params.invoiceId || existing.invoiceId,
+          completedAt: result?.completedAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+      },
+      offlineMutationFn: async () => {
+        await db.bookings.put(updated);
+        return { bookingId: params.bookingId, status: 'COMPLETED' };
       },
     });
 
@@ -283,8 +543,28 @@ export class BookingManager {
     const existing = await db.bookings.get(params.bookingId);
     if (!existing) return { success: false, error: 'Booking not found' };
 
+    const validation = validateBookingStateTransition(existing.status, 'CHECKED_IN');
+    if (!validation.valid && existing.status !== 'CHECKED_IN') {
+      return { success: false, error: validation.error };
+    }
+
     const now = new Date().toISOString();
     let createdSessionId: string | undefined;
+
+    // Check if active session already exists for this booking to prevent duplicates
+    if (existing.sessionId) {
+      const activeSess = await db.sessions.get(existing.sessionId);
+      if (activeSess && (activeSess.status === 'active' || activeSess.status === 'started' || activeSess.status === 'extended')) {
+        createdSessionId = existing.sessionId;
+      }
+    }
+
+    if (!createdSessionId) {
+      const activeSessByBkg = await db.sessions.filter(s => s.bookingId === params.bookingId && (s.status === 'active' || s.status === 'started' || s.status === 'extended')).first();
+      if (activeSessByBkg) {
+        createdSessionId = activeSessByBkg.id;
+      }
+    }
 
     const opResult = await syncManager.executeMutation({
       operationType: 'BOOKING_CHECKIN',
@@ -295,10 +575,29 @@ export class BookingManager {
         startSession: params.startSession,
         hourlyRateMMK: params.hourlyRateMMK,
       },
+      applyServerResultFn: async (result) => {
+        if (!result) return;
+        const b = await db.bookings.get(params.bookingId);
+        if (b) {
+          await db.bookings.update(params.bookingId, {
+            status: result.status || 'CHECKED_IN',
+            sessionId: result.sessionId || b.sessionId,
+            checkedInAt: result.checkedInAt || now,
+            checkedInBy: params.checkedInBy,
+            updatedAt: now,
+          });
+        }
+        if (result.sessionId && existing.roomId) {
+          await db.rooms.update(existing.roomId, {
+            status: 'occupied',
+            currentSessionId: result.sessionId,
+          });
+        }
+      },
       offlineMutationFn: async () => {
         let newStatus: BookingStatus = 'CHECKED_IN';
 
-        if (params.startSession && existing.roomId) {
+        if (params.startSession && existing.roomId && !createdSessionId) {
           createdSessionId = `sess_${Date.now()}`;
           const sessionCode = `SES-${Date.now().toString().slice(-6)}`;
 
@@ -313,12 +612,13 @@ export class BookingManager {
             customerPhone: existing.customerPhone,
             serviceId: existing.serviceId || 'srv_default',
             serviceName: existing.serviceName || 'Standard Service',
-            basePriceMMK: params.hourlyRateMMK || 0,
+            basePriceMMK: params.hourlyRateMMK || existing.finalAmount || existing.price || 0,
             roomSurchargeMMK: 0,
             plannedDurationMinutes: existing.durationMinutes,
             actualDurationMinutes: existing.durationMinutes,
             startTime: now,
             status: 'active',
+            bookingId: existing.id,
             assignedStaff: existing.staffId ? [{
               staffId: existing.staffId,
               staffName: existing.staffName || '',
@@ -338,6 +638,8 @@ export class BookingManager {
             currentSessionId: createdSessionId,
           });
 
+          newStatus = 'IN_SERVICE';
+        } else if (createdSessionId) {
           newStatus = 'IN_SERVICE';
         }
 

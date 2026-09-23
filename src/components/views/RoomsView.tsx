@@ -14,9 +14,11 @@ import {
   InvoiceItem,
   SessionStaffAssignment,
   SessionPricingRuleType,
+  BookingRecord,
 } from '../../types';
 import { db } from '../../db/database';
 import { syncManager } from '../../services/syncManager';
+import { bookingManager } from '../../services/bookingManager';
 import {
   formatMMK,
   calculateDurationMinutes,
@@ -69,6 +71,7 @@ interface RoomsViewProps {
   lang: Language;
   onRefresh: () => void;
   onShowReceipt: (invoice: Invoice) => void;
+  bookings?: BookingRecord[];
 }
 
 type TabMode = 'rooms' | 'history';
@@ -85,6 +88,7 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
   lang,
   onRefresh,
   onShowReceipt,
+  bookings = [],
 }) => {
   const isMm = lang === 'my';
 
@@ -137,6 +141,7 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
 
   // Start Session Form State
   const [selectedRoomId, setSelectedRoomId] = useState<string>('');
+  const [selectedBookingId, setSelectedBookingId] = useState<string>('');
   const [customerName, setCustomerName] = useState<string>('Walk-in Customer (ဧည့်သည်)');
   const [customerPhone, setCustomerPhone] = useState<string>('');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
@@ -192,23 +197,51 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
   }, [rooms, sessions]);
 
   // Handle Opening Start Session Modal
-  const handleOpenStart = (room?: Room) => {
+  const handleOpenStart = (room?: Room, booking?: BookingRecord) => {
     const targetRoom = room || rooms.find(r => r.status === 'available') || rooms[0];
     setSelectedRoomForStart(targetRoom || null);
     setSelectedRoomId(targetRoom ? targetRoom.id : (rooms[0]?.id || ''));
     
-    const initialService = services[0];
-    setSelectedServiceId(initialService?.id || '');
-    setPlannedDurationMinutes(initialService?.durationMinutes || 60);
-    setPricingRule('duration_based');
-    setCustomBasePrice('');
+    if (booking) {
+      setSelectedBookingId(booking.id);
+      setCustomerName(booking.customerName);
+      setCustomerPhone(booking.customerPhone || '');
+      setSelectedCustomerId(booking.customerId || '');
+      if (booking.serviceId) {
+        setSelectedServiceId(booking.serviceId);
+        setPlannedDurationMinutes(booking.durationMinutes);
+      } else {
+        const initialService = services[0];
+        setSelectedServiceId(initialService?.id || '');
+        setPlannedDurationMinutes(initialService?.durationMinutes || 60);
+      }
+      if (booking.price) {
+        setCustomBasePrice(booking.finalAmount !== undefined ? booking.finalAmount : booking.price);
+      } else {
+        setCustomBasePrice('');
+      }
+      if (booking.staffId) {
+        setSelectedStaffIds([booking.staffId]);
+      } else {
+        const availableStaff = staff.filter(s => s.status === 'available');
+        setSelectedStaffIds(availableStaff.length > 0 ? [availableStaff[0].id] : []);
+      }
+      setSessionNotes(booking.notes || `Linked from booking ${booking.bookingCode}`);
+    } else {
+      setSelectedBookingId('');
+      const initialService = services[0];
+      setSelectedServiceId(initialService?.id || '');
+      setPlannedDurationMinutes(initialService?.durationMinutes || 60);
+      setPricingRule('duration_based');
+      setCustomBasePrice('');
 
-    const availableStaff = staff.filter(s => s.status === 'available');
-    setSelectedStaffIds(availableStaff.length > 0 ? [availableStaff[0].id] : []);
-    setCustomerName('Walk-in Customer (ဧည့်သည်)');
-    setCustomerPhone('');
-    setSelectedCustomerId('');
-    setSessionNotes('');
+      const availableStaff = staff.filter(s => s.status === 'available');
+      setSelectedStaffIds(availableStaff.length > 0 ? [availableStaff[0].id] : []);
+      setCustomerName('Walk-in Customer (ဧည့်သည်)');
+      setCustomerPhone('');
+      setSelectedCustomerId('');
+      setSessionNotes('');
+    }
     setIsStartModalOpen(true);
   };
 
@@ -243,7 +276,8 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
       const sessionParams = {
         session: {
           roomId: room.id,
-          roomName: isMm ? room.nameMm : room.name,
+          roomName: room.name,
+          bookingId: selectedBookingId || undefined,
           customerId: selectedCustomerId || undefined,
           customerName: customerName.trim() || 'Walk-in Customer (ဧည့်သည်)',
           customerPhone: customerPhone.trim() || undefined,
@@ -283,6 +317,18 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
           return db.startSessionTransaction(sessionParams);
         },
       });
+
+      if (selectedBookingId) {
+        try {
+          await bookingManager.checkInBooking({
+            bookingId: selectedBookingId,
+            startSession: false,
+            checkedInBy: currentUser.name,
+          });
+        } catch (bErr) {
+          console.warn('Booking status update:', bErr);
+        }
+      }
 
       setIsStartModalOpen(false);
       onRefresh();
@@ -897,7 +943,7 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
                           {room.type.replace('_', ' ')} {room.surchargeMMK ? `(+${formatMMK(room.surchargeMMK)})` : ''}
                         </span>
                         <h3 className="text-lg font-black text-white tracking-wide mt-0.5">
-                          {isMm ? room.nameMm : room.name}
+                          {room.name}
                         </h3>
                       </div>
                       <span
@@ -1017,10 +1063,54 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
                           </div>
                         ) : (
                           <div className="space-y-2">
-                            <CheckCircle2 className="mx-auto h-8 w-8 text-cyan-400" />
-                            <p className="font-bold text-cyan-300 text-sm">
-                              {isMm ? 'ဧည့်သည် လက်ခံရန် အသင့်ရှိသည်' : 'Ready for Next Customer'}
-                            </p>
+                            {(() => {
+                              const todayStr = new Date().toISOString().split('T')[0];
+                              const roomBooking = (bookings || []).find(
+                                b => b.roomId === room.id &&
+                                     b.date === todayStr &&
+                                     ['CONFIRMED', 'CHECKED_IN', 'PENDING'].includes(b.status)
+                              );
+                              if (roomBooking) {
+                                return (
+                                  <div className="p-3 rounded-2xl bg-cyan-950/80 border border-cyan-500/40 text-left space-y-1.5 shadow-lg">
+                                    <div className="flex items-center justify-between text-[11px]">
+                                      <span className="font-bold text-cyan-300 flex items-center gap-1">
+                                        <Calendar className="h-3.5 w-3.5 text-cyan-400" />
+                                        {isMm ? 'ကြိုတင်စာရင်း' : 'Upcoming Booking'}
+                                      </span>
+                                      <span className="font-mono text-cyan-200 bg-cyan-900/80 px-2 py-0.5 rounded text-[11px] font-bold">
+                                        {roomBooking.startTime} - {roomBooking.endTime}
+                                      </span>
+                                    </div>
+                                    <div className="text-sm font-black text-white truncate">
+                                      {roomBooking.customerName}
+                                    </div>
+                                    <div className="text-xs text-slate-300 truncate">
+                                      {roomBooking.serviceName || 'Service'} {roomBooking.staffName ? `• ${roomBooking.staffName}` : ''}
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleOpenStart(room, roomBooking);
+                                      }}
+                                      className="mt-2 w-full py-2 text-xs font-bold bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl shadow-md transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                                    >
+                                      <Play className="h-3.5 w-3.5 fill-current" />
+                                      {isMm ? 'Booking ဖြင့် စတင်မည်' : 'Check-in & Start'}
+                                    </button>
+                                  </div>
+                                );
+                              }
+                              return (
+                                <>
+                                  <CheckCircle2 className="mx-auto h-8 w-8 text-cyan-400" />
+                                  <p className="font-bold text-cyan-300 text-sm">
+                                    {isMm ? 'ဧည့်သည် လက်ခံရန် အသင့်ရှိသည်' : 'Ready for Next Customer'}
+                                  </p>
+                                </>
+                              );
+                            })()}
                           </div>
                         )}
                       </div>
@@ -1254,6 +1344,62 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
                   ))}
                 </select>
               </div>
+
+              {/* Optional Link with Scheduled Booking */}
+              {(() => {
+                const todayStr = new Date().toISOString().split('T')[0];
+                const roomBookings = (bookings || []).filter(
+                  b => b.roomId === selectedRoomId &&
+                       b.date === todayStr &&
+                       ['CONFIRMED', 'CHECKED_IN', 'PENDING'].includes(b.status)
+                );
+                if (roomBookings.length === 0) return null;
+                return (
+                  <div className="rounded-xl border border-cyan-200 bg-cyan-50/80 p-3">
+                    <label className="mb-1.5 flex items-center gap-1.5 text-xs font-bold text-cyan-900">
+                      <Calendar className="h-3.5 w-3.5 text-cyan-700" />
+                      {isMm ? 'ယနေ့ကြိုတင်စာရင်းနှင့် ချိတ်ဆက်မည် (ရွေးချယ်ရန်):' : 'Link with Scheduled Booking (Optional):'}
+                    </label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {roomBookings.map(b => (
+                        <button
+                          key={b.id}
+                          type="button"
+                          onClick={() => {
+                            if (selectedBookingId === b.id) {
+                              setSelectedBookingId('');
+                            } else {
+                              setSelectedBookingId(b.id);
+                              setCustomerName(b.customerName);
+                              setCustomerPhone(b.customerPhone || '');
+                              setSelectedCustomerId(b.customerId || '');
+                              if (b.serviceId) {
+                                setSelectedServiceId(b.serviceId);
+                                setPlannedDurationMinutes(b.durationMinutes);
+                              }
+                              if (b.price) {
+                                setCustomBasePrice(b.finalAmount !== undefined ? b.finalAmount : b.price);
+                              }
+                              if (b.staffId) {
+                                setSelectedStaffIds([b.staffId]);
+                              }
+                              setSessionNotes(b.notes || `Linked from booking ${b.bookingCode}`);
+                            }
+                          }}
+                          className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-all border ${
+                            selectedBookingId === b.id
+                              ? 'bg-cyan-700 text-white border-cyan-800 shadow-xs'
+                              : 'bg-white text-cyan-900 border-cyan-300 hover:bg-cyan-100'
+                          }`}
+                        >
+                          {b.startTime} - {b.customerName} ({b.serviceName || 'Service'})
+                          {selectedBookingId === b.id ? ' ✓' : ''}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Customer Info */}
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

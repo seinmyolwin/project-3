@@ -285,14 +285,35 @@ export class LocalRealtimeEventBus {
     }
 
     if (role === 'receptionist') {
-      // Receptionists see rooms, sessions, and payments
+      // Receptionists see rooms, sessions, payments, and all booking events
       return [
         'SESSION_STARTED',
+        'SESSION_EXTENDED',
         'SESSION_UPDATED',
+        'SESSION_PAUSED',
+        'SESSION_RESUMED',
+        'SERVICE_ADDED',
+        'PRODUCT_ADDED',
         'SESSION_ENDED',
+        'SESSION_CHECKED_OUT',
         'ROOM_STATUS_CHANGED',
+        'ROOM_AVAILABLE',
+        'ROOM_TRANSFERRED',
         'PAYMENT_CREATED',
+        'PAYMENT_UPDATED',
+        'PAYMENT_DUE',
         'INVOICE_UPDATED',
+        'BOOKING_CREATED',
+        'BOOKING_UPDATED',
+        'BOOKING_CONFIRMED',
+        'BOOKING_RESCHEDULED',
+        'BOOKING_STARTED',
+        'BOOKING_COMPLETED',
+        'BOOKING_CANCELLED',
+        'BOOKING_CHECKED_IN',
+        'BOOKING_NO_SHOW',
+        'ROOM_AVAILABILITY_CHANGED',
+        'STAFF_AVAILABILITY_CHANGED',
         'DEVICE_CONNECTED',
         'DEVICE_DISCONNECTED',
       ].includes(eventType);

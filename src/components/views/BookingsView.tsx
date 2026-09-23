@@ -1,8 +1,10 @@
 /**
  * ============================================================================
- * PHASE 25: BOOKINGS & APPOINTMENT MANAGEMENT VIEW
+ * PHASE 31: BOOKINGS & APPOINTMENT MANAGEMENT VIEW
  * 100% Offline-First & LAN-Authoritative Resource Scheduling
- * Provides Day, Week, Timeline views, Conflict Prevention, and Check-in to Session.
+ * Provides Day, Week, Timeline, and List views, Conflict Prevention,
+ * Lifecycle State Transitions (Pending, Confirmed, Check-in, In-Service,
+ * Completed, Cancelled, No-Show), and Customer Rebooking.
  * ============================================================================
  */
 
@@ -39,6 +41,9 @@ import {
   Check,
   Ban,
   CalendarRange,
+  RotateCcw,
+  Sparkles,
+  UserX,
 } from 'lucide-react';
 
 interface BookingsViewProps {
@@ -53,7 +58,7 @@ interface BookingsViewProps {
   onNavigateToRoom?: (roomId: string) => void;
 }
 
-type ViewMode = 'day' | 'timeline' | 'list';
+type ViewMode = 'timeline' | 'day' | 'week' | 'list';
 
 export const BookingsView: React.FC<BookingsViewProps> = ({
   bookings,
@@ -76,11 +81,12 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [roomFilter, setRoomFilter] = useState<string>('ALL');
   const [staffFilter, setStaffFilter] = useState<string>('ALL');
+  const [serviceFilter, setServiceFilter] = useState<string>('ALL');
 
   // Modal states
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedBookingForAction, setSelectedBookingForAction] = useState<BookingRecord | null>(null);
-  const [actionType, setActionType] = useState<'checkin' | 'cancel' | 'edit' | null>(null);
+  const [actionType, setActionType] = useState<'checkin' | 'cancel' | 'reschedule' | 'noshow' | 'complete' | null>(null);
   const [cancelReason, setCancelReason] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -95,9 +101,19 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
   const [formDate, setFormDate] = useState<string>(todayStr);
   const [formStartTime, setFormStartTime] = useState<string>('10:00');
   const [formDurationMinutes, setFormDurationMinutes] = useState<number>(60);
+  const [formPrice, setFormPrice] = useState<number>(0);
+  const [formDiscount, setFormDiscount] = useState<number>(0);
+  const [formStatus, setFormStatus] = useState<BookingStatus>('CONFIRMED');
   const [formNotes, setFormNotes] = useState<string>('');
   const [formDepositMMK, setFormDepositMMK] = useState<number>(0);
   const [formDepositMethod, setFormDepositMethod] = useState<string>('cash');
+
+  // Reschedule form state
+  const [rescheduleDate, setRescheduleDate] = useState<string>(todayStr);
+  const [rescheduleStartTime, setRescheduleStartTime] = useState<string>('10:00');
+  const [rescheduleRoomId, setRescheduleRoomId] = useState<string>('');
+  const [rescheduleStaffId, setRescheduleStaffId] = useState<string>('');
+  const [rescheduleError, setRescheduleError] = useState<string | null>(null);
 
   // Calculate form end time
   const formEndTime = useMemo(() => {
@@ -108,6 +124,17 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
     const endM = totalMinutes % 60;
     return `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
   }, [formStartTime, formDurationMinutes]);
+
+  // Calculate reschedule end time
+  const rescheduleEndTime = useMemo(() => {
+    if (!selectedBookingForAction) return '11:00';
+    const [h, m] = rescheduleStartTime.split(':').map(Number);
+    if (isNaN(h) || isNaN(m)) return '11:00';
+    const totalMinutes = h * 60 + m + selectedBookingForAction.durationMinutes;
+    const endH = Math.floor(totalMinutes / 60) % 24;
+    const endM = totalMinutes % 60;
+    return `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
+  }, [rescheduleStartTime, selectedBookingForAction]);
 
   // Live conflict warning in form
   const liveConflict = useMemo(() => {
@@ -129,11 +156,43 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
     return null;
   }, [bookings, formDate, formStartTime, formEndTime, formRoomId, formStaffId, selectedBookingForAction]);
 
+  // Week days around selectedDate (Monday to Sunday)
+  const weekDays = useMemo(() => {
+    const curr = new Date(selectedDate);
+    const dayIndex = curr.getDay(); // 0 is Sunday, 1 is Monday...
+    const diffToMonday = dayIndex === 0 ? -6 : 1 - dayIndex;
+    const monday = new Date(curr);
+    monday.setDate(curr.getDate() + diffToMonday);
+
+    const days: Array<{ date: string; dayName: string; dayNumber: number; isToday: boolean; isSelected: boolean }> = [];
+    const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const mmDayNames = ['တနင်္လာ', 'အင်္ဂါ', 'ဗုဒ္ဓဟူး', 'ကြာသပတေး', 'သောကြာ', 'စနေ', 'တနင်္ဂနွေ'];
+
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      const dStr = d.toISOString().split('T')[0];
+      days.push({
+        date: dStr,
+        dayName: isMm ? mmDayNames[i] : dayNames[i],
+        dayNumber: d.getDate(),
+        isToday: dStr === todayStr,
+        isSelected: dStr === selectedDate,
+      });
+    }
+    return days;
+  }, [selectedDate, isMm, todayStr]);
+
   // Filtered bookings
   const filteredBookings = useMemo(() => {
     return bookings.filter((b) => {
       // Date filter
-      if (viewMode !== 'list' && b.date !== selectedDate) return false;
+      if (viewMode === 'timeline' || viewMode === 'day') {
+        if (b.date !== selectedDate) return false;
+      } else if (viewMode === 'week') {
+        const weekDates = weekDays.map((w) => w.date);
+        if (!weekDates.includes(b.date)) return false;
+      }
 
       // Status filter
       if (statusFilter !== 'ALL' && b.status !== statusFilter) return false;
@@ -143,6 +202,9 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
 
       // Staff filter
       if (staffFilter !== 'ALL' && b.staffId !== staffFilter) return false;
+
+      // Service filter
+      if (serviceFilter !== 'ALL' && b.serviceId !== serviceFilter) return false;
 
       // Search query
       if (searchQuery.trim()) {
@@ -158,20 +220,24 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
 
       return true;
     });
-  }, [bookings, selectedDate, viewMode, statusFilter, roomFilter, staffFilter, searchQuery]);
+  }, [bookings, selectedDate, viewMode, statusFilter, roomFilter, staffFilter, serviceFilter, searchQuery, weekDays]);
 
-  // Reset form
+  // Open Create Modal
   const openCreateModal = () => {
     setSelectedBookingForAction(null);
     setFormCustomerName('');
     setFormCustomerPhone('');
     setFormCustomerId(undefined);
-    setFormServiceId(services[0]?.id || '');
+    const initialService = services[0];
+    setFormServiceId(initialService?.id || '');
+    setFormPrice(initialService?.priceMMK || 0);
+    setFormDiscount(0);
     setFormRoomId(rooms[0]?.id || '');
     setFormStaffId(staff[0]?.id || '');
     setFormDate(selectedDate || todayStr);
     setFormStartTime('14:00');
-    setFormDurationMinutes(services[0]?.durationMinutes || 60);
+    setFormDurationMinutes(initialService?.durationMinutes || 60);
+    setFormStatus('CONFIRMED');
     setFormNotes('');
     setFormDepositMMK(0);
     setFormDepositMethod('cash');
@@ -179,11 +245,68 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
     setIsCreateModalOpen(true);
   };
 
+  // Open Rebook Modal (Prefilled from existing booking)
+  const openRebookModal = (b: BookingRecord) => {
+    setSelectedBookingForAction(null);
+    setFormCustomerName(b.customerName);
+    setFormCustomerPhone(b.customerPhone || '');
+    setFormCustomerId(b.customerId);
+    setFormServiceId(b.serviceId || '');
+    const service = services.find((s) => s.id === b.serviceId);
+    setFormPrice(b.price || service?.priceMMK || 0);
+    setFormDiscount(0);
+    setFormRoomId(b.roomId || rooms[0]?.id || '');
+    setFormStaffId(b.staffId || staff[0]?.id || '');
+    setFormDate(selectedDate || todayStr);
+    setFormStartTime('14:00');
+    setFormDurationMinutes(b.durationMinutes || 60);
+    setFormStatus('CONFIRMED');
+    setFormNotes(`Rebook from ${b.bookingCode}`);
+    setFormDepositMMK(0);
+    setFormDepositMethod('cash');
+    setFormError(null);
+    setIsCreateModalOpen(true);
+  };
+
+  // Open Edit Modal
+  const openEditModal = (b: BookingRecord) => {
+    setSelectedBookingForAction(b);
+    setFormCustomerName(b.customerName);
+    setFormCustomerPhone(b.customerPhone || '');
+    setFormCustomerId(b.customerId);
+    setFormServiceId(b.serviceId || '');
+    setFormPrice(b.price || 0);
+    setFormDiscount(b.discount || 0);
+    setFormRoomId(b.roomId || '');
+    setFormStaffId(b.staffId || '');
+    setFormDate(b.date);
+    setFormStartTime(b.startTime);
+    setFormDurationMinutes(b.durationMinutes);
+    setFormStatus(b.status);
+    setFormNotes(b.notes || '');
+    setFormDepositMMK(b.depositAmountMMK || 0);
+    setFormDepositMethod(b.depositPaymentMethod || 'cash');
+    setFormError(null);
+    setIsCreateModalOpen(true);
+  };
+
+  // Open Reschedule Modal
+  const openRescheduleModal = (b: BookingRecord) => {
+    setSelectedBookingForAction(b);
+    setRescheduleDate(b.date);
+    setRescheduleStartTime(b.startTime);
+    setRescheduleRoomId(b.roomId || '');
+    setRescheduleStaffId(b.staffId || '');
+    setRescheduleError(null);
+    setActionType('reschedule');
+  };
+
   const handleServiceSelect = (serviceId: string) => {
     setFormServiceId(serviceId);
     const s = services.find((x) => x.id === serviceId);
-    if (s && s.durationMinutes) {
-      setFormDurationMinutes(s.durationMinutes);
+    if (s) {
+      if (s.durationMinutes) setFormDurationMinutes(s.durationMinutes);
+      if (s.priceMMK) setFormPrice(s.priceMMK);
     }
   };
 
@@ -210,6 +333,7 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
       const selectedService = services.find((s) => s.id === formServiceId);
       const selectedRoom = rooms.find((r) => r.id === formRoomId);
       const selectedStaff = staff.find((st) => st.id === formStaffId);
+      const finalAmt = Math.max(0, formPrice - formDiscount);
 
       if (selectedBookingForAction) {
         // Edit existing
@@ -227,6 +351,10 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
           startTime: formStartTime,
           endTime: formEndTime,
           durationMinutes: formDurationMinutes,
+          price: formPrice,
+          discount: formDiscount,
+          finalAmount: finalAmt,
+          status: formStatus,
           notes: formNotes,
           updatedBy: currentUser?.name || 'Operator',
         });
@@ -252,6 +380,10 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
           startTime: formStartTime,
           endTime: formEndTime,
           durationMinutes: formDurationMinutes,
+          price: formPrice,
+          discount: formDiscount,
+          finalAmount: finalAmt,
+          status: formStatus,
           notes: formNotes,
           depositAmountMMK: formDepositMMK,
           depositPaymentMethod: formDepositMMK > 0 ? formDepositMethod : undefined,
@@ -283,7 +415,7 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
       const res = await bookingManager.checkInBooking({
         bookingId: selectedBookingForAction.id,
         startSession,
-        hourlyRateMMK: room?.hourlyRateMMK || 0,
+        hourlyRateMMK: room?.hourlyRateMMK || selectedBookingForAction.finalAmount || selectedBookingForAction.price || 0,
         checkedInBy: currentUser?.name || 'Operator',
       });
 
@@ -304,13 +436,106 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
     }
   };
 
+  const handleConfirmBooking = async (booking: BookingRecord) => {
+    setIsSubmitting(true);
+    try {
+      const res = await bookingManager.confirmBooking(booking.id, currentUser?.name || 'Operator');
+      if (!res.success) {
+        alert(res.error || 'Failed to confirm booking');
+      } else {
+        await onRefreshData();
+      }
+    } catch (err: any) {
+      alert(err.message || 'Confirm failed');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleMarkNoShow = async () => {
+    if (!selectedBookingForAction) return;
+    setIsSubmitting(true);
+    try {
+      const res = await bookingManager.markNoShow(selectedBookingForAction.id, currentUser?.name || 'Operator');
+      if (!res.success) {
+        alert(res.error || 'Failed to mark as no-show');
+      } else {
+        await onRefreshData();
+        setActionType(null);
+        setSelectedBookingForAction(null);
+      }
+    } catch (err: any) {
+      alert(err.message || 'No-show operation failed');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleCompleteBooking = async (booking: BookingRecord) => {
+    if (!window.confirm(isMm ? 'ဤဘိုကင်အား ဝန်ဆောင်မှုပြီးဆုံးကြောင်း သတ်မှတ်မည်လား?' : 'Mark this booking as completed?')) return;
+    setIsSubmitting(true);
+    try {
+      const res = await bookingManager.completeBooking({
+        bookingId: booking.id,
+        completedBy: currentUser?.name || 'Operator',
+      });
+      if (!res.success) {
+        alert(res.error || 'Failed to complete booking');
+      } else {
+        await onRefreshData();
+      }
+    } catch (err: any) {
+      alert(err.message || 'Complete failed');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleRescheduleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedBookingForAction) return;
+
+    setIsSubmitting(true);
+    setRescheduleError(null);
+    try {
+      const selectedRoom = rooms.find((r) => r.id === rescheduleRoomId);
+      const selectedStaff = staff.find((s) => s.id === rescheduleStaffId);
+
+      const res = await bookingManager.rescheduleBooking({
+        bookingId: selectedBookingForAction.id,
+        newDate: rescheduleDate,
+        newStartTime: rescheduleStartTime,
+        newEndTime: rescheduleEndTime,
+        newRoomId: rescheduleRoomId || undefined,
+        newRoomName: selectedRoom?.name,
+        newStaffId: rescheduleStaffId || undefined,
+        newStaffName: selectedStaff?.name,
+        updatedBy: currentUser?.name || 'Operator',
+      });
+
+      if (!res.success) {
+        setRescheduleError(res.error || 'Reschedule conflict detected');
+        setIsSubmitting(false);
+        return;
+      }
+
+      await onRefreshData();
+      setActionType(null);
+      setSelectedBookingForAction(null);
+    } catch (err: any) {
+      setRescheduleError(err.message || 'Reschedule failed');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleCancelBooking = async () => {
     if (!selectedBookingForAction) return;
     setIsSubmitting(true);
     try {
       const res = await bookingManager.cancelBooking({
         bookingId: selectedBookingForAction.id,
-        reason: cancelReason || 'Customer request',
+        reason: cancelReason || 'Customer requested cancellation',
         cancelledBy: currentUser?.name || 'Operator',
       });
 
@@ -332,6 +557,8 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
   // Status Badge Helper
   const getStatusBadge = (status: BookingStatus) => {
     switch (status) {
+      case 'PENDING':
+        return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-amber-950 text-amber-300 border border-amber-800/60">PENDING</span>;
       case 'CONFIRMED':
         return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-cyan-950 text-cyan-300 border border-cyan-800/60">CONFIRMED</span>;
       case 'CHECKED_IN':
@@ -343,7 +570,7 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
       case 'CANCELLED':
         return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-rose-950 text-rose-300 border border-rose-800/60">CANCELLED</span>;
       case 'NO_SHOW':
-        return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-amber-950 text-amber-300 border border-amber-800/60">NO SHOW</span>;
+        return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-zinc-800 text-zinc-300 border border-zinc-700">NO SHOW</span>;
       default:
         return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-zinc-800 text-zinc-300">{status}</span>;
     }
@@ -368,95 +595,111 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
           </div>
           <div>
             <h1 className="text-xl sm:text-2xl font-bold text-white tracking-wide">
-              {isMm ? 'ကြိုတင်ချိန်းဆိုမှုနှင့် အခန်းစီမံခန့်ခွဲမှု' : 'Bookings & Resource Scheduling'}
+              {isMm ? 'ကြိုတင်ချိန်းဆိုမှုနှင့် အခန်း/ဝန်ထမ်း စီမံခန့်ခွဲမှု' : 'Bookings & Resource Scheduling'}
             </h1>
             <p className="text-xs sm:text-sm text-cyan-300/70">
-              {isMm ? 'အချိန်ထပ်မံမှု ကာကွယ်ခြင်းနှင့် အခန်း/ဝန်ထမ်း အလိုအလျောက် နေရာချခြင်း' : 'Anti-conflict timeline, room & therapist resource reservation'}
+              {isMm ? 'အချိန်ထပ်မံမှု ကာကွယ်ခြင်းနှင့် အခန်း/ဝန်ထမ်း အလိုအလျောက် နေရာချခြင်း' : 'Anti-conflict scheduling, room & therapist resource reservation'}
             </p>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           {/* Date Selector Navigation */}
-          <div className="flex items-center bg-[#07090e] border border-cyan-900/60 rounded-xl p-1 shadow-inner">
+          <div className="flex items-center bg-[#07090e] rounded-xl border border-cyan-900/40 p-1 shadow-inner">
             <button
               onClick={() => changeDateBy(-1)}
-              className="p-1.5 text-cyan-400 hover:text-white hover:bg-cyan-900/40 rounded-lg transition-colors"
+              className="p-1.5 text-slate-400 hover:text-white hover:bg-cyan-950/40 rounded-lg transition-colors"
               title="Previous Day"
             >
-              <ChevronLeft className="h-5 w-5" />
+              <ChevronLeft className="h-4 w-4" />
             </button>
             <input
               type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
-              className="bg-transparent text-sm font-semibold text-white px-2 py-1 focus:outline-none cursor-pointer"
+              className="bg-transparent text-white text-xs font-semibold px-2 py-1 outline-none font-mono cursor-pointer"
             />
             <button
               onClick={() => changeDateBy(1)}
-              className="p-1.5 text-cyan-400 hover:text-white hover:bg-cyan-900/40 rounded-lg transition-colors"
+              className="p-1.5 text-slate-400 hover:text-white hover:bg-cyan-950/40 rounded-lg transition-colors"
               title="Next Day"
             >
-              <ChevronRight className="h-5 w-5" />
+              <ChevronRight className="h-4 w-4" />
             </button>
             <button
               onClick={() => setSelectedDate(todayStr)}
-              className="text-xs px-2 py-1 text-cyan-300 hover:bg-cyan-900/40 rounded font-medium border-l border-cyan-900/60 ml-1"
+              className="ml-1 px-2.5 py-1 text-[11px] font-bold bg-cyan-950 text-cyan-300 hover:bg-cyan-900 rounded-md border border-cyan-800/50 transition-colors"
             >
               {isMm ? 'ယနေ့' : 'Today'}
-            </button>
-          </div>
-
-          {/* View Mode Buttons */}
-          <div className="flex bg-[#07090e] border border-cyan-900/60 rounded-xl p-1">
-            <button
-              onClick={() => setViewMode('timeline')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                viewMode === 'timeline' ? 'bg-cyan-600 text-white shadow-md' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              {isMm ? 'အချိန်ဇယား' : 'Timeline'}
-            </button>
-            <button
-              onClick={() => setViewMode('day')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                viewMode === 'day' ? 'bg-cyan-600 text-white shadow-md' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              {isMm ? 'ကတ်များ' : 'Cards'}
-            </button>
-            <button
-              onClick={() => setViewMode('list')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                viewMode === 'list' ? 'bg-cyan-600 text-white shadow-md' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              {isMm ? 'အားလုံး' : 'All List'}
             </button>
           </div>
 
           {/* New Booking Button */}
           <button
             onClick={openCreateModal}
-            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-sm font-semibold rounded-xl shadow-lg shadow-cyan-900/30 transition-all cursor-pointer"
+            className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-semibold text-xs rounded-xl shadow-lg shadow-cyan-950/50 transition-all cursor-pointer"
           >
             <Plus className="h-4 w-4" />
-            {isMm ? 'ဘိုကင်အသစ်' : 'New Booking'}
+            <span>{isMm ? 'ဘိုကင်အသစ်' : 'New Booking'}</span>
           </button>
         </div>
       </div>
 
-      {/* Filter Bar */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 bg-[#0b0f19]/80 p-3 rounded-xl border border-cyan-900/30">
+      {/* Control Bar: View Switcher, Search, and Multi-Level Filters */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-[#0b0f19] p-3 sm:p-4 rounded-xl border border-cyan-900/40 text-xs">
+        {/* View Switcher: Timeline, Day, Week, List */}
+        <div className="flex items-center bg-[#07090e] p-1 rounded-xl border border-cyan-900/40">
+          <button
+            onClick={() => setViewMode('timeline')}
+            className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
+              viewMode === 'timeline'
+                ? 'bg-cyan-600 text-white font-semibold shadow'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            {isMm ? 'အခန်းပြက္ခဒိန်' : 'Timeline'}
+          </button>
+          <button
+            onClick={() => setViewMode('day')}
+            className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
+              viewMode === 'day'
+                ? 'bg-cyan-600 text-white font-semibold shadow'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            {isMm ? 'နေ့စဉ်စာရင်း' : 'Day View'}
+          </button>
+          <button
+            onClick={() => setViewMode('week')}
+            className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
+              viewMode === 'week'
+                ? 'bg-cyan-600 text-white font-semibold shadow'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            {isMm ? 'အပတ်စဉ်' : 'Week View'}
+          </button>
+          <button
+            onClick={() => setViewMode('list')}
+            className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
+              viewMode === 'list'
+                ? 'bg-cyan-600 text-white font-semibold shadow'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            {isMm ? 'အားလုံးစာရင်း' : 'List All'}
+          </button>
+        </div>
+
         {/* Search */}
-        <div className="relative">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+        <div className="relative min-w-[200px] flex-1 max-w-xs">
+          <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
           <input
             type="text"
-            placeholder={isMm ? 'ဧည့်သည်၊ ဖုန်း၊ ဘိုကင်ကုတ် ရှာဖွေပါ...' : 'Search customer, phone, code...'}
+            placeholder={isMm ? 'ဧည့်သည်/ဖုန်း/ကုဒ် ရှာဖွေပါ...' : 'Search guest, phone, code...'}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-[#07090e] border border-cyan-900/50 rounded-lg pl-9 pr-3 py-1.5 text-xs sm:text-sm text-white focus:border-cyan-500 focus:outline-none"
+            className="w-full bg-[#07090e] border border-cyan-900/40 rounded-xl pl-9 pr-3 py-1.5 text-white placeholder-slate-500 focus:border-cyan-500 focus:outline-none"
           />
         </div>
 
@@ -464,23 +707,25 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="bg-[#07090e] border border-cyan-900/50 rounded-lg px-3 py-1.5 text-xs sm:text-sm text-white focus:border-cyan-500 focus:outline-none"
+          className="bg-[#07090e] border border-cyan-900/40 rounded-xl px-3 py-1.5 text-white focus:border-cyan-500 focus:outline-none"
         >
-          <option value="ALL">{isMm ? 'အခြေအနေအားလုံး' : 'All Statuses'}</option>
+          <option value="ALL">{isMm ? 'အခြေအနေ အားလုံး' : 'All Statuses'}</option>
+          <option value="PENDING">PENDING</option>
           <option value="CONFIRMED">CONFIRMED</option>
-          <option value="CHECKED_IN">CHECKED_IN</option>
-          <option value="IN_SERVICE">IN_SERVICE</option>
+          <option value="CHECKED_IN">CHECKED IN</option>
+          <option value="IN_SERVICE">IN SERVICE</option>
           <option value="COMPLETED">COMPLETED</option>
           <option value="CANCELLED">CANCELLED</option>
+          <option value="NO_SHOW">NO SHOW</option>
         </select>
 
         {/* Room Filter */}
         <select
           value={roomFilter}
           onChange={(e) => setRoomFilter(e.target.value)}
-          className="bg-[#07090e] border border-cyan-900/50 rounded-lg px-3 py-1.5 text-xs sm:text-sm text-white focus:border-cyan-500 focus:outline-none"
+          className="bg-[#07090e] border border-cyan-900/40 rounded-xl px-3 py-1.5 text-white focus:border-cyan-500 focus:outline-none"
         >
-          <option value="ALL">{isMm ? 'အခန်းအားလုံး' : 'All Rooms'}</option>
+          <option value="ALL">{isMm ? 'အခန်း အားလုံး' : 'All Rooms'}</option>
           {rooms.map((r) => (
             <option key={r.id} value={r.id}>
               {r.name}
@@ -492,18 +737,34 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
         <select
           value={staffFilter}
           onChange={(e) => setStaffFilter(e.target.value)}
-          className="bg-[#07090e] border border-cyan-900/50 rounded-lg px-3 py-1.5 text-xs sm:text-sm text-white focus:border-cyan-500 focus:outline-none"
+          className="bg-[#07090e] border border-cyan-900/40 rounded-xl px-3 py-1.5 text-white focus:border-cyan-500 focus:outline-none"
         >
-          <option value="ALL">{isMm ? 'ဝန်ထမ်းအားလုံး' : 'All Staff'}</option>
+          <option value="ALL">{isMm ? 'ဝန်ထမ်း အားလုံး' : 'All Staff'}</option>
           {staff.map((s) => (
             <option key={s.id} value={s.id}>
               {s.name} ({s.role})
             </option>
           ))}
         </select>
+
+        {/* Service Filter */}
+        <select
+          value={serviceFilter}
+          onChange={(e) => setServiceFilter(e.target.value)}
+          className="bg-[#07090e] border border-cyan-900/40 rounded-xl px-3 py-1.5 text-white focus:border-cyan-500 focus:outline-none"
+        >
+          <option value="ALL">{isMm ? 'ဝန်ဆောင်မှု အားလုံး' : 'All Services'}</option>
+          {services.map((svc) => (
+            <option key={svc.id} value={svc.id}>
+              {svc.name}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* Main Content Area */}
+
+      {/* 1. TIMELINE VIEW */}
       {viewMode === 'timeline' && (
         <div className="bg-[#0b0f19] rounded-2xl border border-cyan-900/40 p-4 shadow-xl overflow-x-auto">
           <div className="min-w-[800px]">
@@ -537,7 +798,6 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
 
                     {/* Room Slots */}
                     {rooms.map((room) => {
-                      // Find bookings in this hour slot for this room
                       const slotBookings = filteredBookings.filter((b) => {
                         if (b.roomId !== room.id) return false;
                         return b.startTime < nextHourStr && b.endTime > hourStr;
@@ -553,7 +813,11 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
                               key={b.id}
                               onClick={() => {
                                 setSelectedBookingForAction(b);
-                                setActionType('checkin');
+                                if (b.status === 'CONFIRMED' || b.status === 'PENDING') {
+                                  setActionType('checkin');
+                                } else if (b.status === 'CHECKED_IN') {
+                                  setActionType('checkin');
+                                }
                               }}
                               className={`p-2 rounded-lg text-xs font-medium cursor-pointer shadow-md transition-transform hover:scale-[1.02] border ${
                                 b.status === 'CONFIRMED'
@@ -562,12 +826,14 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
                                   ? 'bg-purple-950/90 text-purple-200 border-purple-700/60'
                                   : b.status === 'CHECKED_IN'
                                   ? 'bg-emerald-950/90 text-emerald-200 border-emerald-700/60'
+                                  : b.status === 'PENDING'
+                                  ? 'bg-amber-950/90 text-amber-200 border-amber-700/60'
                                   : 'bg-zinc-800 text-zinc-300 border-zinc-700'
                               }`}
                             >
                               <div className="flex items-center justify-between gap-1">
-                                <span className="font-bold truncate">{b.customerName}</span>
-                                <span className="text-[10px] font-mono bg-black/40 px-1 rounded">
+                                <span className="font-bold truncate text-white">{b.customerName}</span>
+                                <span className="text-[10px] font-mono bg-black/40 px-1 rounded text-cyan-300">
                                   {b.startTime}-{b.endTime}
                                 </span>
                               </div>
@@ -575,10 +841,16 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
                                 {b.serviceName || 'Standard Service'}
                               </div>
                               {b.staffName && (
-                                <div className="text-[10px] text-slate-400 truncate flex items-center gap-1 mt-0.5">
+                                <div className="text-[10px] text-slate-300 truncate flex items-center gap-1 mt-0.5">
                                   <User className="h-3 w-3" /> {b.staffName}
                                 </div>
                               )}
+                              <div className="flex items-center justify-between mt-1 pt-1 border-t border-white/10 text-[10px]">
+                                {getStatusBadge(b.status)}
+                                {b.finalAmount && b.finalAmount > 0 ? (
+                                  <span className="font-mono text-emerald-300 font-semibold">{b.finalAmount.toLocaleString()} Ks</span>
+                                ) : null}
+                              </div>
                             </div>
                           ))}
 
@@ -605,7 +877,84 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
         </div>
       )}
 
-      {/* Cards View & All List View */}
+      {/* 2. WEEK VIEW */}
+      {viewMode === 'week' && (
+        <div className="bg-[#0b0f19] rounded-2xl border border-cyan-900/40 p-4 shadow-xl overflow-x-auto">
+          <div className="grid grid-cols-7 gap-3 min-w-[900px]">
+            {weekDays.map((w) => {
+              const dayBookings = filteredBookings.filter((b) => b.date === w.date);
+
+              return (
+                <div
+                  key={w.date}
+                  className={`flex flex-col rounded-xl border p-2.5 transition-colors ${
+                    w.isSelected
+                      ? 'bg-[#0f172a] border-cyan-500/60 shadow-md'
+                      : w.isToday
+                      ? 'bg-[#0b1324] border-cyan-900/60'
+                      : 'bg-[#07090e] border-cyan-950/50'
+                  }`}
+                >
+                  {/* Day Header */}
+                  <div
+                    onClick={() => setSelectedDate(w.date)}
+                    className="flex items-center justify-between pb-2 border-b border-cyan-900/30 cursor-pointer"
+                  >
+                    <div>
+                      <div className="text-[11px] font-bold text-cyan-400 uppercase">{w.dayName}</div>
+                      <div className="text-sm font-extrabold text-white">{w.dayNumber}</div>
+                    </div>
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-800/40">
+                      {dayBookings.length}
+                    </span>
+                  </div>
+
+                  {/* Day Bookings List */}
+                  <div className="space-y-2 mt-2 flex-1 min-h-[140px]">
+                    {dayBookings.map((b) => (
+                      <div
+                        key={b.id}
+                        onClick={() => openEditModal(b)}
+                        className="p-2 rounded-lg bg-[#0b0f19] border border-cyan-900/40 hover:border-cyan-500/40 cursor-pointer text-xs transition-all shadow"
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="font-bold text-white truncate">{b.customerName}</span>
+                          <span className="text-[10px] font-mono text-cyan-300">{b.startTime}</span>
+                        </div>
+                        <div className="text-[11px] text-slate-300 truncate mt-0.5">{b.serviceName}</div>
+                        <div className="flex items-center justify-between mt-1 text-[10px]">
+                          <span className="text-slate-400 truncate">{b.roomName || 'No Room'}</span>
+                          {getStatusBadge(b.status)}
+                        </div>
+                      </div>
+                    ))}
+
+                    {dayBookings.length === 0 && (
+                      <div className="flex items-center justify-center h-full text-[11px] text-slate-600">
+                        {isMm ? 'ဘိုကင်မရှိပါ' : 'No bookings'}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Quick Add For Day */}
+                  <button
+                    onClick={() => {
+                      setSelectedDate(w.date);
+                      openCreateModal();
+                      setFormDate(w.date);
+                    }}
+                    className="mt-2 w-full py-1 text-[11px] font-semibold text-cyan-400 hover:text-white bg-cyan-950/40 hover:bg-cyan-900/60 rounded-lg border border-cyan-900/40 transition-colors flex items-center justify-center gap-1"
+                  >
+                    <Plus className="h-3 w-3" /> {isMm ? 'ထည့်မည်' : 'Add'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* 3. DAY VIEW & LIST ALL VIEW */}
       {(viewMode === 'day' || viewMode === 'list') && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredBookings.map((b) => (
@@ -620,7 +969,7 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
                     <div className="text-xs font-mono text-cyan-400 font-semibold">{b.bookingCode}</div>
                     <h3 className="text-base font-bold text-white mt-0.5">{b.customerName}</h3>
                     {b.customerPhone && (
-                      <div className="text-xs text-slate-400">{b.customerPhone}</div>
+                      <div className="text-xs text-slate-300">{b.customerPhone}</div>
                     )}
                   </div>
                   <div>{getStatusBadge(b.status)}</div>
@@ -666,8 +1015,18 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
                       <span className="font-semibold text-white">{b.staffName}</span>
                     </div>
                   )}
-                  {b.depositAmountMMK && b.depositAmountMMK > 0 ? (
+                  {b.finalAmount !== undefined && b.finalAmount > 0 ? (
                     <div className="flex items-center justify-between border-t border-cyan-900/30 pt-1.5 mt-1.5">
+                      <span className="text-slate-400 flex items-center gap-1.5">
+                        <DollarSign className="h-3.5 w-3.5 text-emerald-400" /> {isMm ? 'ကျသင့်ငွေ' : 'Amount'}:
+                      </span>
+                      <span className="font-bold text-emerald-300 font-mono">
+                        {b.finalAmount.toLocaleString()} MMK
+                      </span>
+                    </div>
+                  ) : null}
+                  {b.depositAmountMMK && b.depositAmountMMK > 0 ? (
+                    <div className="flex items-center justify-between">
                       <span className="text-amber-400 flex items-center gap-1.5 font-medium">
                         <DollarSign className="h-3.5 w-3.5" /> {isMm ? 'စရန်ငွေ' : 'Deposit'}:
                       </span>
@@ -677,15 +1036,44 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
                     </div>
                   ) : null}
                   {b.notes && (
-                    <div className="text-[11px] text-slate-400 italic mt-1 border-t border-cyan-900/30 pt-1">
+                    <div className="text-[11px] text-slate-300 italic mt-1 border-t border-cyan-900/30 pt-1">
                       "{b.notes}"
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-cyan-900/40">
+              {/* Action Buttons based on status */}
+              <div className="flex flex-wrap items-center justify-end gap-1.5 pt-2 border-t border-cyan-900/40">
+                {/* PENDING ACTIONS */}
+                {b.status === 'PENDING' && (
+                  <>
+                    <button
+                      onClick={() => handleConfirmBooking(b)}
+                      disabled={isSubmitting}
+                      className="px-2.5 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1 shadow transition-colors"
+                    >
+                      <Check className="h-3.5 w-3.5" /> {isMm ? 'အတည်ပြုမည်' : 'Confirm'}
+                    </button>
+                    <button
+                      onClick={() => openRescheduleModal(b)}
+                      className="px-2.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" /> {isMm ? 'အချိန်ပြောင်း' : 'Reschedule'}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedBookingForAction(b);
+                        setActionType('cancel');
+                      }}
+                      className="px-2.5 py-1.5 bg-rose-950/60 hover:bg-rose-900 text-rose-300 border border-rose-800/60 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+                    >
+                      <XCircle className="h-3.5 w-3.5" /> {isMm ? 'ပယ်ဖျက်' : 'Cancel'}
+                    </button>
+                  </>
+                )}
+
+                {/* CONFIRMED ACTIONS */}
                 {b.status === 'CONFIRMED' && (
                   <>
                     <button
@@ -693,40 +1081,90 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
                         setSelectedBookingForAction(b);
                         setActionType('checkin');
                       }}
-                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1 shadow transition-colors"
+                      className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1 shadow transition-colors"
                     >
-                      <CheckCircle2 className="h-3.5 w-3.5" /> {isMm ? 'Check-in ဝင်မည်' : 'Check-in'}
+                      <CheckCircle2 className="h-3.5 w-3.5" /> {isMm ? 'Check-in' : 'Check-in'}
+                    </button>
+                    <button
+                      onClick={() => openRescheduleModal(b)}
+                      className="px-2.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" /> {isMm ? 'အချိန်ပြောင်း' : 'Reschedule'}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedBookingForAction(b);
+                        setActionType('noshow');
+                      }}
+                      className="px-2.5 py-1.5 bg-amber-950/60 hover:bg-amber-900 text-amber-300 border border-amber-800/60 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+                    >
+                      <UserX className="h-3.5 w-3.5" /> {isMm ? 'မလာရောက်' : 'No-Show'}
                     </button>
                     <button
                       onClick={() => {
                         setSelectedBookingForAction(b);
                         setActionType('cancel');
                       }}
-                      className="px-3 py-1.5 bg-rose-950/60 hover:bg-rose-900 text-rose-300 border border-rose-800/60 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+                      className="px-2.5 py-1.5 bg-rose-950/60 hover:bg-rose-900 text-rose-300 border border-rose-800/60 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
                     >
                       <XCircle className="h-3.5 w-3.5" /> {isMm ? 'ပယ်ဖျက်' : 'Cancel'}
                     </button>
                   </>
                 )}
 
+                {/* CHECKED_IN ACTIONS */}
                 {b.status === 'CHECKED_IN' && (
-                  <button
-                    onClick={() => {
-                      setSelectedBookingForAction(b);
-                      setActionType('checkin');
-                    }}
-                    className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1 shadow transition-colors"
-                  >
-                    <PlayCircle className="h-3.5 w-3.5" /> {isMm ? 'Session စတင်မည်' : 'Start Session'}
-                  </button>
+                  <>
+                    <button
+                      onClick={() => {
+                        setSelectedBookingForAction(b);
+                        setActionType('checkin');
+                      }}
+                      className="px-2.5 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1 shadow transition-colors"
+                    >
+                      <PlayCircle className="h-3.5 w-3.5" /> {isMm ? 'Session စတင်မည်' : 'Start Session'}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedBookingForAction(b);
+                        setActionType('cancel');
+                      }}
+                      className="px-2.5 py-1.5 bg-rose-950/60 hover:bg-rose-900 text-rose-300 border border-rose-800/60 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+                    >
+                      <XCircle className="h-3.5 w-3.5" /> {isMm ? 'ပယ်ဖျက်' : 'Cancel'}
+                    </button>
+                  </>
                 )}
 
-                {b.status === 'IN_SERVICE' && b.roomId && onNavigateToRoom && (
+                {/* IN_SERVICE ACTIONS */}
+                {b.status === 'IN_SERVICE' && (
+                  <>
+                    {b.roomId && onNavigateToRoom && (
+                      <button
+                        onClick={() => onNavigateToRoom(b.roomId!)}
+                        className="px-2.5 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1 shadow transition-colors"
+                      >
+                        <DoorClosed className="h-3.5 w-3.5" /> {isMm ? 'အခန်းသို့သွားရန်' : 'View Room'}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleCompleteBooking(b)}
+                      disabled={isSubmitting}
+                      className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1 shadow transition-colors"
+                    >
+                      <Check className="h-3.5 w-3.5" /> {isMm ? 'ပြီးဆုံး' : 'Complete'}
+                    </button>
+                  </>
+                )}
+
+                {/* TERMINAL STATUSES: REBOOK */}
+                {['COMPLETED', 'CANCELLED', 'NO_SHOW'].includes(b.status) && (
                   <button
-                    onClick={() => onNavigateToRoom(b.roomId!)}
-                    className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1 shadow transition-colors"
+                    onClick={() => openRebookModal(b)}
+                    className="px-3 py-1.5 bg-cyan-700/80 hover:bg-cyan-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow transition-colors"
                   >
-                    <DoorClosed className="h-3.5 w-3.5" /> {isMm ? 'အခန်းသို့သွားရန်' : 'View Room'}
+                    <Sparkles className="h-3.5 w-3.5 text-cyan-300" />
+                    {isMm ? 'ထပ်မံ Booking ပြုလုပ်မည်' : 'Rebook'}
                   </button>
                 )}
               </div>
@@ -739,7 +1177,7 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
               <div className="text-base font-semibold text-slate-300">
                 {isMm ? 'ကြိုတင်စာရင်း မရှိသေးပါ' : 'No bookings found for selected criteria'}
               </div>
-              <p className="text-xs text-slate-500 mt-1">
+              <p className="text-xs text-slate-400 mt-1">
                 {isMm ? 'ဘိုကင်အသစ် ဖန်တီးရန် ခလုတ်ကို နှိပ်ပါ' : 'Click "New Booking" to schedule a customer'}
               </p>
               <button
@@ -791,7 +1229,7 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
             <form onSubmit={handleSaveBooking} className="space-y-4 text-xs">
               {/* Customer Selector / Input */}
               <div className="space-y-1">
-                <label className="text-slate-300 font-semibold">{isMm ? 'ဧည့်သည် ရွေးချယ်ရန် / အမည်' : 'Customer Name *'}</label>
+                <label className="text-slate-200 font-semibold">{isMm ? 'ဧည့်သည် ရွေးချယ်ရန် / အမည်' : 'Customer Name *'}</label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <select
                     value={formCustomerId || ''}
@@ -818,7 +1256,7 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
 
               {/* Customer Phone */}
               <div className="space-y-1">
-                <label className="text-slate-300 font-semibold">{isMm ? 'ဖုန်းနံပါတ်' : 'Phone Number'}</label>
+                <label className="text-slate-200 font-semibold">{isMm ? 'ဖုန်းနံပါတ်' : 'Phone Number'}</label>
                 <input
                   type="text"
                   placeholder="09..."
@@ -830,7 +1268,7 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
 
               {/* Service Selection */}
               <div className="space-y-1">
-                <label className="text-slate-300 font-semibold">{isMm ? 'ဝန်ဆောင်မှု ရွေးချယ်ရန်' : 'Service'}</label>
+                <label className="text-slate-200 font-semibold">{isMm ? 'ဝန်ဆောင်မှု ရွေးချယ်ရန်' : 'Service'}</label>
                 <select
                   value={formServiceId}
                   onChange={(e) => handleServiceSelect(e.target.value)}
@@ -845,10 +1283,42 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
                 </select>
               </div>
 
+              {/* Price, Discount & Final Amount */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 bg-[#07090e] p-2.5 rounded-xl border border-cyan-900/30">
+                <div className="space-y-1">
+                  <label className="text-slate-300 font-semibold">{isMm ? 'ဈေးနှုန်း (ကျပ်)' : 'Base Price (MMK)'}</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="500"
+                    value={formPrice}
+                    onChange={(e) => setFormPrice(Number(e.target.value) || 0)}
+                    className="w-full bg-[#0b0f19] border border-cyan-900/50 rounded-lg p-1.5 text-white font-mono"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-slate-300 font-semibold">{isMm ? 'လျှော့ဈေး (ကျပ်)' : 'Discount (MMK)'}</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="500"
+                    value={formDiscount}
+                    onChange={(e) => setFormDiscount(Number(e.target.value) || 0)}
+                    className="w-full bg-[#0b0f19] border border-cyan-900/50 rounded-lg p-1.5 text-white font-mono"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-slate-300 font-semibold">{isMm ? 'ကျသင့်ငွေ' : 'Final Amount'}</label>
+                  <div className="p-1.5 bg-[#0b0f19] border border-cyan-900/50 rounded-lg text-emerald-300 font-bold font-mono">
+                    {Math.max(0, formPrice - formDiscount).toLocaleString()} MMK
+                  </div>
+                </div>
+              </div>
+
               {/* Room & Staff Selection */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-slate-300 font-semibold">{isMm ? 'အခန်း' : 'Room / Resource'}</label>
+                  <label className="text-slate-200 font-semibold">{isMm ? 'အခန်း' : 'Room / Resource'}</label>
                   <select
                     value={formRoomId}
                     onChange={(e) => setFormRoomId(e.target.value)}
@@ -864,7 +1334,7 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-slate-300 font-semibold">{isMm ? 'ဝန်ထမ်း / Therapist' : 'Staff / Therapist'}</label>
+                  <label className="text-slate-200 font-semibold">{isMm ? 'ဝန်ထမ်း / Therapist' : 'Staff / Therapist'}</label>
                   <select
                     value={formStaffId}
                     onChange={(e) => setFormStaffId(e.target.value)}
@@ -883,7 +1353,7 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
               {/* Date, Start Time & Duration */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="space-y-1">
-                  <label className="text-slate-300 font-semibold">{isMm ? 'ရက်စွဲ' : 'Date'}</label>
+                  <label className="text-slate-200 font-semibold">{isMm ? 'ရက်စွဲ' : 'Date'}</label>
                   <input
                     type="date"
                     required
@@ -894,7 +1364,7 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-slate-300 font-semibold">{isMm ? 'စတင်ချိန်' : 'Start Time'}</label>
+                  <label className="text-slate-200 font-semibold">{isMm ? 'စတင်ချိန်' : 'Start Time'}</label>
                   <input
                     type="time"
                     required
@@ -905,7 +1375,7 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-slate-300 font-semibold">{isMm ? 'ကြာချိန် (မိနစ်)' : 'Duration (min)'}</label>
+                  <label className="text-slate-200 font-semibold">{isMm ? 'ကြာချိန် (မိနစ်)' : 'Duration (min)'}</label>
                   <input
                     type="number"
                     min="15"
@@ -922,10 +1392,23 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
                 <span className="font-bold text-white text-sm">{formEndTime}</span>
               </div>
 
+              {/* Status Selector */}
+              <div className="space-y-1">
+                <label className="text-slate-200 font-semibold">{isMm ? 'ဘိုကင်အခြေအနေ' : 'Booking Status'}</label>
+                <select
+                  value={formStatus}
+                  onChange={(e) => setFormStatus(e.target.value as BookingStatus)}
+                  className="w-full bg-[#07090e] border border-cyan-900/50 rounded-lg p-2 text-white focus:border-cyan-500 focus:outline-none"
+                >
+                  <option value="CONFIRMED">CONFIRMED (အတည်ပြုပြီး)</option>
+                  <option value="PENDING">PENDING (စောင့်ဆိုင်းဆဲ)</option>
+                </select>
+              </div>
+
               {/* Deposit MMK */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-cyan-900/40 pt-3">
                 <div className="space-y-1">
-                  <label className="text-slate-300 font-semibold">{isMm ? 'စရန်ငွေ (ကျပ်)' : 'Deposit Amount (MMK)'}</label>
+                  <label className="text-slate-200 font-semibold">{isMm ? 'စရန်ငွေ (ကျပ်)' : 'Deposit Amount (MMK)'}</label>
                   <input
                     type="number"
                     min="0"
@@ -937,7 +1420,7 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-slate-300 font-semibold">{isMm ? 'စရန်ငွေ ပေးချေပုံ' : 'Deposit Method'}</label>
+                  <label className="text-slate-200 font-semibold">{isMm ? 'စရန်ငွေ ပေးချေပုံ' : 'Deposit Method'}</label>
                   <select
                     value={formDepositMethod}
                     onChange={(e) => setFormDepositMethod(e.target.value)}
@@ -953,7 +1436,7 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
 
               {/* Notes */}
               <div className="space-y-1">
-                <label className="text-slate-300 font-semibold">{isMm ? 'မှတ်ချက်' : 'Notes / Special Requests'}</label>
+                <label className="text-slate-200 font-semibold">{isMm ? 'မှတ်ချက်' : 'Notes / Special Requests'}</label>
                 <textarea
                   rows={2}
                   value={formNotes}
@@ -983,6 +1466,109 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
                     <Check className="h-4 w-4" />
                   )}
                   {isMm ? 'အတည်ပြုသိမ်းဆည်းမည်' : 'Confirm & Save'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* RESCHEDULE ACTION MODAL */}
+      {actionType === 'reschedule' && selectedBookingForAction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="bg-[#0b0f19] border border-cyan-500/40 rounded-2xl shadow-2xl max-w-md w-full p-6 text-white">
+            <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2 text-cyan-300">
+              <RotateCcw className="h-5 w-5" />
+              {isMm ? 'ဘိုကင် ရက်စွဲ/အချိန် ပြောင်းလဲခြင်း' : 'Reschedule Appointment'}
+            </h3>
+            <p className="text-xs text-slate-300 mb-4">
+              {isMm ? 'ဘိုကင်အမှတ်' : 'Booking'}: <span className="font-mono text-cyan-400 font-bold">{selectedBookingForAction.bookingCode}</span> - {selectedBookingForAction.customerName}
+            </p>
+
+            {rescheduleError && (
+              <div className="mb-4 p-3 bg-rose-950/80 border border-rose-500/50 rounded-xl text-rose-200 text-xs">
+                {rescheduleError}
+              </div>
+            )}
+
+            <form onSubmit={handleRescheduleSubmit} className="space-y-4 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-slate-200 font-semibold">{isMm ? 'ရက်စွဲသစ်' : 'New Date *'}</label>
+                  <input
+                    type="date"
+                    required
+                    value={rescheduleDate}
+                    onChange={(e) => setRescheduleDate(e.target.value)}
+                    className="w-full bg-[#07090e] border border-cyan-900/50 rounded-lg p-2 text-white font-mono"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-slate-200 font-semibold">{isMm ? 'စတင်ချိန်သစ်' : 'New Start Time *'}</label>
+                  <input
+                    type="time"
+                    required
+                    value={rescheduleStartTime}
+                    onChange={(e) => setRescheduleStartTime(e.target.value)}
+                    className="w-full bg-[#07090e] border border-cyan-900/50 rounded-lg p-2 text-white font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="bg-[#07090e] p-2 rounded-lg text-xs font-mono text-cyan-300 flex justify-between items-center border border-cyan-900/30">
+                <span>{isMm ? 'ပြီးဆုံးမည့်အချိန်သစ်' : 'New End Time'}:</span>
+                <span className="font-bold text-white text-sm">{rescheduleEndTime}</span>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-slate-200 font-semibold">{isMm ? 'အခန်း ပြောင်းရန်' : 'Room'}</label>
+                <select
+                  value={rescheduleRoomId}
+                  onChange={(e) => setRescheduleRoomId(e.target.value)}
+                  className="w-full bg-[#07090e] border border-cyan-900/50 rounded-lg p-2 text-white"
+                >
+                  <option value="">{isMm ? '-- အခန်း မသတ်မှတ်ပါ --' : '-- No Room --'}</option>
+                  {rooms.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name} ({r.type})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-slate-200 font-semibold">{isMm ? 'ဝန်ထမ်း ပြောင်းရန်' : 'Staff'}</label>
+                <select
+                  value={rescheduleStaffId}
+                  onChange={(e) => setRescheduleStaffId(e.target.value)}
+                  className="w-full bg-[#07090e] border border-cyan-900/50 rounded-lg p-2 text-white"
+                >
+                  <option value="">{isMm ? '-- ဝန်ထမ်း မသတ်မှတ်ပါ --' : '-- No Staff --'}</option>
+                  {staff.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.role})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-cyan-900/40">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActionType(null);
+                    setSelectedBookingForAction(null);
+                  }}
+                  className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-slate-300 rounded-xl font-medium"
+                >
+                  {isMm ? 'မလုပ်တော့ပါ' : 'Cancel'}
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-semibold rounded-xl shadow-lg transition-colors flex items-center gap-1.5"
+                >
+                  <Check className="h-4 w-4" /> {isMm ? 'အချိန်ပြောင်းမည်' : 'Save Reschedule'}
                 </button>
               </div>
             </form>
@@ -1043,6 +1629,45 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
         </div>
       )}
 
+      {/* NO-SHOW ACTION MODAL */}
+      {actionType === 'noshow' && selectedBookingForAction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="bg-[#0b0f19] border border-amber-500/40 rounded-2xl shadow-2xl max-w-md w-full p-6 text-white">
+            <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2 text-amber-400">
+              <UserX className="h-5 w-5" />
+              {isMm ? 'ဧည့်သည် မလာရောက်ကြောင်း သတ်မှတ်မည်လား?' : 'Mark as No-Show?'}
+            </h3>
+            <p className="text-xs text-slate-300 mb-4">
+              {isMm ? 'ဘိုကင်အမှတ်' : 'Booking'}: <span className="font-mono text-amber-300 font-bold">{selectedBookingForAction.bookingCode}</span> - {selectedBookingForAction.customerName}
+            </p>
+            <p className="text-xs text-slate-400 mb-5">
+              {isMm
+                ? 'မလာရောက်ကြောင်း သတ်မှတ်ပါက အခန်းနှင့် ဝန်ထမ်း အချိန်စာရင်းများကို အခြားဖောက်သည်များအတွက် ပြန်လည်ဖွင့်ပေးပါမည်။'
+                : 'Marking as no-show will release the room and therapist scheduling for other guests.'}
+            </p>
+
+            <div className="flex items-center justify-end gap-3">
+              <button
+                onClick={() => {
+                  setActionType(null);
+                  setSelectedBookingForAction(null);
+                }}
+                className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-slate-300 rounded-xl text-xs font-medium"
+              >
+                {isMm ? 'မလုပ်တော့ပါ' : 'Cancel'}
+              </button>
+              <button
+                onClick={handleMarkNoShow}
+                disabled={isSubmitting}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-semibold shadow-lg transition-colors flex items-center gap-1.5"
+              >
+                {isMm ? 'မလာရောက်ကြောင်း သတ်မှတ်မည်' : 'Confirm No-Show'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* CANCELLATION MODAL */}
       {actionType === 'cancel' && selectedBookingForAction && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
@@ -1056,7 +1681,7 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
             </p>
 
             <div className="space-y-2 mb-5">
-              <label className="text-xs text-slate-300 font-semibold">{isMm ? 'ပယ်ဖျက်ရသည့် အကြောင်းအရင်း *' : 'Cancellation Reason *'}</label>
+              <label className="text-xs text-slate-200 font-semibold">{isMm ? 'ပယ်ဖျက်ရသည့် အကြောင်းအရင်း *' : 'Cancellation Reason *'}</label>
               <textarea
                 rows={3}
                 required

@@ -738,6 +738,25 @@ export class PersistentSQLiteStorage {
         this.db.run(`ALTER TABLE customers ADD COLUMN preferences TEXT;`);
       } catch {}
     }
+
+    if (currentVersion < 7) {
+      try {
+        this.db.run(`ALTER TABLE bookings ADD COLUMN price INTEGER DEFAULT 0;`);
+      } catch {}
+      try {
+        this.db.run(`ALTER TABLE bookings ADD COLUMN discount INTEGER DEFAULT 0;`);
+      } catch {}
+      try {
+        this.db.run(`ALTER TABLE bookings ADD COLUMN final_amount INTEGER DEFAULT 0;`);
+      } catch {}
+      try {
+        this.db.run(`ALTER TABLE bookings ADD COLUMN completed_at TEXT;`);
+      } catch {}
+      try {
+        this.db.run(`ALTER TABLE sessions ADD COLUMN booking_id TEXT;`);
+      } catch {}
+      this.db.run(`INSERT INTO schema_migrations (version, applied_at) VALUES (7, datetime('now'));`);
+    }
   }
 
   /**
@@ -776,6 +795,9 @@ export class PersistentSQLiteStorage {
     const ownerSalt = crypto.randomBytes(16).toString('hex');
     const ownerHash = crypto.createHash('sha256').update('1234' + ownerSalt).digest('hex');
 
+    const aungminSalt = crypto.randomBytes(16).toString('hex');
+    const aungminHash = crypto.createHash('sha256').update('aungmin123' + aungminSalt).digest('hex');
+
     const mgrSalt = crypto.randomBytes(16).toString('hex');
     const mgrHash = crypto.createHash('sha256').update('5678' + mgrSalt).digest('hex');
 
@@ -788,7 +810,7 @@ export class PersistentSQLiteStorage {
         ('usr_owner', 'BIZ_SHOP_001', 'BR_MAIN', 'owner', 'ကိုအောင်မင်း (Shop Owner)', 'owner', '${ownerHash}', '${ownerSalt}', 1, '${now}'),
         ('usr_manager', 'BIZ_SHOP_001', 'BR_MAIN', 'manager', 'ဒေါ်လှ (Manager)', 'manager', '${mgrHash}', '${mgrSalt}', 1, '${now}'),
         ('usr_cashier', 'BIZ_SHOP_001', 'BR_MAIN', 'cashier', 'ကိုအောင် (Cashier)', 'cashier', '${staffHash}', '${staffSalt}', 1, '${now}'),
-        ('usr_owner_1', 'BIZ_SHOP_001', 'BR_MAIN', 'aungmin', 'ကိုအောင်မင်း (Shop Owner)', 'owner', '${ownerHash}', '${ownerSalt}', 1, '${now}'),
+        ('usr_owner_1', 'BIZ_SHOP_001', 'BR_MAIN', 'aungmin', 'ကိုအောင်မင်း (Shop Owner)', 'owner', '${aungminHash}', '${aungminSalt}', 1, '${now}'),
         ('usr_mgr_1', 'BIZ_SHOP_001', 'BR_MAIN', 'dawhla', 'ဒေါ်လှ (Manager)', 'manager', '${mgrHash}', '${mgrSalt}', 1, '${now}'),
         ('usr_staff_1', 'BIZ_SHOP_001', 'BR_MAIN', 'koaung', 'ကိုအောင် (Cashier)', 'cashier', '${staffHash}', '${staffSalt}', 1, '${now}');
     `);
@@ -1455,6 +1477,35 @@ export class PersistentSQLiteStorage {
       this.db.run(`
         UPDATE rooms SET status = 'available', active_session_id = NULL, updated_at = ? WHERE id = ?
       `, [now, params.roomId]);
+
+      // Complete linked booking if any
+      this.db.run(`
+        UPDATE bookings SET status = 'COMPLETED', completed_at = ?, updated_at = ?
+        WHERE session_id = ? AND status != 'COMPLETED'
+      `, [now, now, params.sessionId]);
+
+      try {
+        const bStmt = this.db.prepare(`SELECT id FROM bookings WHERE session_id = ?`);
+        bStmt.bind([params.sessionId]);
+        if (bStmt.step()) {
+          const bObj = bStmt.getAsObject();
+          this.recordOutboxEvent({
+            businessId: params.businessId,
+            branchId: params.branchId,
+            eventType: 'BOOKING_COMPLETED',
+            entityType: 'BOOKING',
+            entityId: String(bObj.id),
+            payload: {
+              bookingId: bObj.id,
+              sessionId: params.sessionId,
+              status: 'COMPLETED',
+              completedAt: now,
+            },
+            actorUserId: params.userId,
+          });
+        }
+        bStmt.free();
+      } catch {}
 
       this.recordOutboxEvent({
         businessId: params.businessId,
@@ -2510,6 +2561,44 @@ export class PersistentSQLiteStorage {
       }
     }
     stmt.free();
+
+    // Check active running sessions in sessions table
+    if (params.roomId || params.staffId) {
+      try {
+        const sessStmt = this.db.prepare(`
+          SELECT id, room_id, room_name, customer_name, start_time, duration_minutes, status
+          FROM sessions
+          WHERE business_id = ? AND branch_id = ? AND status IN ('active', 'in_service')
+        `);
+        sessStmt.bind([params.businessId, params.branchId]);
+        while (sessStmt.step()) {
+          const s = sessStmt.getAsObject();
+          let sStart = '00:00';
+          const stStr = String(s.start_time || '');
+          if (stStr.includes('T')) {
+            sStart = stStr.split('T')[1].slice(0, 5);
+          } else if (stStr.includes(':')) {
+            sStart = stStr.slice(0, 5);
+          }
+          
+          const [sh, sm] = sStart.split(':').map(Number);
+          const sDuration = Number(s.duration_minutes) || 60;
+          const totalMinutes = (isNaN(sh) ? 0 : sh) * 60 + (isNaN(sm) ? 0 : sm) + sDuration;
+          const sEnd = `${String(Math.floor(totalMinutes / 60) % 24).padStart(2, '0')}:${String(totalMinutes % 60).padStart(2, '0')}`;
+
+          const isOverlap = sStart < params.endTime && sEnd > params.startTime;
+          if (isOverlap && params.roomId && String(s.room_id) === params.roomId) {
+            sessStmt.free();
+            return {
+              hasConflict: true,
+              reason: `အခန်း (${s.room_name || params.roomId}) သည် လက်ရှိတွင် ဝန်ဆောင်မှုပေးနေဆဲဖြစ်ပါသည် (${sStart}-${sEnd}) (Active session running in room)`,
+            };
+          }
+        }
+        sessStmt.free();
+      } catch {}
+    }
+
     return { hasConflict: false };
   }
 
@@ -2537,11 +2626,25 @@ export class PersistentSQLiteStorage {
     notes?: string;
     depositAmountMMK?: number;
     depositPaymentMethod?: string;
+    price?: number;
+    discount?: number;
+    finalAmount?: number;
+    status?: string;
     userId: string;
     userName: string;
   }): Promise<any> {
     return this.transaction(async () => {
       if (!this.db) throw new Error('DB error');
+
+      // Idempotency: return existing booking if this booking ID is already present
+      const existStmt = this.db.prepare(`SELECT * FROM bookings WHERE id = ?`);
+      existStmt.bind([params.bookingId]);
+      if (existStmt.step()) {
+        const existingRecord = existStmt.getAsObject();
+        existStmt.free();
+        return existingRecord;
+      }
+      existStmt.free();
 
       // 1. Conflict Check
       const conflict = this.checkBookingConflict({
@@ -2562,16 +2665,19 @@ export class PersistentSQLiteStorage {
 
       const now = new Date().toISOString();
       const bookingCode = params.bookingCode || `BKG-${Date.now().toString().slice(-6)}`;
-      const status = 'CONFIRMED';
+      const status = params.status || 'CONFIRMED';
+      const price = params.price || 0;
+      const discount = params.discount || 0;
+      const finalAmount = params.finalAmount !== undefined ? params.finalAmount : Math.max(0, price - discount);
 
       // 2. Insert Booking
       this.db.run(`
         INSERT INTO bookings (
           id, business_id, branch_id, booking_code, customer_id, customer_name, customer_phone,
           service_id, service_name, room_id, room_name, staff_id, staff_name, date, start_time,
-          end_time, duration_minutes, status, notes, deposit_amount_mmk, deposit_payment_method,
+          end_time, duration_minutes, price, discount, final_amount, status, notes, deposit_amount_mmk, deposit_payment_method,
           created_by, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
         params.bookingId,
         params.businessId,
@@ -2590,6 +2696,9 @@ export class PersistentSQLiteStorage {
         params.startTime,
         params.endTime,
         params.durationMinutes,
+        price,
+        discount,
+        finalAmount,
         status,
         params.notes || null,
         params.depositAmountMMK || 0,
@@ -2617,6 +2726,9 @@ export class PersistentSQLiteStorage {
         startTime: params.startTime,
         endTime: params.endTime,
         durationMinutes: params.durationMinutes,
+        price,
+        discount,
+        finalAmount,
         status,
         notes: params.notes || null,
         depositAmountMMK: params.depositAmountMMK || 0,
@@ -2662,11 +2774,37 @@ export class PersistentSQLiteStorage {
     durationMinutes: number;
     notes?: string;
     status?: string;
+    price?: number;
+    discount?: number;
+    finalAmount?: number;
     userId: string;
     userName: string;
   }): Promise<any> {
     return this.transaction(async () => {
       if (!this.db) throw new Error('DB error');
+
+      // Check current booking status for state transition validation
+      const curStmt = this.db.prepare(`SELECT status FROM bookings WHERE id = ? AND business_id = ?`);
+      curStmt.bind([params.bookingId, params.businessId]);
+      if (curStmt.step()) {
+        const curObj = curStmt.getAsObject();
+        const currentStatus = String(curObj.status);
+        if (['COMPLETED', 'CANCELLED', 'NO_SHOW'].includes(currentStatus)) {
+          curStmt.free();
+          const err: any = new Error(`Cannot update booking with terminal status ${currentStatus}`);
+          err.code = 'INVALID_STATE_TRANSITION';
+          throw err;
+        }
+        if (params.status && params.status !== currentStatus) {
+          if (currentStatus === 'IN_SERVICE' && params.status === 'PENDING') {
+            curStmt.free();
+            const err: any = new Error(`Cannot transition from IN_SERVICE to PENDING`);
+            err.code = 'INVALID_STATE_TRANSITION';
+            throw err;
+          }
+        }
+      }
+      curStmt.free();
 
       // 1. Conflict Check excluding this booking
       const conflict = this.checkBookingConflict({
@@ -2702,6 +2840,9 @@ export class PersistentSQLiteStorage {
           start_time = ?,
           end_time = ?,
           duration_minutes = ?,
+          price = COALESCE(?, price),
+          discount = COALESCE(?, discount),
+          final_amount = COALESCE(?, final_amount),
           status = COALESCE(?, status),
           notes = COALESCE(?, notes),
           updated_at = ?
@@ -2719,6 +2860,9 @@ export class PersistentSQLiteStorage {
         params.startTime,
         params.endTime,
         params.durationMinutes,
+        params.price !== undefined ? params.price : null,
+        params.discount !== undefined ? params.discount : null,
+        params.finalAmount !== undefined ? params.finalAmount : null,
         params.status || null,
         params.notes || null,
         now,
@@ -2760,6 +2904,26 @@ export class PersistentSQLiteStorage {
     return this.transaction(async () => {
       if (!this.db) throw new Error('DB error');
       const now = new Date().toISOString();
+
+      const stmt = this.db.prepare(`SELECT * FROM bookings WHERE id = ? AND business_id = ?`);
+      stmt.bind([params.bookingId, params.businessId]);
+      if (!stmt.step()) {
+        stmt.free();
+        throw new Error(`Booking ${params.bookingId} not found`);
+      }
+      const booking = stmt.getAsObject();
+      stmt.free();
+
+      // Idempotency: If already cancelled, return successfully
+      if (String(booking.status) === 'CANCELLED') {
+        return { bookingId: params.bookingId, status: 'CANCELLED', cancelledAt: String(booking.cancelled_at || now), alreadyCancelled: true };
+      }
+
+      if (['COMPLETED', 'IN_SERVICE'].includes(String(booking.status))) {
+        const err: any = new Error(`Cannot cancel booking with status ${booking.status}`);
+        err.code = 'INVALID_STATE_TRANSITION';
+        throw err;
+      }
 
       this.db.run(`
         UPDATE bookings SET
@@ -2817,17 +2981,70 @@ export class PersistentSQLiteStorage {
       const booking = stmt.getAsObject();
       stmt.free();
 
+      // Disallow terminal states
+      if (['COMPLETED', 'CANCELLED', 'NO_SHOW'].includes(String(booking.status))) {
+        const err: any = new Error(`Cannot check in booking with status ${booking.status}`);
+        err.code = 'INVALID_STATE_TRANSITION';
+        throw err;
+      }
+
       let createdSessionId: string | null = null;
       let newStatus = 'CHECKED_IN';
 
-      // Auto start session if requested and room is assigned
-      if (params.startSession && booking.room_id) {
+      // 1. Check if active session already exists for this booking via booking.session_id
+      if (booking.session_id) {
+        try {
+          const chkStmt = this.db.prepare(`SELECT id, status FROM sessions WHERE id = ?`);
+          chkStmt.bind([booking.session_id]);
+          if (chkStmt.step()) {
+            const chkObj = chkStmt.getAsObject();
+            if (['active', 'started', 'extended', 'in_service'].includes(String(chkObj.status))) {
+              createdSessionId = String(chkObj.id);
+              newStatus = 'IN_SERVICE';
+            }
+          }
+          chkStmt.free();
+        } catch {}
+      }
+
+      // 2. Also check if active session already exists via sessions.booking_id
+      if (!createdSessionId) {
+        try {
+          const bkgSessStmt = this.db.prepare(`SELECT id, status FROM sessions WHERE booking_id = ? AND status IN ('active', 'started', 'extended', 'in_service')`);
+          bkgSessStmt.bind([params.bookingId]);
+          if (bkgSessStmt.step()) {
+            const bkgSessObj = bkgSessStmt.getAsObject();
+            createdSessionId = String(bkgSessObj.id);
+            newStatus = 'IN_SERVICE';
+          }
+          bkgSessStmt.free();
+        } catch {}
+      }
+
+      // 3. Auto start session ONLY if requested, room is assigned, and NO active session already exists
+      if (params.startSession && booking.room_id && !createdSessionId) {
+        // Guard: check if room is currently occupied by another active session
+        try {
+          const occStmt = this.db.prepare(`SELECT id, customer_name FROM sessions WHERE room_id = ? AND status IN ('active', 'started', 'extended') AND (booking_id IS NULL OR booking_id != ?)`);
+          occStmt.bind([booking.room_id, params.bookingId]);
+          if (occStmt.step()) {
+            const occ = occStmt.getAsObject();
+            occStmt.free();
+            const err: any = new Error(`Room is currently occupied by active session (${occ.customer_name || occ.id})`);
+            err.code = 'ROOM_OCCUPIED_CONFLICT';
+            throw err;
+          }
+          occStmt.free();
+        } catch (e: any) {
+          if (e.code === 'ROOM_OCCUPIED_CONFLICT') throw e;
+        }
+
         createdSessionId = params.sessionId || `sess_${Date.now()}`;
         
-        // Start Session
+        // Start Session with booking_id link
         this.db.run(`
-          INSERT INTO sessions (id, business_id, branch_id, room_id, room_name, customer_name, start_time, duration_minutes, total_fee_mmk, status, created_by, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 'active', ?, ?)
+          INSERT INTO sessions (id, business_id, branch_id, room_id, room_name, customer_name, start_time, duration_minutes, total_fee_mmk, status, booking_id, created_by, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 'active', ?, ?, ?)
         `, [
           createdSessionId,
           params.businessId,
@@ -2837,6 +3054,7 @@ export class PersistentSQLiteStorage {
           booking.customer_name,
           now,
           booking.duration_minutes || 60,
+          params.bookingId,
           params.userName,
           now,
         ]);
@@ -2861,6 +3079,7 @@ export class PersistentSQLiteStorage {
             customerName: booking.customer_name,
             status: 'active',
             startTime: now,
+            bookingId: params.bookingId,
           },
           actorUserId: params.userId,
         });
@@ -2884,9 +3103,9 @@ export class PersistentSQLiteStorage {
       this.db.run(`
         UPDATE bookings SET
           status = ?,
-          session_id = ?,
-          checked_in_at = ?,
-          checked_in_by = ?,
+          session_id = COALESCE(?, session_id),
+          checked_in_at = COALESCE(checked_in_at, ?),
+          checked_in_by = COALESCE(checked_in_by, ?),
           updated_at = ?
         WHERE id = ? AND business_id = ?
       `, [newStatus, createdSessionId, now, params.userName, now, params.bookingId, params.businessId]);
@@ -2913,6 +3132,176 @@ export class PersistentSQLiteStorage {
         sessionId: createdSessionId,
         checkedInAt: now,
       };
+    });
+  }
+
+  /**
+   * BOOKING CONFIRM: Atomically confirms pending booking
+   */
+  public async executeBookingConfirm(params: {
+    bookingId: string;
+    businessId: string;
+    branchId: string;
+    userId: string;
+    userName: string;
+  }): Promise<any> {
+    return this.transaction(async () => {
+      if (!this.db) throw new Error('DB error');
+      const now = new Date().toISOString();
+
+      const stmt = this.db.prepare(`SELECT * FROM bookings WHERE id = ? AND business_id = ?`);
+      stmt.bind([params.bookingId, params.businessId]);
+      if (!stmt.step()) {
+        stmt.free();
+        throw new Error(`Booking ${params.bookingId} not found`);
+      }
+      const booking = stmt.getAsObject();
+      stmt.free();
+
+      // Idempotency: If already confirmed, return current state
+      if (String(booking.status) === 'CONFIRMED') {
+        return { bookingId: params.bookingId, status: 'CONFIRMED', updatedAt: String(booking.updated_at || now), alreadyConfirmed: true };
+      }
+
+      if (['CANCELLED', 'NO_SHOW', 'COMPLETED'].includes(String(booking.status))) {
+        const err: any = new Error(`Cannot confirm booking with status ${booking.status}`);
+        err.code = 'INVALID_STATE_TRANSITION';
+        throw err;
+      }
+
+      this.db.run(`
+        UPDATE bookings SET status = 'CONFIRMED', updated_at = ? WHERE id = ? AND business_id = ?
+      `, [now, params.bookingId, params.businessId]);
+
+      this.recordOutboxEvent({
+        businessId: params.businessId,
+        branchId: params.branchId,
+        eventType: 'BOOKING_CONFIRMED',
+        entityType: 'BOOKING',
+        entityId: params.bookingId,
+        payload: { bookingId: params.bookingId, status: 'CONFIRMED', updatedAt: now },
+        actorUserId: params.userId,
+      });
+
+      return { bookingId: params.bookingId, status: 'CONFIRMED', updatedAt: now };
+    });
+  }
+
+  /**
+   * BOOKING NO-SHOW: Marks customer as no-show and releases resources
+   */
+  public async executeBookingNoShow(params: {
+    bookingId: string;
+    businessId: string;
+    branchId: string;
+    userId: string;
+    userName: string;
+  }): Promise<any> {
+    return this.transaction(async () => {
+      if (!this.db) throw new Error('DB error');
+      const now = new Date().toISOString();
+
+      const stmt = this.db.prepare(`SELECT * FROM bookings WHERE id = ? AND business_id = ?`);
+      stmt.bind([params.bookingId, params.businessId]);
+      if (!stmt.step()) {
+        stmt.free();
+        throw new Error(`Booking ${params.bookingId} not found`);
+      }
+      const booking = stmt.getAsObject();
+      stmt.free();
+
+      // Idempotency: If already marked no-show, return current state
+      if (String(booking.status) === 'NO_SHOW') {
+        return { bookingId: params.bookingId, status: 'NO_SHOW', updatedAt: String(booking.updated_at || now), alreadyNoShow: true };
+      }
+
+      if (['COMPLETED', 'CANCELLED', 'IN_SERVICE'].includes(String(booking.status))) {
+        const err: any = new Error(`Cannot mark booking with status ${booking.status} as NO_SHOW`);
+        err.code = 'INVALID_STATE_TRANSITION';
+        throw err;
+      }
+
+      this.db.run(`
+        UPDATE bookings SET status = 'NO_SHOW', updated_at = ? WHERE id = ? AND business_id = ?
+      `, [now, params.bookingId, params.businessId]);
+
+      this.recordOutboxEvent({
+        businessId: params.businessId,
+        branchId: params.branchId,
+        eventType: 'BOOKING_NO_SHOW',
+        entityType: 'BOOKING',
+        entityId: params.bookingId,
+        payload: { bookingId: params.bookingId, status: 'NO_SHOW', updatedAt: now },
+        actorUserId: params.userId,
+      });
+
+      return { bookingId: params.bookingId, status: 'NO_SHOW', updatedAt: now };
+    });
+  }
+
+  /**
+   * BOOKING COMPLETE: Atomically marks service as completed
+   */
+  public async executeBookingComplete(params: {
+    bookingId: string;
+    businessId: string;
+    branchId: string;
+    sessionId?: string;
+    invoiceId?: string;
+    userId: string;
+    userName: string;
+  }): Promise<any> {
+    return this.transaction(async () => {
+      if (!this.db) throw new Error('DB error');
+      const now = new Date().toISOString();
+
+      const stmt = this.db.prepare(`SELECT * FROM bookings WHERE id = ? AND business_id = ?`);
+      stmt.bind([params.bookingId, params.businessId]);
+      if (!stmt.step()) {
+        stmt.free();
+        throw new Error(`Booking ${params.bookingId} not found`);
+      }
+      const booking = stmt.getAsObject();
+      stmt.free();
+
+      // Idempotency: If already completed, return current state
+      if (String(booking.status) === 'COMPLETED') {
+        return { bookingId: params.bookingId, status: 'COMPLETED', completedAt: String(booking.completed_at || now), alreadyCompleted: true };
+      }
+
+      if (['CANCELLED', 'NO_SHOW'].includes(String(booking.status))) {
+        const err: any = new Error(`Cannot complete booking with status ${booking.status}`);
+        err.code = 'INVALID_STATE_TRANSITION';
+        throw err;
+      }
+
+      this.db.run(`
+        UPDATE bookings SET
+          status = 'COMPLETED',
+          session_id = COALESCE(?, session_id),
+          invoice_id = COALESCE(?, invoice_id),
+          completed_at = ?,
+          updated_at = ?
+        WHERE id = ? AND business_id = ?
+      `, [params.sessionId || null, params.invoiceId || null, now, now, params.bookingId, params.businessId]);
+
+      this.recordOutboxEvent({
+        businessId: params.businessId,
+        branchId: params.branchId,
+        eventType: 'BOOKING_COMPLETED',
+        entityType: 'BOOKING',
+        entityId: params.bookingId,
+        payload: {
+          bookingId: params.bookingId,
+          status: 'COMPLETED',
+          sessionId: params.sessionId || booking.session_id,
+          invoiceId: params.invoiceId || booking.invoice_id,
+          completedAt: now,
+        },
+        actorUserId: params.userId,
+      });
+
+      return { bookingId: params.bookingId, status: 'COMPLETED', completedAt: now };
     });
   }
 

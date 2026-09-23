@@ -16,9 +16,13 @@
   .bg-gray-50 select,
   .bg-slate-50 input,
   .bg-slate-50 textarea,
-  .bg-slate-50 select {
+  .bg-slate-50 select,
+  .bg-amber-50 select,
+  .bg-emerald-50 select,
+  .bg-teal-50 select {
     color: #0f172a !important;
-    background-color: #ffffff;
+    background-color: #ffffff !important;
+    border-color: #cbd5e1 !important;
   }
 
   .bg-white input::placeholder,
@@ -28,7 +32,7 @@
   .bg-slate-50 input::placeholder,
   .bg-slate-50 textarea::placeholder {
     color: #64748b !important;
-    opacity: 1;
+    opacity: 1 !important;
   }
 
   /* Universal high-contrast input fixes for dark containers */
@@ -44,7 +48,7 @@
   .bg-slate-900 input,
   .bg-slate-900 textarea,
   .bg-slate-900 select {
-    color: #f8fafc;
+    color: #f8fafc !important;
   }
 
   .bg-\[\#0b0f19\] input::placeholder,
@@ -53,8 +57,198 @@
   .bg-slate-950 textarea::placeholder,
   .bg-slate-900 input::placeholder,
   .bg-slate-900 textarea::placeholder {
-    color: #94a3b8;
-    opacity: 1;
+    color: #94a3b8 !important;
+    opacity: 1 !important;
+  }
+
+  /* GLOBAL CONTRAST RULES: Light background elements should always force dark text by default */
+  .bg-white,
+  .bg-gray-50,
+  .bg-slate-50,
+  .bg-gray-100,
+  .bg-slate-100,
+  .bg-emerald-50,
+  .bg-blue-50,
+  .bg-indigo-50,
+  .bg-amber-50,
+  .bg-rose-50,
+  .bg-teal-50 {
+    color: #0f172a; /* NOT !important, so sub-containers/child elements can override with explicit text-white */
+  }
+
+  /* Prevent text-white, text-slate-100, etc. from making text white/unreadable inside light backgrounds, 
+     but ONLY if they are NOT inside an explicit dark sub-container */
+  .bg-white .text-white,
+  .bg-white .text-slate-100,
+  .bg-white .text-gray-100,
+  .bg-white .text-slate-200,
+  .bg-white .text-slate-300,
+  .bg-white .text-gray-200,
+  .bg-white .text-cyan-100,
+  .bg-gray-50 .text-white,
+  .bg-gray-50 .text-slate-100,
+  .bg-gray-50 .text-slate-200,
+  .bg-slate-50 .text-white,
+  .bg-slate-50 .text-slate-100,
+  .bg-slate-50 .text-slate-200,
+  .bg-emerald-50 .text-white,
+  .bg-emerald-50 .text-slate-100,
+  .bg-emerald-50 .text-slate-200,
+  .bg-blue-50 .text-white,
+  .bg-indigo-50 .text-white,
+  .bg-amber-50 .text-white,
+  .bg-amber-50 .text-amber-100,
+  .bg-rose-50 .text-white,
+  .bg-rose-50 .text-rose-100 {
+    color: #1e293b;
+  }
+
+  /* Precise dark-background overrides for elements inside light background containers:
+     when children are inside an explicit dark header or button, restore their light colors */
+  .bg-white [class*="bg-blue-"] .text-white,
+  .bg-white [class*="bg-blue-"] .text-white\/80,
+  .bg-white [class*="bg-indigo-"] .text-white,
+  .bg-white [class*="bg-emerald-"] .text-white,
+  .bg-white [class*="bg-emerald-"] .text-emerald-100,
+  .bg-white [class*="bg-slate-9"] .text-white,
+  .bg-white [class*="bg-slate-9"] .text-slate-200,
+  .bg-white [class*="bg-linear-"] .text-white,
+  .bg-white [class*="bg-linear-"] .text-white\/80,
+  .bg-white [class*="from-blue-"] .text-white,
+  .bg-white [class*="from-blue-"] .text-white\/80,
+  .bg-white [class*="from-blue-"] .text-slate-100,
+  .bg-white [class*="from-indigo-"] .text-white,
+  .bg-white [class*="from-indigo-"] .text-white\/80,
+  .bg-white .bg-blue-600 .text-white,
+  .bg-white .bg-blue-600 .text-blue-100,
+  .bg-white .bg-blue-700 .text-white,
+  .bg-white .bg-indigo-600 .text-white,
+  .bg-white .bg-indigo-700 .text-white,
+  .bg-white .bg-emerald-600 .text-white,
+  .bg-white .bg-emerald-700 .text-white,
+  .bg-white .bg-rose-600 .text-white,
+  .bg-white .bg-rose-700 .text-white,
+  .bg-white .bg-red-600 .text-white,
+  .bg-white .bg-slate-900 .text-white,
+  .bg-white .bg-slate-900 .text-slate-200,
+  
+  .bg-gray-50 [class*="bg-blue-"] .text-white,
+  .bg-gray-50 [class*="bg-blue-"] .text-white\/80,
+  .bg-gray-50 [class*="bg-indigo-"] .text-white,
+  .bg-gray-50 [class*="bg-emerald-"] .text-white,
+  .bg-gray-50 [class*="bg-emerald-"] .text-emerald-100,
+  .bg-gray-50 [class*="bg-slate-9"] .text-white,
+  .bg-gray-50 [class*="bg-slate-9"] .text-slate-200,
+  .bg-gray-50 [class*="bg-linear-"] .text-white,
+  .bg-gray-50 [class*="bg-linear-"] .text-white\/80,
+  .bg-gray-50 [class*="from-blue-"] .text-white,
+  .bg-gray-50 [class*="from-blue-"] .text-white\/80,
+  .bg-gray-50 [class*="from-blue-"] .text-slate-100,
+  .bg-gray-50 [class*="from-indigo-"] .text-white,
+  .bg-gray-50 [class*="from-indigo-"] .text-white\/80,
+  .bg-gray-50 .bg-blue-600 .text-white,
+  .bg-gray-50 .bg-blue-600 .text-blue-100,
+  .bg-gray-50 .bg-blue-700 .text-white,
+  .bg-gray-50 .bg-indigo-600 .text-white,
+  .bg-gray-50 .bg-indigo-700 .text-white,
+  .bg-gray-50 .bg-emerald-600 .text-white,
+  .bg-gray-50 .bg-emerald-700 .text-white,
+  .bg-gray-50 .bg-rose-600 .text-white,
+  .bg-gray-50 .bg-rose-700 .text-white,
+  .bg-gray-50 .bg-red-600 .text-white,
+  .bg-gray-50 .bg-slate-900 .text-white,
+  .bg-gray-50 .bg-slate-900 .text-slate-200,
+
+  .bg-slate-50 [class*="bg-blue-"] .text-white,
+  .bg-slate-50 [class*="bg-blue-"] .text-white\/80,
+  .bg-slate-50 [class*="bg-indigo-"] .text-white,
+  .bg-slate-50 [class*="bg-emerald-"] .text-white,
+  .bg-slate-50 [class*="bg-emerald-"] .text-emerald-100,
+  .bg-slate-50 [class*="bg-slate-9"] .text-white,
+  .bg-slate-50 [class*="bg-slate-9"] .text-slate-200,
+  .bg-slate-50 [class*="bg-linear-"] .text-white,
+  .bg-slate-50 [class*="bg-linear-"] .text-white\/80,
+  .bg-slate-50 [class*="from-blue-"] .text-white,
+  .bg-slate-50 [class*="from-blue-"] .text-white\/80,
+  .bg-slate-50 [class*="from-blue-"] .text-slate-100,
+  .bg-slate-50 [class*="from-indigo-"] .text-white,
+  .bg-slate-50 [class*="from-indigo-"] .text-white\/80,
+  .bg-slate-50 .bg-blue-600 .text-white,
+  .bg-slate-50 .bg-blue-600 .text-blue-100,
+  .bg-slate-50 .bg-blue-700 .text-white,
+  .bg-slate-50 .bg-indigo-600 .text-white,
+  .bg-slate-50 .bg-indigo-700 .text-white,
+  .bg-slate-50 .bg-emerald-600 .text-white,
+  .bg-slate-50 .bg-emerald-700 .text-white,
+  .bg-slate-50 .bg-rose-600 .text-white,
+  .bg-slate-50 .bg-rose-700 .text-white,
+  .bg-slate-50 .bg-red-600 .text-white,
+  .bg-slate-50 .bg-slate-900 .text-white,
+  .bg-slate-50 .bg-slate-900 .text-slate-200,
+
+  .bg-emerald-50 [class*="bg-blue-"] .text-white,
+  .bg-emerald-50 [class*="bg-indigo-"] .text-white,
+  .bg-emerald-50 [class*="bg-emerald-"] .text-white,
+  .bg-emerald-50 [class*="bg-slate-9"] .text-white,
+  .bg-emerald-50 .bg-emerald-600 .text-white,
+  .bg-emerald-50 .bg-emerald-700 .text-white,
+  .bg-emerald-50 .bg-blue-600 .text-white,
+
+  .bg-amber-50 [class*="bg-blue-"] .text-white,
+  .bg-amber-50 [class*="bg-indigo-"] .text-white,
+  .bg-amber-50 [class*="bg-emerald-"] .text-white,
+  .bg-amber-50 [class*="bg-slate-9"] .text-white,
+  .bg-amber-50 .bg-amber-600 .text-white,
+  .bg-amber-50 .bg-emerald-600 .text-white,
+  .bg-amber-50 .bg-blue-600 .text-white {
+    color: #ffffff !important;
+  }
+
+  /* Make sure labels, descriptions, and headings inside light backgrounds are readable */
+  .bg-white label,
+  .bg-white p,
+  .bg-white span,
+  .bg-white h1, .bg-white h2, .bg-white h3, .bg-white h4, .bg-white h5, .bg-white h6,
+  .bg-gray-50 label,
+  .bg-gray-50 p,
+  .bg-gray-50 span,
+  .bg-gray-50 h1, .bg-gray-50 h2, .bg-gray-50 h3, .bg-gray-50 h4,
+  .bg-slate-50 label,
+  .bg-slate-50 p,
+  .bg-slate-50 span,
+  .bg-slate-50 h1, .bg-slate-50 h2, .bg-slate-50 h3, .bg-slate-50 h4 {
+    color: #1e293b;
+  }
+
+  /* Ensure explicit text color overrides for labels and badge texts inside white backgrounds remain fully legible */
+  .bg-white .text-gray-500, .bg-gray-50 .text-gray-500, .bg-slate-50 .text-gray-500 { color: #515d70 !important; }
+  .bg-white .text-slate-500, .bg-gray-50 .text-slate-500, .bg-slate-50 .text-slate-500 { color: #515d70 !important; }
+  .bg-white .text-slate-400, .bg-gray-50 .text-slate-400, .bg-slate-50 .text-slate-400 { color: #475569 !important; }
+  .bg-white .text-gray-400, .bg-gray-50 .text-gray-400, .bg-slate-50 .text-gray-400 { color: #475569 !important; }
+  .bg-white .text-emerald-600, .bg-gray-50 .text-emerald-600 { color: #059669 !important; }
+  .bg-white .text-rose-600, .bg-gray-50 .text-rose-600 { color: #dc2626 !important; }
+  .bg-white .text-blue-600, .bg-gray-50 .text-blue-600 { color: #2563eb !important; }
+  .bg-white .text-amber-600, .bg-gray-50 .text-amber-600 { color: #d97706 !important; }
+
+  /* Table readability inside light/white background tables */
+  .bg-white table, .bg-white th, .bg-white td {
+    color: #0f172a !important;
+    border-color: #cbd5e1 !important;
+  }
+  .bg-white th {
+    background-color: #f8fafc !important;
+    color: #334155 !important;
+  }
+
+  /* Make sure printing styles do not inherit any dark mode styles */
+  @media print {
+    body, html, #root, main, div, p, span, table, tr, th, td, h1, h2, h3, h4, h5, h6 {
+      background-color: #ffffff !important;
+      color: #000000 !important;
+      background-image: none !important;
+      box-shadow: none !important;
+      text-shadow: none !important;
+    }
   }
 }
 

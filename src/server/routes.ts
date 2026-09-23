@@ -574,6 +574,10 @@ export function createApiRouter(storage: PersistentSQLiteStorage = serverStorage
             startTime: payload.startTime,
             endTime: payload.endTime,
             durationMinutes: Number(payload.durationMinutes) || 60,
+            price: Number(payload.price) || 0,
+            discount: Number(payload.discount) || 0,
+            finalAmount: payload.finalAmount !== undefined ? Number(payload.finalAmount) : undefined,
+            status: payload.status,
             notes: payload.notes,
             depositAmountMMK: Number(payload.depositAmountMMK) || 0,
             depositPaymentMethod: payload.depositPaymentMethod,
@@ -600,8 +604,22 @@ export function createApiRouter(storage: PersistentSQLiteStorage = serverStorage
             startTime: payload.startTime,
             endTime: payload.endTime,
             durationMinutes: Number(payload.durationMinutes) || 60,
+            price: payload.price !== undefined ? Number(payload.price) : undefined,
+            discount: payload.discount !== undefined ? Number(payload.discount) : undefined,
+            finalAmount: payload.finalAmount !== undefined ? Number(payload.finalAmount) : undefined,
             notes: payload.notes,
             status: payload.status,
+            userId: user.id,
+            userName: user.name,
+          });
+          break;
+        }
+
+        case 'BOOKING_CONFIRM': {
+          operationResult = await storage.executeBookingConfirm({
+            bookingId: entityId || payload.bookingId,
+            businessId,
+            branchId,
             userId: user.id,
             userName: user.name,
           });
@@ -628,6 +646,30 @@ export function createApiRouter(storage: PersistentSQLiteStorage = serverStorage
             startSession: Boolean(payload.startSession),
             sessionId: payload.sessionId,
             hourlyRateMMK: Number(payload.hourlyRateMMK) || 0,
+            userId: user.id,
+            userName: user.name,
+          });
+          break;
+        }
+
+        case 'BOOKING_NO_SHOW': {
+          operationResult = await storage.executeBookingNoShow({
+            bookingId: entityId || payload.bookingId,
+            businessId,
+            branchId,
+            userId: user.id,
+            userName: user.name,
+          });
+          break;
+        }
+
+        case 'BOOKING_COMPLETE': {
+          operationResult = await storage.executeBookingComplete({
+            bookingId: entityId || payload.bookingId,
+            businessId,
+            branchId,
+            sessionId: payload.sessionId,
+            invoiceId: payload.invoiceId,
             userId: user.id,
             userName: user.name,
           });
@@ -948,7 +990,7 @@ export function createApiRouter(storage: PersistentSQLiteStorage = serverStorage
         processedAt: new Date().toISOString(),
       });
     } catch (err: any) {
-      if (err.code === 'ROOM_OCCUPIED_CONFLICT' || err.code === 'DATE_ALREADY_CLOSED' || err.code === 'RESOURCE_CONFLICT') {
+      if (err.code === 'ROOM_OCCUPIED_CONFLICT' || err.code === 'DATE_ALREADY_CLOSED' || err.code === 'RESOURCE_CONFLICT' || err.code === 'INVALID_STATE_TRANSITION') {
         return res.status(409).json({ error: err.code, message: err.message });
       }
       if (err.code === 'CREDIT_LIMIT_EXCEEDED') {

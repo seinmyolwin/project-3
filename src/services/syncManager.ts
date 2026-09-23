@@ -387,6 +387,53 @@ export class SyncManager {
           status: 'available',
           currentSessionId: undefined,
         });
+      } else if (operationType === 'BOOKING_CREATE' && result.booking) {
+        await db.bookings.put(result.booking);
+      } else if (operationType === 'BOOKING_UPDATE' && result.booking) {
+        await db.bookings.put(result.booking);
+      } else if (operationType === 'BOOKING_CONFIRM' && (payload.bookingId || result.bookingId)) {
+        const id = payload.bookingId || result.bookingId;
+        await db.bookings.update(id, {
+          status: 'CONFIRMED',
+          updatedAt: result.updatedAt || new Date().toISOString(),
+        });
+      } else if (operationType === 'BOOKING_CANCEL' && (payload.bookingId || result.bookingId)) {
+        const id = payload.bookingId || result.bookingId;
+        await db.bookings.update(id, {
+          status: 'CANCELLED',
+          cancellationReason: payload.cancellationReason || payload.reason,
+          cancelledAt: result.cancelledAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+      } else if (operationType === 'BOOKING_CHECKIN' && (payload.bookingId || result.bookingId)) {
+        const id = payload.bookingId || result.bookingId;
+        await db.bookings.update(id, {
+          status: result.status || 'CHECKED_IN',
+          sessionId: result.sessionId,
+          checkedInAt: result.checkedInAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+        if (result.sessionId && payload.roomId) {
+          await db.rooms.update(payload.roomId, {
+            status: 'occupied',
+            currentSessionId: result.sessionId,
+          });
+        }
+      } else if (operationType === 'BOOKING_NO_SHOW' && (payload.bookingId || result.bookingId)) {
+        const id = payload.bookingId || result.bookingId;
+        await db.bookings.update(id, {
+          status: 'NO_SHOW',
+          updatedAt: result.updatedAt || new Date().toISOString(),
+        });
+      } else if (operationType === 'BOOKING_COMPLETE' && (payload.bookingId || result.bookingId)) {
+        const id = payload.bookingId || result.bookingId;
+        await db.bookings.update(id, {
+          status: 'COMPLETED',
+          sessionId: result.sessionId || payload.sessionId,
+          invoiceId: result.invoiceId || payload.invoiceId,
+          completedAt: result.completedAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
       }
     } catch (err) {
       // Ignore cache update errors
@@ -571,6 +618,19 @@ export class SyncManager {
           break;
         }
 
+        case 'BOOKING_CONFIRMED': {
+          if (payload.bookingId) {
+            const b = await db.bookings.get(payload.bookingId);
+            if (b) {
+              await db.bookings.update(payload.bookingId, {
+                status: 'CONFIRMED',
+                updatedAt: payload.updatedAt || new Date().toISOString(),
+              });
+            }
+          }
+          break;
+        }
+
         case 'BOOKING_CANCELLED': {
           if (payload.bookingId) {
             const b = await db.bookings.get(payload.bookingId);
@@ -595,6 +655,35 @@ export class SyncManager {
                 sessionId: payload.sessionId,
                 checkedInAt: payload.checkedInAt,
                 checkedInBy: payload.checkedInBy,
+              });
+            }
+          }
+          break;
+        }
+
+        case 'BOOKING_NO_SHOW': {
+          if (payload.bookingId) {
+            const b = await db.bookings.get(payload.bookingId);
+            if (b) {
+              await db.bookings.update(payload.bookingId, {
+                status: 'NO_SHOW',
+                updatedAt: payload.updatedAt || new Date().toISOString(),
+              });
+            }
+          }
+          break;
+        }
+
+        case 'BOOKING_COMPLETED': {
+          if (payload.bookingId) {
+            const b = await db.bookings.get(payload.bookingId);
+            if (b) {
+              await db.bookings.update(payload.bookingId, {
+                status: 'COMPLETED',
+                sessionId: payload.sessionId || b.sessionId,
+                invoiceId: payload.invoiceId || b.invoiceId,
+                completedAt: payload.completedAt || new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
               });
             }
           }
