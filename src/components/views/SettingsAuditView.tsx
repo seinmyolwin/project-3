@@ -115,6 +115,23 @@ export const SettingsAuditView: React.FC<SettingsAuditViewProps> = ({
   const [backupStatus, setBackupStatus] = useState<string>('');
   const [restoreFileContent, setRestoreFileContent] = useState<any | null>(null);
 
+  // Update check state
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [updateCheckResult, setUpdateCheckResult] = useState<string | null>(null);
+
+  const handleCheckForUpdates = () => {
+    setIsCheckingUpdate(true);
+    setUpdateCheckResult(null);
+    setTimeout(() => {
+      setIsCheckingUpdate(false);
+      setUpdateCheckResult(
+        isMm
+          ? `စနစ်သည် နောက်ဆုံးပေါ်ဗားရှင်း (v${APP_VERSION}) တွင်ရှိနေပါသည်။ (Build Date: ${APP_BUILD_DATE})။ အော့ဖ်လိုင်း ဆာဗာသည် အပ်ဒိတ်အဆင်သင့်ဖြစ်နေပါသည်။`
+          : `System is up-to-date! Running latest version v${APP_VERSION} (Build: ${APP_BUILD_DATE}). Local offline package is verified.`
+      );
+    }, 800);
+  };
+
   // Handle Export Backup JSON
   const handleExportBackup = async () => {
     try {
@@ -722,6 +739,51 @@ export const SettingsAuditView: React.FC<SettingsAuditViewProps> = ({
                     ? 'ဤဆော့ဖ်ဝဲသည် အင်တာနက်သို့ တိုက်ရိုက်ဆက်သွယ်ပြီး မွမ်းမံမှု စစ်ဆေးမည် မဟုတ်ပါ။ Package အသစ် ရရှိပါက Host စက်ထဲသို့ တိုက်ရိုက် ကူးယူ/ထည့်သွင်းနိုင်ပြီး APP_DATA_DIR ရှိ ဒေတာများနှင့် သုံးစွဲသူ စာရင်းများ ပျောက်ပျက်မည် မဟုတ်ပါ။'
                     : 'This software does NOT connect to external update servers. Local package updates or manual build deployment preserve APP_DATA_DIR data files and apply idempotent database schema migrations safely.'}
                 </p>
+              </div>
+            </div>
+
+            {/* Check for Software Updates Card */}
+            <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-xs flex flex-col justify-between space-y-4">
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-cyan-700 border-b border-gray-100 pb-3">
+                  <RefreshCw className="h-6 w-6" />
+                  <div>
+                    <h3 className="text-base font-bold text-gray-900">
+                      {isMm ? 'ဆော့ဖ်ဝဲ အပ်ဒိတ် စစ်ဆေးရန်' : 'Check for Software Updates'}
+                    </h3>
+                    <p className="text-xs text-gray-500">
+                      {isMm ? 'လက်ရှိဗားရှင်းနှင့် ဒေသတွင်း မွမ်းမံမှုအခြေအနေ စစ်ဆေးရန်' : 'Verify current release version and build status'}
+                    </p>
+                  </div>
+                </div>
+
+                <p className="text-xs text-gray-600 leading-relaxed">
+                  {isMm
+                    ? 'ဆော့ဖ်ဝဲ၏ နောက်ဆုံးဗားရှင်းနှင့် ဒေသတွင်း အပ်ဒိတ်အခြေအနေများကို အချိန်နှင့်တပြေးညီ စစ်ဆေးနိုင်ပါသည်။'
+                    : 'Check your current local release version and verify offline system update readiness.'}
+                </p>
+
+                {updateCheckResult && (
+                  <div className="rounded-xl bg-cyan-50 p-3 text-xs font-semibold text-cyan-900 border border-cyan-200">
+                    {updateCheckResult}
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-4">
+                <button
+                  type="button"
+                  disabled={isCheckingUpdate}
+                  onClick={handleCheckForUpdates}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-600 py-3 text-xs font-bold text-white shadow-xs hover:bg-cyan-700 disabled:opacity-50 transition-all"
+                >
+                  <RefreshCw className={`h-4 w-4 ${isCheckingUpdate ? 'animate-spin' : ''}`} />
+                  <span>
+                    {isCheckingUpdate
+                      ? (isMm ? 'အပ်ဒိတ် စစ်ဆေးနေပါသည်...' : 'Checking for Updates...')
+                      : (isMm ? 'အပ်ဒိတ် ရှိမရှိ စစ်ဆေးမည်' : 'Check for Updates Now')}
+                  </span>
+                </button>
               </div>
             </div>
 

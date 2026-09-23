@@ -119,6 +119,11 @@ export const Navbar: React.FC<NavbarProps> = ({
               {isMm ? settings?.shopNameMm || 'ရွှေသီရိ စပါနှင့် ကာရာအိုကေ' : settings?.shopName || 'Shwe Thiri Spa & KTV'}
             </h1>
             <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+              <div className="inline-flex items-center gap-1 rounded-md bg-emerald-500/20 px-2 py-0.5 text-[10px] font-black text-emerald-300 border border-emerald-500/50 shadow-xs">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping inline-block"></span>
+                <span>LIVE!</span>
+              </div>
+
               <button
                 onClick={onOpenLANModal}
                 className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold border transition-all cursor-pointer ${
