@@ -1398,6 +1398,64 @@ export interface CustomerServiceHistoryItem {
   invoiceId?: string;
 }
 
+// ==========================================
+// PHASE 29: STAFF SCHEDULE, ATTENDANCE & INVENTORY CONSUMPTION
+// ==========================================
+
+export type StaffScheduleStatus = 'working' | 'off' | 'leave' | 'unavailable';
+
+export interface StaffScheduleRecord {
+  id: string;
+  businessId?: string;
+  branchId?: string;
+  staffId: string;
+  staffName: string;
+  date: string; // YYYY-MM-DD
+  startTime: string; // HH:mm
+  endTime: string; // HH:mm
+  breakStart?: string; // HH:mm
+  breakEnd?: string; // HH:mm
+  status: StaffScheduleStatus;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+}
+
+export type AttendanceStatus = 'checked_in' | 'checked_out' | 'absent';
+
+export interface StaffAttendanceRecord {
+  id: string;
+  businessId?: string;
+  branchId?: string;
+  staffId: string;
+  staffName: string;
+  date: string; // YYYY-MM-DD
+  checkInTime?: string; // ISO or HH:mm
+  checkOutTime?: string; // ISO or HH:mm
+  status: AttendanceStatus;
+  deviceId?: string;
+  userId: string;
+  userName: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ServiceConsumableItem {
+  id: string;
+  businessId?: string;
+  branchId?: string;
+  serviceId: string;
+  serviceName: string;
+  productId: string;
+  productName: string;
+  quantity: number; // e.g. 0.05 or 1
+  unit?: string; // e.g. 'ml', 'pcs', 'bottle'
+  createdAt: string;
+  updatedAt: string;
+}
+
 export * from './multiDevice';
 
 

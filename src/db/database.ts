@@ -69,6 +69,9 @@ import {
   CustomerServiceNote,
   CustomerPreferenceProfile,
   CustomerServiceHistoryItem,
+  StaffScheduleRecord,
+  StaffAttendanceRecord,
+  ServiceConsumableItem,
 } from '../types';
 import {
   calculateSessionPricing,
@@ -140,6 +143,9 @@ export class MyanmarBusinessDB extends Dexie {
   giftCardRedemptions!: Table<GiftCardRedemptionRecord, string>;
   tips!: Table<TipRecord, string>;
   customerServiceNotes!: Table<CustomerServiceNote, string>;
+  staffSchedules!: Table<StaffScheduleRecord, string>;
+  staffAttendance!: Table<StaffAttendanceRecord, string>;
+  serviceConsumables!: Table<ServiceConsumableItem, string>;
 
   constructor() {
     super('MyanmarBusinessERP_DB');
@@ -245,6 +251,13 @@ export class MyanmarBusinessDB extends Dexie {
     // Schema Version 6 (Phase 28: Customer 360, Service Notes & Rebooking)
     this.version(6).stores({
       customerServiceNotes: 'id, customerId, sessionId, bookingId, serviceId, category, isPrivate, createdAt',
+    });
+
+    // Schema Version 7 (Phase 29: Staff Schedule, Attendance & Service Consumables)
+    this.version(7).stores({
+      staffSchedules: 'id, staffId, date, status, branchId, businessId, createdAt',
+      staffAttendance: 'id, staffId, date, status, branchId, businessId, createdAt',
+      serviceConsumables: 'id, serviceId, productId, branchId, businessId, createdAt',
     });
   }
 
@@ -3751,6 +3764,7 @@ export class MyanmarBusinessDB extends Dexie {
         timestamp: now,
         userId: params.createdById || 'user',
         userName: params.createdBy,
+        userRole: 'staff',
         action: 'CUSTOMER_NOTE_ADD' as any,
         entity: 'CustomerServiceNote',
         entityId: noteId,
@@ -3784,6 +3798,7 @@ export class MyanmarBusinessDB extends Dexie {
         timestamp: now,
         userId: currentUser?.id || 'user',
         userName: currentUser?.name || 'User',
+        userRole: currentUser?.role || 'staff',
         action: 'CUSTOMER_NOTE_UPDATE' as any,
         entity: 'CustomerServiceNote',
         entityId: id,
@@ -3809,6 +3824,7 @@ export class MyanmarBusinessDB extends Dexie {
         timestamp: new Date().toISOString(),
         userId: currentUser?.id || 'user',
         userName: currentUser?.name || 'User',
+        userRole: currentUser?.role || 'staff',
         action: 'CUSTOMER_NOTE_DELETE' as any,
         entity: 'CustomerServiceNote',
         entityId: id,
@@ -3820,7 +3836,7 @@ export class MyanmarBusinessDB extends Dexie {
   public async updateCustomerPreferences(
     customerId: string,
     preferences: CustomerPreferenceProfile,
-    currentUser?: { id?: string; name: string }
+    currentUser?: { id?: string; name: string; role?: string }
   ): Promise<Customer> {
     return this.transaction('rw', [this.customers, this.auditLogs], async () => {
       const customer = await this.customers.get(customerId);
@@ -3837,6 +3853,7 @@ export class MyanmarBusinessDB extends Dexie {
         timestamp: customer.updatedAt,
         userId: currentUser?.id || 'user',
         userName: currentUser?.name || 'User',
+        userRole: currentUser?.role || 'staff',
         action: 'CUSTOMER_PREFERENCES_UPDATE' as any,
         entity: 'Customer',
         entityId: customerId,
@@ -3919,6 +3936,161 @@ export class MyanmarBusinessDB extends Dexie {
 
     // Sort descending by date
     return history.sort((a, b) => b.date.localeCompare(a.date));
+  }
+
+  // ==========================================
+  // PHASE 29: STAFF SCHEDULE, ATTENDANCE & INVENTORY CONSUMPTION METHODS
+  // ==========================================
+
+  public async recordStaffSchedule(params: {
+    staffId: string;
+    staffName: string;
+    date: string;
+    startTime: string;
+    endTime: string;
+    breakStart?: string;
+    breakEnd?: string;
+    status: 'working' | 'off' | 'leave' | 'unavailable';
+    notes?: string;
+    currentUser: { id: string; name: string; role?: string };
+  }): Promise<StaffScheduleRecord> {
+    return this.transaction('rw', [this.staffSchedules, this.auditLogs], async () => {
+      const now = new Date().toISOString();
+      const record: StaffScheduleRecord = {
+        id: `sch_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        staffId: params.staffId,
+        staffName: params.staffName,
+        date: params.date,
+        startTime: params.startTime,
+        endTime: params.endTime,
+        breakStart: params.breakStart,
+        breakEnd: params.breakEnd,
+        status: params.status,
+        notes: params.notes,
+        createdAt: now,
+        updatedAt: now,
+        createdBy: params.currentUser.name,
+      };
+
+      await this.staffSchedules.put(record);
+
+      await this.auditLogs.add({
+        id: `aud_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        timestamp: now,
+        userId: params.currentUser.id,
+        userName: params.currentUser.name,
+        userRole: params.currentUser.role || 'staff',
+        action: 'STAFF_SCHEDULE_UPDATE' as any,
+        entity: 'StaffSchedule',
+        entityId: record.id,
+        details: `Scheduled ${params.staffName} on ${params.date} (${params.status})`,
+      });
+
+      return record;
+    });
+  }
+
+  public async recordStaffAttendance(params: {
+    staffId: string;
+    staffName: string;
+    date: string;
+    checkInTime?: string;
+    checkOutTime?: string;
+    status: 'checked_in' | 'checked_out' | 'absent';
+    notes?: string;
+    currentUser: { id: string; name: string; role?: string };
+  }): Promise<StaffAttendanceRecord> {
+    return this.transaction('rw', [this.staffAttendance, this.auditLogs], async () => {
+      const now = new Date().toISOString();
+      const existing = await this.staffAttendance
+        .where('staffId')
+        .equals(params.staffId)
+        .filter(a => a.date === params.date)
+        .first();
+
+      const recordId = existing ? existing.id : `att_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      const record: StaffAttendanceRecord = {
+        id: recordId,
+        staffId: params.staffId,
+        staffName: params.staffName,
+        date: params.date,
+        checkInTime: params.checkInTime || existing?.checkInTime,
+        checkOutTime: params.checkOutTime || existing?.checkOutTime,
+        status: params.status,
+        userId: params.currentUser.id,
+        userName: params.currentUser.name,
+        notes: params.notes || existing?.notes,
+        createdAt: existing?.createdAt || now,
+        updatedAt: now,
+      };
+
+      await this.staffAttendance.put(record);
+
+      await this.auditLogs.add({
+        id: `aud_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        timestamp: now,
+        userId: params.currentUser.id,
+        userName: params.currentUser.name,
+        userRole: params.currentUser.role || 'staff',
+        action: 'STAFF_ATTENDANCE' as any,
+        entity: 'StaffAttendance',
+        entityId: record.id,
+        details: `Recorded attendance for ${params.staffName} on ${params.date}: ${params.status}`,
+      });
+
+      return record;
+    });
+  }
+
+  public async recordServiceConsumable(params: {
+    serviceId: string;
+    serviceName: string;
+    productId: string;
+    productName: string;
+    quantity: number;
+    unit?: string;
+    currentUser: { id: string; name: string; role?: string };
+  }): Promise<ServiceConsumableItem> {
+    return this.transaction('rw', [this.serviceConsumables, this.auditLogs], async () => {
+      const now = new Date().toISOString();
+      const item: ServiceConsumableItem = {
+        id: `cons_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        serviceId: params.serviceId,
+        serviceName: params.serviceName,
+        productId: params.productId,
+        productName: params.productName,
+        quantity: Math.max(0, params.quantity),
+        unit: params.unit,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      await this.serviceConsumables.put(item);
+      return item;
+    });
+  }
+
+  public async deductServiceConsumablesTransaction(serviceId: string, multiplier: number = 1): Promise<void> {
+    const consumables = await this.serviceConsumables.where('serviceId').equals(serviceId).toArray();
+    if (consumables.length === 0) return;
+
+    const settings = await this.settings.toCollection().first();
+
+    for (const cons of consumables) {
+      const product = await this.products.get(cons.productId);
+      if (!product) continue;
+
+      const totalDeduction = cons.quantity * multiplier;
+      const newStock = (product.stockQty || 0) - totalDeduction;
+
+      if (newStock < 0 && !settings?.allowNegativeStock) {
+        throw new Error(`Insufficient stock for consumable product '${product.name}'. Required: ${totalDeduction}, Available: ${product.stockQty || 0}.`);
+      }
+
+      await this.products.update(product.id, {
+        stockQty: settings?.allowNegativeStock ? newStock : Math.max(0, newStock),
+      });
+    }
   }
 }
 

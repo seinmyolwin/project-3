@@ -63,6 +63,7 @@ export const CustomerEditModal: React.FC<CustomerEditModalProps> = ({
         timestamp: new Date().toISOString(),
         userId: currentUser.id,
         userName: currentUser.name,
+        userRole: currentUser.role || 'staff',
         action: 'CUSTOMER_UPDATE' as any,
         entity: 'Customer',
         entityId: customer.id,

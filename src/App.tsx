@@ -397,6 +397,9 @@ export default function App() {
             staff={staff}
             sessions={sessions}
             customers={customers}
+            rooms={rooms}
+            products={products}
+            bookings={bookings}
           />
         )}
 

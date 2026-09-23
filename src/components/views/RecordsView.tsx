@@ -12,6 +12,9 @@ import {
   StaffMember,
   SessionRecord,
   Customer,
+  Room,
+  ProductItem,
+  Booking,
 } from '../../types';
 import { Language } from '../../utils/translations';
 import { CashClosingView } from './CashClosingView';
@@ -32,6 +35,9 @@ interface RecordsViewProps {
   staff: StaffMember[];
   sessions: SessionRecord[];
   customers?: Customer[];
+  rooms?: Room[];
+  products?: ProductItem[];
+  bookings?: Booking[];
   defaultSubTab?: 'cashClosing' | 'reports';
 }
 
@@ -49,6 +55,9 @@ export const RecordsView: React.FC<RecordsViewProps> = ({
   staff,
   sessions,
   customers,
+  rooms = [],
+  products = [],
+  bookings = [],
   defaultSubTab = 'cashClosing',
 }) => {
   const isMm = lang === 'my';
@@ -130,6 +139,10 @@ export const RecordsView: React.FC<RecordsViewProps> = ({
           staffLedger={staffLedger}
           sessions={sessions}
           customers={customers}
+          rooms={rooms}
+          products={products}
+          bookings={bookings}
+          closings={closings}
           creditLedger={creditLedger}
           currentUser={currentUser}
           lang={lang}

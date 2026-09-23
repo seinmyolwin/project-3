@@ -9,6 +9,10 @@ import {
   Customer,
   CustomerCreditLedger,
   CustomerLedgerEntry,
+  Room,
+  ProductItem,
+  Booking,
+  CashClosingRecord,
 } from '../../types';
 import { formatMMK, deriveCustomerLedgerBalances, calculateCustomerAgingReport } from '../../domain/financial';
 import { Language } from '../../utils/translations';
@@ -46,6 +50,10 @@ interface ReportsViewProps {
   staffLedger: StaffLedgerEntry[];
   sessions: SessionRecord[];
   customers?: Customer[];
+  rooms?: Room[];
+  products?: ProductItem[];
+  bookings?: Booking[];
+  closings?: CashClosingRecord[];
   creditLedger?: (CustomerCreditLedger | CustomerLedgerEntry)[];
   currentUser: UserAccount;
   lang: Language;
