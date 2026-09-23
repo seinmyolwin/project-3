@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   ProductItem,
   ServiceItem,
@@ -13,8 +13,12 @@ import {
   InvoiceItem,
   InvoiceItemType,
   ShopSettings,
+  CustomerMembership,
+  CustomerPackage,
+  GiftCard,
 } from '../../types';
 import { db } from '../../db/database';
+import { localServerClient } from '../../services/localServerClient';
 import {
   formatMMK,
   calculateInvoiceTotals,
@@ -55,6 +59,9 @@ import {
   Calendar,
   Phone,
   Percent,
+  Gift,
+  Package,
+  HeartHandshake,
 } from 'lucide-react';
 
 import { verifyPin } from '../../utils/cryptoAuth';
@@ -143,6 +150,20 @@ export const PosView: React.FC<PosViewProps> = ({
   const [singlePaymentMethod, setSinglePaymentMethod] = useState<PaymentMethod>('cash');
   const [singleTenderedCash, setSingleTenderedCash] = useState<number>(0);
   const [singlePaymentRef, setSinglePaymentRef] = useState<string>('');
+
+  // Customer Value Assets (Membership, Packages, Gift Cards)
+  const [customerActiveMembership, setCustomerActiveMembership] = useState<CustomerMembership | null>(null);
+  const [customerPackages, setCustomerPackages] = useState<CustomerPackage[]>([]);
+  const [customerGiftCards, setCustomerGiftCards] = useState<GiftCard[]>([]);
+  const [selectedGiftCardForPayment, setSelectedGiftCardForPayment] = useState<GiftCard | null>(null);
+  const [giftCardNumberInput, setGiftCardNumberInput] = useState<string>('');
+  const [giftCardCheckError, setGiftCardCheckError] = useState<string>('');
+
+  // Gratuity / Staff Tips
+  const [showTipSection, setShowTipSection] = useState<boolean>(false);
+  const [tipStaffId, setTipStaffId] = useState<string>('');
+  const [tipAmountMMK, setTipAmountMMK] = useState<number>(0);
+  const [tipPaymentMethod, setTipPaymentMethod] = useState<PaymentMethod>('cash');
 
   // Modals & Drawers
   const [showCustomItemModal, setShowCustomItemModal] = useState<boolean>(false);
@@ -314,7 +335,42 @@ export const PosView: React.FC<PosViewProps> = ({
     setIsMultiPaymentMode(false);
     setSingleTenderedCash(0);
     setSinglePaymentRef('');
+    setGiftCardNumberInput('');
+    setSelectedGiftCardForPayment(null);
+    setGiftCardCheckError('');
+    setTipAmountMMK(0);
+    setTipStaffId('');
   };
+
+  // Sync selected customer's active membership, packages, and gift cards
+  useEffect(() => {
+    if (!selectedCustomerId) {
+      setCustomerActiveMembership(null);
+      setCustomerPackages([]);
+      setCustomerGiftCards([]);
+      return;
+    }
+    db.customerMemberships
+      .where('customerId')
+      .equals(selectedCustomerId)
+      .filter(m => m.status === 'active')
+      .first()
+      .then(m => setCustomerActiveMembership(m || null));
+
+    db.customerPackages
+      .where('customerId')
+      .equals(selectedCustomerId)
+      .filter(p => p.remainingQty > 0)
+      .toArray()
+      .then(setCustomerPackages);
+
+    db.giftCards
+      .where('customerId')
+      .equals(selectedCustomerId)
+      .filter(g => g.currentBalanceMMK > 0)
+      .toArray()
+      .then(setCustomerGiftCards);
+  }, [selectedCustomerId]);
 
   // Compute Cart Invoice Totals
   const invoiceItems: InvoiceItem[] = useMemo(() => {
@@ -444,6 +500,17 @@ export const PosView: React.FC<PosViewProps> = ({
             notes: 'Walk-in Credit Sale (အကြွေးအရောင်း)',
             paidAt: new Date().toISOString(),
           });
+        } else if (singlePaymentMethod === 'gift_card') {
+          const cardNum = (selectedGiftCardForPayment?.cardNumber || giftCardNumberInput || singlePaymentRef).trim();
+          if (!cardNum) throw new Error(isMm ? 'လက်ဆောင်ကတ် နံပါတ် ထည့်သွင်းပေးပါ' : 'Please select or enter a Gift Card Number');
+          finalPayments.push({
+            id: 'pay_' + Date.now(),
+            method: 'gift_card',
+            amountMMK: directTotals.totalMMK,
+            referenceNo: cardNum,
+            notes: `Gift Card: ${cardNum}`,
+            paidAt: new Date().toISOString(),
+          });
         } else {
           finalPayments.push({
             id: 'pay_' + Date.now(),
@@ -478,6 +545,24 @@ export const PosView: React.FC<PosViewProps> = ({
         taxPercent,
         currentUser,
       });
+
+      // Record staff tip if specified
+      if (tipAmountMMK > 0 && tipStaffId) {
+        try {
+          const chosenStaff = staff?.find(s => s.id === tipStaffId);
+          await localServerClient.recordTip({
+            staffId: tipStaffId,
+            staffName: chosenStaff?.name || 'Staff',
+            amountMMK: tipAmountMMK,
+            paymentMethod: tipPaymentMethod,
+            invoiceId: invoice.id,
+            notes: `Gratuity for Bill ${invoice.invoiceCode}`,
+            recordedBy: currentUser.name,
+          });
+        } catch (tipErr) {
+          console.warn('Tip recording notice:', tipErr);
+        }
+      }
 
       clearCart();
       onRefresh();
@@ -1019,6 +1104,86 @@ export const PosView: React.FC<PosViewProps> = ({
                     ))}
                   </select>
                 </div>
+
+                {/* Customer Value Assets Banner (Membership / Packages / Gift Cards) */}
+                {selectedCustomerId && (customerActiveMembership || customerPackages.length > 0 || customerGiftCards.length > 0) && (
+                  <div className="rounded-xl border border-cyan-200 bg-cyan-50/60 p-2.5 space-y-1.5 text-[11px]">
+                    {customerActiveMembership && (
+                      <div className="flex items-center justify-between text-cyan-950 font-medium">
+                        <span className="flex items-center gap-1.5">
+                          <Sparkles className="h-3.5 w-3.5 text-cyan-700" />
+                          <span>{customerActiveMembership.planName} ({customerActiveMembership.discountPercent}% OFF)</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDiscountType('percentage');
+                            setDiscountValue(customerActiveMembership.discountPercent);
+                          }}
+                          className="rounded bg-cyan-700 px-2 py-0.5 text-[10px] font-bold text-white hover:bg-cyan-800"
+                        >
+                          {isMm ? 'အဖွဲ့ဝင် လျှော့ဈေးထည့်' : 'Apply Discount'}
+                        </button>
+                      </div>
+                    )}
+
+                    {customerPackages.length > 0 && (
+                      <div className="space-y-1 pt-0.5 border-t border-cyan-200/60">
+                        {customerPackages.map(pkg => (
+                          <div key={pkg.id} className="flex items-center justify-between text-indigo-950">
+                            <span className="flex items-center gap-1.5 truncate max-w-[200px]">
+                              <Package className="h-3.5 w-3.5 text-indigo-700 shrink-0" />
+                              <span className="truncate">{pkg.packageName}: <b>{pkg.remainingQty}</b> left</span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const svcIndex = cart.findIndex(c => c.type === 'service' && (!c.discountMMK || c.discountMMK === 0));
+                                if (svcIndex >= 0) {
+                                  const updated = [...cart];
+                                  updated[svcIndex] = {
+                                    ...updated[svcIndex],
+                                    discountMMK: updated[svcIndex].unitPriceMMK,
+                                  };
+                                  setCart(updated);
+                                } else {
+                                  alert(isMm ? 'ကာတ်ထဲတွင် ဝန်ဆောင်မှု မရှိသေးပါ' : 'No service line item found in cart to apply package session to');
+                                }
+                              }}
+                              className="rounded bg-indigo-700 px-2 py-0.5 text-[10px] font-bold text-white hover:bg-indigo-800"
+                            >
+                              {isMm ? '၁ ကြိမ် အသုံးပြု' : 'Redeem 1'}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {customerGiftCards.length > 0 && (
+                      <div className="space-y-1 pt-0.5 border-t border-cyan-200/60">
+                        {customerGiftCards.map(gc => (
+                          <div key={gc.id} className="flex items-center justify-between text-emerald-950">
+                            <span className="flex items-center gap-1.5">
+                              <Gift className="h-3.5 w-3.5 text-emerald-700" />
+                              <span className="font-mono text-[10px]">{gc.cardNumber}: {formatMMK(gc.currentBalanceMMK)}</span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSinglePaymentMethod('gift_card');
+                                setSelectedGiftCardForPayment(gc);
+                                setGiftCardNumberInput(gc.cardNumber);
+                              }}
+                              className="rounded bg-emerald-700 px-2 py-0.5 text-[10px] font-bold text-white hover:bg-emerald-800"
+                            >
+                              {isMm ? 'ကတ်ဖြင့်ပေး' : 'Use Card'}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Cart Items List */}
@@ -1242,11 +1407,13 @@ export const PosView: React.FC<PosViewProps> = ({
                 {!isMultiPaymentMode ? (
                   /* Single Payment Flow */
                   <div className="space-y-2">
-                    <div className="grid grid-cols-4 gap-1">
+                    <div className="grid grid-cols-3 gap-1">
                       {[
                         { id: 'cash', label: 'Cash' },
                         { id: 'kpay', label: 'KBZ Pay' },
                         { id: 'wave', label: 'Wave' },
+                        { id: 'bank', label: 'Bank' },
+                        { id: 'gift_card', label: 'Gift Card' },
                         { id: 'credit', label: 'Credit' },
                       ].map(pm => (
                         <button
@@ -1284,7 +1451,75 @@ export const PosView: React.FC<PosViewProps> = ({
                       </div>
                     )}
 
-                    {singlePaymentMethod !== 'cash' && singlePaymentMethod !== 'credit' && (
+                    {singlePaymentMethod === 'gift_card' && (
+                      <div className="rounded-xl bg-amber-50/60 p-2.5 border border-amber-200 space-y-1.5 text-xs">
+                        <div className="flex items-center justify-between text-[11px] font-bold text-amber-900">
+                          <span className="flex items-center gap-1">
+                            <Gift className="h-3.5 w-3.5 text-amber-700" />
+                            <span>{isMm ? 'လက်ဆောင်ကတ်ဖြင့် ရှင်းမည်' : 'Gift Card Payment'}</span>
+                          </span>
+                          {selectedGiftCardForPayment && (
+                            <span className="font-mono text-emerald-800">
+                              {formatMMK(selectedGiftCardForPayment.currentBalanceMMK)}
+                            </span>
+                          )}
+                        </div>
+
+                        {customerGiftCards.length > 0 && (
+                          <div className="flex gap-1 overflow-x-auto pb-1">
+                            {customerGiftCards.map(gc => (
+                              <button
+                                key={gc.id}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedGiftCardForPayment(gc);
+                                  setGiftCardNumberInput(gc.cardNumber);
+                                }}
+                                className={`rounded px-2 py-0.5 text-[10px] font-mono font-bold border ${
+                                  giftCardNumberInput === gc.cardNumber
+                                    ? 'bg-amber-600 text-white border-amber-600'
+                                    : 'bg-white text-gray-700 border-gray-200'
+                                }`}
+                              >
+                                {gc.cardNumber} ({formatMMK(gc.currentBalanceMMK)})
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="flex gap-1.5">
+                          <input
+                            type="text"
+                            value={giftCardNumberInput}
+                            onChange={e => setGiftCardNumberInput(e.target.value)}
+                            placeholder="Enter Card # (e.g. GC-2026-XXXX)"
+                            className="flex-1 rounded-lg border border-amber-300 bg-white px-2 py-1 text-xs font-mono font-bold text-gray-900"
+                          />
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const num = giftCardNumberInput.trim();
+                              if (!num) return;
+                              const card = await db.giftCards.where('cardNumber').equals(num).first();
+                              if (card) {
+                                setSelectedGiftCardForPayment(card);
+                                setGiftCardCheckError('');
+                              } else {
+                                setGiftCardCheckError(isMm ? 'လက်ဆောင်ကတ် မတွေ့ပါ' : 'Card not found');
+                              }
+                            }}
+                            className="rounded-lg bg-amber-600 px-2 py-1 text-[10px] font-bold text-white hover:bg-amber-700"
+                          >
+                            {isMm ? 'စစ်ဆေးမည်' : 'Check'}
+                          </button>
+                        </div>
+                        {giftCardCheckError && (
+                          <p className="text-[10px] text-rose-600 font-semibold">{giftCardCheckError}</p>
+                        )}
+                      </div>
+                    )}
+
+                    {singlePaymentMethod !== 'cash' && singlePaymentMethod !== 'credit' && singlePaymentMethod !== 'gift_card' && (
                       <input
                         type="text"
                         value={singlePaymentRef}
@@ -1314,6 +1549,7 @@ export const PosView: React.FC<PosViewProps> = ({
                             <option value="kpay">KBZ Pay</option>
                             <option value="wave">Wave</option>
                             <option value="bank">Bank</option>
+                            <option value="gift_card">Gift Card</option>
                             <option value="credit">Credit (Debt)</option>
                           </select>
 
@@ -1374,6 +1610,89 @@ export const PosView: React.FC<PosViewProps> = ({
                           {formatMMK(splitBalanceDue)}
                         </span>
                       </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Gratuity & Staff Tip Section */}
+              <div className="rounded-xl border border-rose-200 bg-rose-50/40 p-2.5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => setShowTipSection(!showTipSection)}
+                    className="flex items-center gap-1.5 text-xs font-bold text-rose-900 hover:text-rose-950"
+                  >
+                    <HeartHandshake className="h-4 w-4 text-rose-600" />
+                    <span>{isMm ? 'ဝန်ထမ်း ဘောက်ဆူး ပေးမည် (Staff Gratuity / Tip)' : 'Staff Tip / Gratuity'}</span>
+                  </button>
+                  {tipAmountMMK > 0 && (
+                    <span className="font-mono text-xs font-bold text-rose-800">
+                      +{formatMMK(tipAmountMMK)}
+                    </span>
+                  )}
+                </div>
+
+                {showTipSection && (
+                  <div className="space-y-2 pt-1 border-t border-rose-200/60 text-xs">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[10px] font-semibold text-gray-600 block mb-0.5">
+                          {isMm ? 'ရရှိမည့် ဝန်ထမ်း' : 'Staff Member'}
+                        </label>
+                        <select
+                          value={tipStaffId}
+                          onChange={e => setTipStaffId(e.target.value)}
+                          className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-800"
+                        >
+                          <option value="">{isMm ? 'ဝန်ထမ်းရွေးရန်' : 'Select Staff'}</option>
+                          {(staff || []).map(s => (
+                            <option key={s.id} value={s.id}>
+                              {s.name} ({s.role})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-semibold text-gray-600 block mb-0.5">
+                          {isMm ? 'ဘောက်ဆူး ပမာဏ (MMK)' : 'Tip Amount (MMK)'}
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="500"
+                          value={tipAmountMMK || ''}
+                          onChange={e => setTipAmountMMK(Math.max(0, parseInt(e.target.value) || 0))}
+                          placeholder="e.g. 5,000"
+                          className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs font-mono font-bold text-rose-800"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex gap-1.5 items-center">
+                      <span className="text-[10px] text-gray-500">{isMm ? 'အမြန်ရွေး:' : 'Quick:'}</span>
+                      {[2000, 5000, 10000, 20000].map(amt => (
+                        <button
+                          key={amt}
+                          type="button"
+                          onClick={() => setTipAmountMMK(amt)}
+                          className={`rounded px-1.5 py-0.5 text-[10px] font-mono font-semibold ${
+                            tipAmountMMK === amt ? 'bg-rose-600 text-white' : 'bg-white text-gray-700 border border-gray-200'
+                          }`}
+                        >
+                          {amt / 1000}K
+                        </button>
+                      ))}
+                      {tipAmountMMK > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setTipAmountMMK(0)}
+                          className="text-[10px] text-gray-400 hover:text-gray-600 ml-auto"
+                        >
+                          {isMm ? 'ဖျက်မည်' : 'Clear'}
+                        </button>
+                      )}
                     </div>
                   </div>
                 )}

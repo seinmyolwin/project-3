@@ -24,6 +24,8 @@ import {
   SessionPricingRuleType,
 } from '../types';
 
+export * from './pricingEngine';
+
 /**
  * Rounds any calculation to nearest integer MMK deterministically.
  * Uses standard round-half-up math.

@@ -1,13 +1,16 @@
 /**
  * Central Sync Manager
  * Manages explicit connectivity states (LOCAL_ONLY, CONNECTING, ONLINE_LAN, SERVER_UNAVAILABLE, SYNC_PENDING, SYNCING, SYNCED, CONFLICT)
- * Coordinates financial mutation dispatching, offline fallback queuing, and realtime event reconciliation.
+ * Implements strict Source-of-Truth partitioning:
+ * - LAN Mode: Server SQLite is Authoritative. Dexie is local read cache only. Server commits first -> Result updates Dexie cache. Offline mutations are NEVER executed on server success.
+ * - Offline Mode: Dexie is local authoritative store. Mutations write to Dexie and are queued in db.operationQueue for later idempotent server replay.
  */
 
 import { localServerClient, OperationPayload, ProcessOperationResponse } from './localServerClient';
 import { realtimeClient } from './realtimeClient';
 import { authSession } from './authSession';
 import { db } from '../db/database';
+import { OperationQueueRecord } from '../types';
 
 export type SyncState =
   | 'LOCAL_ONLY'
@@ -20,6 +23,34 @@ export type SyncState =
   | 'CONFLICT';
 
 export type SyncStateListener = (state: SyncState, details?: { message?: string; pendingCount?: number }) => void;
+
+export interface ExecuteMutationParams<TResult = any> {
+  operationType: 'SESSION_START' | 'SESSION_END' | 'PAYMENT' | 'EXPENSE' | 'CUSTOMER_CREDIT' | 'CASH_CLOSING' | string;
+  entityType?: string;
+  entityId?: string;
+  payload: Record<string, any>;
+  /**
+   * Executed ONLY when in Offline Mode / Server Unreachable.
+   * Modifies local Dexie financial tables.
+   */
+  offlineMutationFn: () => Promise<TResult>;
+  /**
+   * Executed ONLY when LAN Server Authoritative Transaction Succeeds.
+   * Updates local Dexie read cache from server result without duplicating transactions.
+   */
+  applyServerResultFn?: (serverResult: any) => Promise<void>;
+  /**
+   * Backwards compatible legacy alias for offlineMutationFn
+   */
+  localFallbackFn?: () => Promise<TResult>;
+}
+
+export interface MutationExecutionResult<TResult = any> {
+  success: boolean;
+  result: TResult;
+  isOfflineFallback: boolean;
+  serverProcessed?: boolean;
+}
 
 export class SyncManager {
   private currentState: SyncState = 'LOCAL_ONLY';
@@ -36,7 +67,8 @@ export class SyncManager {
       if (connected) {
         this.updateState('ONLINE_LAN', 'Connected to LAN Server Realtime Bus');
         this.reconcileMissedEvents();
-      } else if (this.currentState === 'ONLINE_LAN') {
+        this.reconcileOfflineOperationQueue();
+      } else if (this.currentState === 'ONLINE_LAN' || this.currentState === 'SYNCED') {
         this.updateState('SERVER_UNAVAILABLE', 'Lost Connection to LAN Server');
       }
     });
@@ -58,7 +90,7 @@ export class SyncManager {
       }, 10000); // Check server health every 10s
     }
 
-    if (authSession.isAuthenticated()) {
+    if (authSession.isLanAuthenticated()) {
       realtimeClient.connect();
     }
   }
@@ -83,9 +115,10 @@ export class SyncManager {
       if (health && health.status === 'ok') {
         if (this.currentState === 'LOCAL_ONLY' || this.currentState === 'SERVER_UNAVAILABLE') {
           this.updateState('ONLINE_LAN', 'Connected to LAN Server');
-          if (authSession.isAuthenticated()) {
+          if (authSession.isLanAuthenticated()) {
             realtimeClient.connect();
             this.reconcileMissedEvents();
+            this.reconcileOfflineOperationQueue();
           }
         }
         return true;
@@ -94,7 +127,7 @@ export class SyncManager {
         return false;
       }
     } catch (err) {
-      if (this.currentState === 'ONLINE_LAN') {
+      if (this.currentState === 'ONLINE_LAN' || this.currentState === 'SYNCED') {
         this.updateState('SERVER_UNAVAILABLE', 'LAN Server unreachable');
       }
       return false;
@@ -105,7 +138,7 @@ export class SyncManager {
    * Reconcile Missed Events from Server (/api/sync/events)
    */
   public async reconcileMissedEvents() {
-    if (this.isReconciling || !authSession.isAuthenticated()) return;
+    if (this.isReconciling || !authSession.isLanAuthenticated()) return;
     this.isReconciling = true;
 
     try {
@@ -143,22 +176,90 @@ export class SyncManager {
   }
 
   /**
-   * Process Financial Mutation Operation
-   * Uses authoritative server if ONLINE_LAN, or local Dexie transaction fallback if offline
+   * Reconcile Offline Operations Queue by replaying to Server
    */
-  public async executeFinancialMutation(params: {
-    operationType: 'SESSION_START' | 'SESSION_END' | 'PAYMENT' | 'EXPENSE' | 'CUSTOMER_CREDIT' | 'CASH_CLOSING' | string;
-    entityType?: string;
-    entityId?: string;
-    payload: Record<string, any>;
-    localFallbackFn: () => Promise<any>;
-  }): Promise<{ success: boolean; result: any; isOfflineFallback: boolean; serverProcessed?: boolean }> {
+  public async reconcileOfflineOperationQueue(): Promise<{ synced: number; failed: number }> {
+    if (!authSession.isLanAuthenticated() || (this.currentState !== 'ONLINE_LAN' && this.currentState !== 'SYNCED')) {
+      return { synced: 0, failed: 0 };
+    }
+
+    try {
+      if (!db.operationQueue) return { synced: 0, failed: 0 };
+      const pendingOps = await db.operationQueue.where('status').equals('PENDING').toArray();
+      if (!pendingOps || pendingOps.length === 0) {
+        this.pendingQueueCount = 0;
+        return { synced: 0, failed: 0 };
+      }
+
+      let synced = 0;
+      let failed = 0;
+      this.updateState('SYNCING', `Replaying ${pendingOps.length} offline operations to server...`);
+
+      for (const op of pendingOps) {
+        try {
+          await localServerClient.processOperation({
+            operationId: op.operationId,
+            businessId: op.businessId,
+            branchId: op.branchId,
+            deviceId: op.deviceId,
+            operationType: op.operationType,
+            entityType: op.entityType,
+            entityId: op.entityId,
+            payload: op.payload,
+          });
+
+          await db.operationQueue.update(op.id, {
+            status: 'SYNCED',
+            syncedAt: new Date().toISOString(),
+          });
+          synced++;
+        } catch (err: any) {
+          if (err.status === 409) {
+            // Idempotency conflict / already handled
+            await db.operationQueue.update(op.id, {
+              status: 'CONFLICT',
+              lastError: err.message,
+            });
+          } else {
+            await db.operationQueue.update(op.id, {
+              retryCount: (op.retryCount || 0) + 1,
+              lastError: err.message,
+            });
+          }
+          failed++;
+        }
+      }
+
+      const remainingCount = await db.operationQueue.where('status').equals('PENDING').count();
+      this.pendingQueueCount = remainingCount;
+
+      if (remainingCount === 0) {
+        this.updateState('SYNCED', 'All offline operations synchronized to server');
+      } else {
+        this.updateState('SYNC_PENDING', `${remainingCount} operations pending sync`, { pendingCount: remainingCount });
+      }
+
+      return { synced, failed };
+    } catch (err: any) {
+      console.warn('[SyncManager] Error in offline queue reconciliation:', err.message);
+      return { synced: 0, failed: 0 };
+    }
+  }
+
+  /**
+   * Process Financial Mutation Operation
+   * Enforces strict Source-of-Truth Rules:
+   * - LAN Mode: Server commits transaction first -> Result updates Dexie read cache. (Offline mutation is NOT executed!)
+   * - Offline Mode: Dexie executes transaction -> Operation logged to operationQueue for future replay.
+   */
+  public async executeMutation<TResult = any>(params: ExecuteMutationParams<TResult>): Promise<MutationExecutionResult<TResult>> {
     const session = authSession.getSession();
-    const isOnline = (this.currentState === 'ONLINE_LAN' || this.currentState === 'SYNCED') && !!session;
-
+    const isOnlineLan = (this.currentState === 'ONLINE_LAN' || this.currentState === 'SYNCED') && authSession.isLanAuthenticated();
     const operationId = 'op_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
+    const offlineFn = params.offlineMutationFn || params.localFallbackFn;
 
-    if (isOnline && session) {
+    // 1. LAN MODE EXECUTION
+    if (isOnlineLan && session) {
       try {
         this.updateState('SYNCING', `Processing ${params.operationType} on server...`);
 
@@ -175,51 +276,120 @@ export class SyncManager {
 
         const serverRes: ProcessOperationResponse = await localServerClient.processOperation(opPayload);
 
-        // Update local Dexie state from server authoritative execution
-        const localResult = await params.localFallbackFn();
+        // Apply server result to local Dexie read cache (DO NOT execute offline transaction!)
+        if (params.applyServerResultFn) {
+          await params.applyServerResultFn(serverRes.result);
+        } else {
+          await this.applyServerResultToLocalCache(params.operationType, params.payload, serverRes.result);
+        }
 
-        this.updateState('ONLINE_LAN', 'Operation processed on server');
+        this.updateState('ONLINE_LAN', 'Operation committed to authoritative server');
 
         return {
           success: true,
-          result: serverRes.result || localResult,
+          result: serverRes.result as TResult,
           isOfflineFallback: false,
           serverProcessed: true,
         };
       } catch (err: any) {
-        console.warn(`[SyncManager] Server operation ${params.operationType} failed:`, err.message);
+        console.warn(`[SyncManager] Server operation ${params.operationType} error:`, err.message);
 
+        // Security / Validation Rejections from server must NOT be bypassed
         if (err.status === 409) {
-          // Conflict
           this.updateState('CONFLICT', err.message || 'Operation conflict on server');
           throw err;
         }
 
-        if (err.status === 403 || err.status === 401 || err.status === 422) {
-          // Business rule or authorization failure from server
+        if (err.status === 401 || err.status === 403 || err.status === 422) {
           throw err;
         }
 
-        // Server unreachable or network error: fall back to local Dexie
-        this.updateState('SERVER_UNAVAILABLE', 'Server unreachable. Applying local offline fallback.');
+        // Only on actual network disconnection / server unavailable, fall back to offline mode
+        this.updateState('SERVER_UNAVAILABLE', 'Server unavailable. Executing offline local transaction.');
       }
     }
 
-    // Single-device offline fallback or server unavailable
-    try {
-      const localResult = await params.localFallbackFn();
-      
-      this.pendingQueueCount++;
-      this.updateState('SYNC_PENDING', `Operation completed locally (Offline Mode)`, { pendingCount: this.pendingQueueCount });
+    // 2. OFFLINE MODE EXECUTION
+    if (!offlineFn) {
+      throw new Error('No offline fallback transaction provided for operation: ' + params.operationType);
+    }
 
-      return {
-        success: true,
-        result: localResult,
-        isOfflineFallback: true,
-        serverProcessed: false,
-      };
-    } catch (localErr) {
-      throw localErr;
+    const localResult = await offlineFn();
+
+    // Durable queue recording
+    try {
+      if (db.operationQueue) {
+        const queueRecord: OperationQueueRecord = {
+          id: 'opq_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+          operationId,
+          operationType: params.operationType,
+          businessId: authSession.getBusinessId(),
+          branchId: authSession.getBranchId(),
+          deviceId: authSession.getDeviceId(),
+          entityType: params.entityType || 'GENERAL',
+          entityId: params.entityId || 'N/A',
+          payload: params.payload,
+          status: 'PENDING',
+          createdAt: new Date().toISOString(),
+          retryCount: 0,
+        };
+        await db.operationQueue.put(queueRecord);
+      }
+    } catch (qErr) {
+      console.warn('[SyncManager] Error writing to operationQueue:', qErr);
+    }
+
+    this.pendingQueueCount++;
+    this.updateState('SYNC_PENDING', `Operation completed locally (Offline Mode)`, { pendingCount: this.pendingQueueCount });
+
+    return {
+      success: true,
+      result: localResult,
+      isOfflineFallback: true,
+      serverProcessed: false,
+    };
+  }
+
+  /**
+   * Backwards compatible legacy alias
+   */
+  public async executeFinancialMutation(params: {
+    operationType: string;
+    entityType?: string;
+    entityId?: string;
+    payload: Record<string, any>;
+    localFallbackFn: () => Promise<any>;
+    applyServerResultFn?: (serverResult: any) => Promise<void>;
+  }): Promise<MutationExecutionResult> {
+    return this.executeMutation({
+      operationType: params.operationType,
+      entityType: params.entityType,
+      entityId: params.entityId,
+      payload: params.payload,
+      offlineMutationFn: params.localFallbackFn,
+      applyServerResultFn: params.applyServerResultFn,
+    });
+  }
+
+  /**
+   * Default cache updater for server operation results
+   */
+  private async applyServerResultToLocalCache(operationType: string, payload: any, result: any) {
+    try {
+      if (!result) return;
+      if (operationType === 'SESSION_START' && result.roomId && result.sessionId) {
+        await db.rooms.update(result.roomId, {
+          status: 'occupied',
+          currentSessionId: result.sessionId,
+        });
+      } else if (operationType === 'SESSION_END' && result.roomId) {
+        await db.rooms.update(result.roomId, {
+          status: 'available',
+          currentSessionId: undefined,
+        });
+      }
+    } catch (err) {
+      // Ignore cache update errors
     }
   }
 
@@ -249,9 +419,18 @@ export class SyncManager {
           break;
         }
 
+        case 'SESSION_EXTENDED':
         case 'SESSION_UPDATED': {
           if (payload.session) {
             await db.sessions.put(payload.session);
+          } else if (payload.sessionId && payload.newDurationMinutes !== undefined) {
+            const sess = await db.sessions.get(payload.sessionId);
+            if (sess) {
+              await db.sessions.update(payload.sessionId, {
+                actualDurationMinutes: payload.newDurationMinutes,
+                finalTotalMMK: payload.newTotalFeeMMK ?? sess.finalTotalMMK,
+              });
+            }
           }
           if (payload.roomId && payload.status) {
             await db.rooms.update(payload.roomId, {
@@ -272,12 +451,12 @@ export class SyncManager {
               });
             }
           }
-          if (payload.sessionId && payload.endTime) {
+          if (payload.sessionId && (payload.endTime || payload.status)) {
             const sess = await db.sessions.get(payload.sessionId);
             if (sess) {
               await db.sessions.update(payload.sessionId, {
-                status: 'completed',
-                endTime: payload.endTime,
+                status: payload.status || 'completed',
+                endTime: payload.endTime || new Date().toISOString(),
                 finalTotalMMK: payload.finalTotalMMK ?? sess.finalTotalMMK,
               });
             }
@@ -289,8 +468,15 @@ export class SyncManager {
           if (payload.roomId && payload.status) {
             await db.rooms.update(payload.roomId, {
               status: payload.status,
-              currentSessionId: payload.currentSessionId,
+              currentSessionId: payload.activeSessionId ?? payload.currentSessionId,
             });
+          }
+          break;
+        }
+
+        case 'SALE_CREATED': {
+          if (payload.sale) {
+            await db.sales.put(payload.sale);
           }
           break;
         }
@@ -299,6 +485,15 @@ export class SyncManager {
         case 'INVOICE_UPDATED': {
           if (payload.invoice) {
             await db.invoices.put(payload.invoice);
+          } else if (payload.invoiceId && payload.paymentStatus) {
+            const inv = await db.invoices.get(payload.invoiceId);
+            if (inv) {
+              await db.invoices.update(payload.invoiceId, {
+                status: payload.paymentStatus,
+                paidAmountMMK: payload.paidMMK ?? inv.paidAmountMMK,
+                balanceDueMMK: Math.max(0, inv.totalMMK - (payload.paidMMK ?? inv.paidAmountMMK)),
+              });
+            }
           }
           if (payload.sale) {
             await db.sales.put(payload.sale);
@@ -324,12 +519,84 @@ export class SyncManager {
         case 'CUSTOMER_BALANCE_UPDATED': {
           if (payload.customer) {
             await db.customers.put(payload.customer);
+          } else if (payload.customerId && payload.outstandingBalanceMMK !== undefined) {
+            const cust = await db.customers.get(payload.customerId);
+            if (cust) {
+              await db.customers.update(payload.customerId, {
+                currentBalanceMMK: payload.outstandingBalanceMMK,
+              });
+            }
           }
           if (payload.customerLedgerEntry) {
             await db.customerLedger.put(payload.customerLedgerEntry);
           }
           if (payload.customerCreditLedger) {
             await db.customerCreditLedger.put(payload.customerCreditLedger);
+          }
+          break;
+        }
+
+        case 'STAFF_ADVANCE_CREATED':
+        case 'STAFF_LEDGER_UPDATED': {
+          if (payload.staffLedgerEntry) {
+            await db.staffLedger.put(payload.staffLedgerEntry);
+          }
+          break;
+        }
+
+        case 'STAFF_SETTLEMENT_CREATED': {
+          if (payload.settlement) {
+            await db.staffSettlements.put(payload.settlement);
+          }
+          break;
+        }
+
+        case 'STOCK_UPDATED': {
+          if (payload.productId && payload.stockQty !== undefined) {
+            const prod = await db.products.get(payload.productId);
+            if (prod) {
+              await db.products.update(payload.productId, {
+                stockQty: payload.stockQty,
+              });
+            }
+          }
+          break;
+        }
+
+        case 'BOOKING_CREATED':
+        case 'BOOKING_UPDATED': {
+          if (payload.booking) {
+            await db.bookings.put(payload.booking);
+          }
+          break;
+        }
+
+        case 'BOOKING_CANCELLED': {
+          if (payload.bookingId) {
+            const b = await db.bookings.get(payload.bookingId);
+            if (b) {
+              await db.bookings.update(payload.bookingId, {
+                status: 'CANCELLED',
+                cancellationReason: payload.cancellationReason,
+                cancelledBy: payload.cancelledBy,
+                cancelledAt: payload.cancelledAt,
+              });
+            }
+          }
+          break;
+        }
+
+        case 'BOOKING_CHECKED_IN': {
+          if (payload.bookingId) {
+            const b = await db.bookings.get(payload.bookingId);
+            if (b) {
+              await db.bookings.update(payload.bookingId, {
+                status: payload.status || 'CHECKED_IN',
+                sessionId: payload.sessionId,
+                checkedInAt: payload.checkedInAt,
+                checkedInBy: payload.checkedInBy,
+              });
+            }
           }
           break;
         }
@@ -351,6 +618,206 @@ export class SyncManager {
           break;
         }
 
+        // ==========================================
+        // PHASE 27: REALTIME EVENT HANDLERS
+        // ==========================================
+
+        case 'MEMBERSHIP_PLAN_CREATED':
+        case 'MEMBERSHIP_PLAN_UPDATED': {
+          if (payload.planId) {
+            await db.membershipPlans.put({
+              id: payload.planId,
+              businessId: event.businessId || payload.businessId || 'default',
+              branchId: event.branchId || payload.branchId || 'main',
+              name: payload.name,
+              nameMm: payload.nameMm,
+              durationDays: payload.durationDays,
+              priceMMK: payload.priceMMK,
+              discountPercent: payload.discountPercent || 0,
+              benefitsSummary: payload.benefitsSummary,
+              isActive: payload.isActive !== false,
+              createdAt: payload.createdAt || new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            });
+          }
+          break;
+        }
+
+        case 'MEMBERSHIP_PURCHASED': {
+          if (payload.membershipId) {
+            await db.customerMemberships.put({
+              id: payload.membershipId,
+              businessId: event.businessId || payload.businessId || 'default',
+              branchId: event.branchId || payload.branchId || 'main',
+              customerId: payload.customerId,
+              customerName: payload.customerName,
+              customerPhone: payload.customerPhone,
+              planId: payload.planId,
+              planName: payload.planName,
+              startDate: payload.startDate,
+              expiryDate: payload.expiryDate,
+              discountPercent: payload.discountPercent || 0,
+              paidAmountMMK: payload.priceMMK || payload.paidAmountMMK || 0,
+              paymentMethod: payload.paymentMethod || 'cash',
+              status: payload.status || 'active',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            });
+          }
+          break;
+        }
+
+        case 'SERVICE_PACKAGE_CREATED':
+        case 'SERVICE_PACKAGE_UPDATED': {
+          if (payload.packageId) {
+            await db.servicePackages.put({
+              id: payload.packageId,
+              businessId: event.businessId || payload.businessId || 'default',
+              branchId: event.branchId || payload.branchId || 'main',
+              name: payload.name,
+              nameMm: payload.nameMm,
+              serviceId: payload.serviceId,
+              serviceName: payload.serviceName,
+              totalQty: payload.totalQty,
+              priceMMK: payload.priceMMK,
+              validityDays: payload.validityDays,
+              isActive: payload.isActive !== false,
+              createdAt: payload.createdAt || new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            });
+          }
+          break;
+        }
+
+        case 'PACKAGE_PURCHASED': {
+          if (payload.customerPackageId) {
+            await db.customerPackages.put({
+              id: payload.customerPackageId,
+              businessId: event.businessId || payload.businessId || 'default',
+              branchId: event.branchId || payload.branchId || 'main',
+              customerId: payload.customerId,
+              customerName: payload.customerName || '',
+              customerPhone: payload.customerPhone,
+              packageId: payload.packageId || '',
+              packageName: payload.packageName,
+              serviceId: payload.serviceId || '',
+              serviceName: payload.serviceName || '',
+              purchasedQty: payload.totalQty || payload.purchasedQty,
+              usedQty: 0,
+              remainingQty: payload.remainingQty ?? payload.totalQty,
+              expiryDate: payload.expiryDate,
+              purchasePriceMMK: payload.purchasePriceMMK,
+              paymentMethod: payload.paymentMethod || 'cash',
+              status: 'active',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            });
+          }
+          break;
+        }
+
+        case 'PACKAGE_REDEEMED': {
+          if (payload.customerPackageId) {
+            const pkg = await db.customerPackages.get(payload.customerPackageId);
+            if (pkg) {
+              await db.customerPackages.update(payload.customerPackageId, {
+                remainingQty: payload.remainingQty,
+                usedQty: payload.usedQty,
+                status: payload.status,
+                updatedAt: new Date().toISOString(),
+              });
+            }
+          }
+          if (payload.redemptionId) {
+            await db.packageRedemptions.put({
+              id: payload.redemptionId,
+              businessId: event.businessId || payload.businessId || 'default',
+              branchId: event.branchId || payload.branchId || 'main',
+              customerPackageId: payload.customerPackageId,
+              customerId: payload.customerId || '',
+              sessionId: payload.sessionId,
+              invoiceId: payload.invoiceId,
+              serviceId: payload.serviceId || '',
+              serviceName: payload.packageName || payload.serviceName || '',
+              quantityRedeemed: payload.quantityRedeemed || 1,
+              redeemedAt: new Date().toISOString(),
+              redeemedBy: payload.redeemedBy || 'Staff',
+            });
+          }
+          break;
+        }
+
+        case 'GIFT_CARD_ISSUED': {
+          if (payload.giftCardId) {
+            await db.giftCards.put({
+              id: payload.giftCardId,
+              businessId: event.businessId || payload.businessId || 'default',
+              branchId: event.branchId || payload.branchId || 'main',
+              cardNumber: payload.cardNumber,
+              initialAmountMMK: payload.initialAmountMMK,
+              currentBalanceMMK: payload.currentBalanceMMK,
+              customerId: payload.customerId,
+              customerName: payload.customerName,
+              issueDate: payload.issueDate || new Date().toISOString().split('T')[0],
+              expiryDate: payload.expiryDate,
+              issuedBy: payload.issuedBy || 'Staff',
+              status: payload.status || 'active',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            });
+          }
+          break;
+        }
+
+        case 'GIFT_CARD_REDEEMED': {
+          if (payload.giftCardId) {
+            const gc = await db.giftCards.get(payload.giftCardId);
+            if (gc) {
+              await db.giftCards.update(payload.giftCardId, {
+                currentBalanceMMK: payload.balanceAfterMMK,
+                status: payload.status,
+                updatedAt: new Date().toISOString(),
+              });
+            }
+          }
+          if (payload.redemptionId) {
+            await db.giftCardRedemptions.put({
+              id: payload.redemptionId,
+              businessId: event.businessId || payload.businessId || 'default',
+              branchId: event.branchId || payload.branchId || 'main',
+              giftCardId: payload.giftCardId,
+              cardNumber: payload.cardNumber,
+              sessionId: payload.sessionId,
+              invoiceId: payload.invoiceId,
+              amountMMK: payload.amountMMK,
+              balanceBeforeMMK: payload.balanceBeforeMMK,
+              balanceAfterMMK: payload.balanceAfterMMK,
+              redeemedAt: new Date().toISOString(),
+              redeemedBy: payload.redeemedBy || 'Staff',
+            });
+          }
+          break;
+        }
+
+        case 'TIP_RECORDED': {
+          if (payload.tipId) {
+            await db.tips.put({
+              id: payload.tipId,
+              businessId: event.businessId || payload.businessId || 'default',
+              branchId: event.branchId || payload.branchId || 'main',
+              sessionId: payload.sessionId,
+              invoiceId: payload.invoiceId,
+              staffId: payload.staffId,
+              staffName: payload.staffName,
+              amountMMK: payload.amountMMK,
+              paymentMethod: payload.paymentMethod || 'cash',
+              receivedBy: payload.receivedBy || 'Staff',
+              createdAt: new Date().toISOString(),
+            });
+          }
+          break;
+        }
+
         default:
           break;
       }
@@ -366,6 +833,10 @@ export class SyncManager {
 
   public getStatusMessage(): string {
     return this.statusMessage;
+  }
+
+  public getPendingQueueCount(): number {
+    return this.pendingQueueCount;
   }
 
   public onStateChange(listener: SyncStateListener): () => void {

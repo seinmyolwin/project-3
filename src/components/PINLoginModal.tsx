@@ -1,7 +1,11 @@
 import React, { useState } from 'react';
 import { UserAccount } from '../types';
-import { Lock, Delete, X, Check, ShieldCheck } from 'lucide-react';
+import { Lock, Delete, X, Check, ShieldCheck, Wifi, WifiOff } from 'lucide-react';
 import { verifyPin } from '../utils/cryptoAuth';
+import { localServerClient } from '../services/localServerClient';
+import { authSession } from '../services/authSession';
+import { realtimeClient } from '../services/realtimeClient';
+import { syncManager } from '../services/syncManager';
 
 interface PINModalProps {
   users: UserAccount[];
@@ -28,6 +32,7 @@ export const PINModal: React.FC<PINModalProps> = ({
   const [selectedUser, setSelectedUser] = useState<UserAccount | null>(eligibleUsers[0] || null);
   const [pin, setPin] = useState<string>('');
   const [error, setError] = useState<string>('');
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
 
   const handleDigit = (digit: string) => {
     if (pin.length < 6) {
@@ -46,19 +51,60 @@ export const PINModal: React.FC<PINModalProps> = ({
     setError('');
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!selectedUser) {
       setError('Invalid PIN or account selection');
       return;
     }
-    const isValid = verifyPin(pin, selectedUser.pinHash, selectedUser.pinSalt, selectedUser.pin);
-    if (isValid) {
-      onSelectUser(selectedUser);
-      if (onSuccess) onSuccess();
-      onClose();
-    } else {
-      setError('Invalid authentication credential. Please try again.');
-      setPin('');
+
+    if (!pin) {
+      setError('Please enter your security PIN');
+      return;
+    }
+
+    setIsAuthenticating(true);
+    setError('');
+
+    try {
+      // Step 1: Attempt Server LAN Authentication
+      try {
+        const lanRes = await localServerClient.pinLogin({
+          usernameOrId: selectedUser.username || selectedUser.id,
+          pin,
+        });
+
+        if (lanRes && lanRes.success && lanRes.token) {
+          // Connected & Authenticated with LAN Server
+          realtimeClient.connect();
+          syncManager.checkHealth();
+          onSelectUser(selectedUser);
+          if (onSuccess) onSuccess();
+          onClose();
+          return;
+        }
+      } catch (serverErr: any) {
+        // If server explicitly returned 401 or 403 (e.g. wrong PIN or Revoked Device), fail securely
+        if (serverErr.status === 401 || serverErr.status === 403) {
+          setError(serverErr.message || 'Invalid authentication credential. Please try again.');
+          setPin('');
+          return;
+        }
+        // Network error / server unreachable: proceed to Step 2 (Offline Fallback)
+      }
+
+      // Step 2: Safe Offline Local Authentication Fallback
+      const isLocalValid = verifyPin(pin, selectedUser.pinHash, selectedUser.pinSalt, selectedUser.pin);
+      if (isLocalValid) {
+        authSession.setOfflineSession(selectedUser);
+        onSelectUser(selectedUser);
+        if (onSuccess) onSuccess();
+        onClose();
+      } else {
+        setError('Invalid authentication credential. Please try again.');
+        setPin('');
+      }
+    } finally {
+      setIsAuthenticating(false);
     }
   };
 
@@ -170,16 +216,18 @@ export const PINModal: React.FC<PINModalProps> = ({
 
         <button
           type="button"
+          disabled={isAuthenticating}
           onClick={handleSubmit}
-          className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 active:bg-emerald-800"
+          className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-50"
         >
           <Check className="h-4 w-4" />
-          Authenticate & Continue
+          {isAuthenticating ? 'Verifying...' : 'Authenticate & Continue'}
         </button>
 
-        <p className="mt-2 text-center text-[11px] text-gray-400">
-          Default Demo PINs: Owner: 1234 | Manager: 5678 | Cashier: 0000
-        </p>
+        <div className="mt-3 flex items-center justify-center gap-1.5 text-center text-[11px] text-gray-400">
+          <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+          <span>Encrypted Salted SHA-256 Authentication</span>
+        </div>
       </div>
     </div>
   );

@@ -4,6 +4,7 @@
  */
 
 import { authSession } from './authSession';
+import { db } from '../db/database';
 
 export interface HealthResponse {
   status: 'ok' | 'degraded' | 'error';
@@ -119,6 +120,42 @@ export class LocalServerClient {
   }
 
   /**
+   * Unified LAN PIN Login (/api/auth/pin-login)
+   */
+  public async pinLogin(params: {
+    usernameOrId: string;
+    pin: string;
+    deviceId?: string;
+  }) {
+    const devId = params.deviceId || authSession.getOrCreateDeviceId();
+    const res = await this.request<{
+      success: boolean;
+      token: string;
+      deviceId: string;
+      user: any;
+      expiresAt: string;
+    }>('/api/auth/pin-login', {
+      method: 'POST',
+      body: JSON.stringify({
+        usernameOrId: params.usernameOrId,
+        pin: params.pin,
+        deviceId: devId,
+      }),
+    });
+
+    if (res.success && res.token) {
+      authSession.setLanSession({
+        token: res.token,
+        user: res.user,
+        deviceId: res.deviceId || devId,
+        expiresAt: res.expiresAt,
+      });
+    }
+
+    return res;
+  }
+
+  /**
    * Login (/api/auth/login)
    */
   public async login(username: string, password: string, deviceId?: string) {
@@ -134,7 +171,7 @@ export class LocalServerClient {
     });
 
     if (res.success && res.token) {
-      authSession.setSession({
+      authSession.setLanSession({
         token: res.token,
         user: res.user,
         deviceId: devId,
@@ -243,6 +280,123 @@ export class LocalServerClient {
   public async resetRoomStatus(roomId: string) {
     return this.request<{ success: boolean; message: string }>(`/api/rooms/${roomId}/reset`, {
       method: 'POST',
+    });
+  }
+
+  // ==========================================
+  // PHASE 27 CLIENT METHODS
+  // ==========================================
+
+  public async getMembershipPlans() {
+    return this.request<{ success: boolean; count: number; plans: any[] }>('/api/memberships/plans');
+  }
+
+  public async getCustomerMemberships(customerId: string) {
+    return this.request<{ success: boolean; count: number; memberships: any[] }>(`/api/memberships/customer/${customerId}`);
+  }
+
+  public async getServicePackages() {
+    return this.request<{ success: boolean; count: number; packages: any[] }>('/api/packages');
+  }
+
+  public async getCustomerPackages(customerId: string) {
+    return this.request<{ success: boolean; count: number; packages: any[] }>(`/api/packages/customer/${customerId}`);
+  }
+
+  public async getGiftCards() {
+    return this.request<{ success: boolean; count: number; giftCards: any[] }>('/api/giftcards');
+  }
+
+  public async getGiftCardByNumber(cardNumber: string) {
+    return this.request<{ success: boolean; giftCard: any }>(`/api/giftcards/${encodeURIComponent(cardNumber)}`);
+  }
+
+  public async getTips(staffId?: string, date?: string) {
+    const params = new URLSearchParams();
+    if (staffId) params.append('staffId', staffId);
+    if (date) params.append('date', date);
+    return this.request<{ success: boolean; count: number; tips: any[] }>(`/api/tips?${params.toString()}`);
+  }
+
+  public async getCustomerFinancialProfile(customerId: string) {
+    return this.request<{
+      success: boolean;
+      customer: any;
+      memberships: any[];
+      packages: any[];
+      giftCards: any[];
+      ledger: any[];
+      invoices: any[];
+      bookings?: any[];
+      sessions?: any[];
+      notes?: any[];
+    }>(`/api/customers/${encodeURIComponent(customerId)}/profile`);
+  }
+
+  public async getCustomerNotes(customerId: string) {
+    return this.request<{
+      success: boolean;
+      count: number;
+      notes: any[];
+    }>(`/api/customers/${encodeURIComponent(customerId)}/notes`);
+  }
+
+  public async createCustomerNote(customerId: string, noteData: any) {
+    return this.request<{
+      success: boolean;
+      noteId: string;
+    }>(`/api/customers/${encodeURIComponent(customerId)}/notes`, {
+      method: 'POST',
+      body: JSON.stringify(noteData),
+    });
+  }
+
+  public async updateCustomerNote(noteId: string, updates: any) {
+    return this.request<{
+      success: boolean;
+    }>(`/api/customers/notes/${encodeURIComponent(noteId)}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+  }
+
+  public async deleteCustomerNote(noteId: string) {
+    return this.request<{
+      success: boolean;
+      deleted: boolean;
+    }>(`/api/customers/notes/${encodeURIComponent(noteId)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  public async updateCustomerPreferences(customerId: string, preferences: any) {
+    return this.request<{
+      success: boolean;
+    }>(`/api/customers/${encodeURIComponent(customerId)}/preferences`, {
+      method: 'PUT',
+      body: JSON.stringify({ preferences }),
+    });
+  }
+
+  public async recordTip(params: {
+    staffId: string;
+    staffName: string;
+    amountMMK: number;
+    paymentMethod: string;
+    invoiceId?: string;
+    sessionId?: string;
+    notes?: string;
+    recordedBy?: string;
+  }) {
+    return db.recordTipTransaction({
+      staffId: params.staffId,
+      staffName: params.staffName,
+      amountMMK: params.amountMMK,
+      paymentMethod: params.paymentMethod as any,
+      invoiceId: params.invoiceId,
+      sessionId: params.sessionId,
+      receivedBy: params.recordedBy || 'Cashier',
+      notes: params.notes,
     });
   }
 }

@@ -50,8 +50,25 @@ import {
   CustomerPaymentRecord,
   CashTransaction,
   BackupMetadata,
+  OperationQueueRecord,
+  BookingRecord,
   PaymentMethod,
   InvoiceItemType,
+  PricingRule,
+  SessionTransferRecord,
+  SessionDepositRecord,
+  SessionAdjustmentRecord,
+  MembershipPlan,
+  CustomerMembership,
+  ServicePackage,
+  CustomerPackage,
+  PackageRedemptionRecord,
+  GiftCard,
+  GiftCardRedemptionRecord,
+  TipRecord,
+  CustomerServiceNote,
+  CustomerPreferenceProfile,
+  CustomerServiceHistoryItem,
 } from '../types';
 import {
   calculateSessionPricing,
@@ -111,6 +128,18 @@ export class MyanmarBusinessDB extends Dexie {
   customerPayments!: Table<CustomerPaymentRecord, string>;
   cashTransactions!: Table<CashTransaction, string>;
   backupMetadata!: Table<BackupMetadata, string>;
+  operationQueue!: Table<OperationQueueRecord, string>;
+  bookings!: Table<BookingRecord, string>;
+  pricingRules!: Table<PricingRule, string>;
+  membershipPlans!: Table<MembershipPlan, string>;
+  customerMemberships!: Table<CustomerMembership, string>;
+  servicePackages!: Table<ServicePackage, string>;
+  customerPackages!: Table<CustomerPackage, string>;
+  packageRedemptions!: Table<PackageRedemptionRecord, string>;
+  giftCards!: Table<GiftCard, string>;
+  giftCardRedemptions!: Table<GiftCardRedemptionRecord, string>;
+  tips!: Table<TipRecord, string>;
+  customerServiceNotes!: Table<CustomerServiceNote, string>;
 
   constructor() {
     super('MyanmarBusinessERP_DB');
@@ -132,6 +161,7 @@ export class MyanmarBusinessDB extends Dexie {
       cashClosings: 'id, closingCode, date, status',
       auditLogs: 'id, timestamp, userId, action, entity, entityId',
       settings: 'id',
+      operationQueue: 'id, operationId, operationType, status, createdAt',
     });
 
     // Schema Version 2 (Comprehensive 43-Concept Enterprise Domain)
@@ -187,6 +217,34 @@ export class MyanmarBusinessDB extends Dexie {
       auditLogs: 'id, timestamp, userId, action, entity, entityId',
       backupMetadata: 'id, backupCode, timestamp, schemaVersion, totalRecords',
       settings: 'id, businessId, branchId',
+      operationQueue: 'id, operationId, operationType, status, createdAt',
+    });
+
+    // Schema Version 3 (Phase 25: Bookings & Resource Scheduling)
+    this.version(3).stores({
+      bookings: 'id, bookingCode, customerId, customerPhone, roomId, staffId, date, status, startTime, createdAt',
+    });
+
+    // Schema Version 4 (Phase 26: Pricing Rules & KTV/PS5 Sessions)
+    this.version(4).stores({
+      pricingRules: 'id, code, roomType, isActive, sortOrder',
+    });
+
+    // Schema Version 5 (Phase 27: Memberships, Packages, Gift Cards, Tips & Mixed Payments)
+    this.version(5).stores({
+      membershipPlans: 'id, name, isActive, durationDays',
+      customerMemberships: 'id, customerId, planId, status, expiryDate, createdAt',
+      servicePackages: 'id, serviceId, isActive, name',
+      customerPackages: 'id, customerId, packageId, serviceId, status, expiryDate, remainingQty, createdAt',
+      packageRedemptions: 'id, customerPackageId, customerId, sessionId, invoiceId, serviceId, redeemedAt',
+      giftCards: 'id, cardNumber, customerId, status, expiryDate, createdAt',
+      giftCardRedemptions: 'id, giftCardId, cardNumber, sessionId, invoiceId, redeemedAt',
+      tips: 'id, sessionId, invoiceId, staffId, createdAt',
+    });
+
+    // Schema Version 6 (Phase 28: Customer 360, Service Notes & Rebooking)
+    this.version(6).stores({
+      customerServiceNotes: 'id, customerId, sessionId, bookingId, serviceId, category, isPrivate, createdAt',
     });
   }
 
@@ -705,9 +763,15 @@ export class MyanmarBusinessDB extends Dexie {
         taxPercent: params.taxPercent,
       });
 
+      // Factor in Active Deposits
+      const activeDeposits = (session.deposits || []).filter(d => d.status === 'active');
+      const totalDeposit = activeDeposits.reduce((sum, d) => sum + d.amountMMK, session.depositAmountMMK || 0);
+      const depositDeductedMMK = Math.min(totals.totalMMK, totalDeposit);
+      const netPayableMMK = Math.max(0, totals.totalMMK - depositDeductedMMK);
+
       // Sum payments
       const totalPaid = params.payments.reduce((sum, p) => sum + roundMMK(p.amountMMK), 0);
-      const balanceDue = Math.max(0, totals.totalMMK - totalPaid);
+      const balanceDue = Math.max(0, netPayableMMK - totalPaid);
       const invoiceStatus = balanceDue === 0 ? 'paid' : (totalPaid > 0 ? 'partial' : 'unpaid');
 
       // Create Invoice
@@ -732,6 +796,7 @@ export class MyanmarBusinessDB extends Dexie {
         taxPercent: params.taxPercent || 0,
         taxAmountMMK: totals.taxAmountMMK,
         totalMMK: totals.totalMMK,
+        depositDeductedMMK,
         paidAmountMMK: totalPaid,
         balanceDueMMK: balanceDue,
         status: invoiceStatus,
@@ -742,6 +807,14 @@ export class MyanmarBusinessDB extends Dexie {
       };
 
       await this.invoices.add(invoice);
+
+      // Mark deposits as deducted
+      const updatedDeposits = (session.deposits || []).map(d => {
+        if (d.status === 'active') {
+          return { ...d, status: 'deducted' as const };
+        }
+        return d;
+      });
 
       // Handle Customer Credit if payment method includes 'credit' or balance due
       const creditPayment = params.payments.find(p => p.method === 'credit');
@@ -844,6 +917,7 @@ export class MyanmarBusinessDB extends Dexie {
         status: 'completed',
         invoiceId,
         assignedStaff: updatedAssignedStaff,
+        deposits: updatedDeposits,
         updatedAt: now,
         notes: params.notes || session.notes,
       };
@@ -876,6 +950,377 @@ export class MyanmarBusinessDB extends Dexie {
       });
 
       return { session: completedSession, invoice };
+    });
+  }
+
+  /**
+   * ATOMIC TRANSACTION: Room Transfer (Room A -> Room B)
+   * 1. Validates destination room availability
+   * 2. Atomically frees source room
+   * 3. Occupies destination room
+   * 4. Updates session with new room details and appends to transfer history
+   * 5. Emits audit trail
+   */
+  async transferRoomSessionTransaction(params: {
+    sessionId: string;
+    targetRoomId: string;
+    reason?: string;
+    currentUser: { id: string; name: string; role: any };
+  }): Promise<{ session: SessionRecord; previousRoomId: string; targetRoomId: string }> {
+    return this.transaction('rw', [this.sessions, this.rooms, this.auditLogs], async () => {
+      const session = await this.sessions.get(params.sessionId);
+      if (!session) throw new Error('Session not found');
+      if (session.status === 'completed' || session.status === 'cancelled' || session.status === 'voided') {
+        throw new Error(`Cannot transfer an inactive session (${session.status})`);
+      }
+
+      if (session.roomId === params.targetRoomId) {
+        throw new Error('Target room is the same as the current room');
+      }
+
+      const targetRoom = await this.rooms.get(params.targetRoomId);
+      if (!targetRoom) throw new Error('Target destination room not found');
+      if (targetRoom.status !== 'available') {
+        throw new Error(`Target room ${targetRoom.name} is currently ${targetRoom.status}. Only available rooms can be transferred into.`);
+      }
+
+      const previousRoomId = session.roomId;
+      const previousRoom = await this.rooms.get(previousRoomId);
+      const now = new Date().toISOString();
+
+      const transferRecord: SessionTransferRecord = {
+        id: 'xfer_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+        sessionId: session.id,
+        fromRoomId: previousRoomId,
+        fromRoomName: previousRoom ? previousRoom.name : session.roomName,
+        toRoomId: targetRoom.id,
+        toRoomName: targetRoom.name,
+        transferredAt: now,
+        transferredBy: params.currentUser.name,
+        reason: params.reason || 'Customer requested room change (အခန်းပြောင်းခြင်း)',
+        sourceRoomHourlyRateMMK: previousRoom?.hourlyRateMMK || session.hourlyRateMMK,
+        destRoomHourlyRateMMK: targetRoom.hourlyRateMMK,
+      };
+
+      const updatedTransfers = [...(session.transfers || []), transferRecord];
+
+      // Update session record
+      const updatedSession: SessionRecord = {
+        ...session,
+        roomId: targetRoom.id,
+        roomName: targetRoom.name,
+        hourlyRateMMK: targetRoom.hourlyRateMMK,
+        roomSurchargeMMK: targetRoom.surchargeMMK || session.roomSurchargeMMK || 0,
+        transfers: updatedTransfers,
+        updatedAt: now,
+      };
+
+      await this.sessions.put(updatedSession);
+
+      // Free source room
+      await this.rooms.update(previousRoomId, {
+        status: 'available',
+        currentSessionId: undefined,
+      });
+
+      // Occupy destination room
+      await this.rooms.update(targetRoom.id, {
+        status: 'occupied',
+        currentSessionId: session.id,
+      });
+
+      // Log Audit
+      await this.auditLogs.add({
+        id: 'aud_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+        timestamp: now,
+        userId: params.currentUser.id,
+        userName: params.currentUser.name,
+        userRole: params.currentUser.role,
+        action: 'TRANSFER_ROOM',
+        entity: 'Session',
+        entityId: session.id,
+        oldValue: JSON.stringify({ roomId: previousRoomId, roomName: previousRoom?.name }),
+        newValue: JSON.stringify({ roomId: targetRoom.id, roomName: targetRoom.name, reason: params.reason }),
+      });
+
+      return { session: updatedSession, previousRoomId, targetRoomId: targetRoom.id };
+    });
+  }
+
+  /**
+   * ATOMIC TRANSACTION: Add Deposit to Session
+   */
+  async addSessionDepositTransaction(params: {
+    sessionId: string;
+    amountMMK: number;
+    paymentMethod: PaymentMethod | string;
+    referenceNo?: string;
+    notes?: string;
+    currentUser: { id: string; name: string; role: any };
+  }): Promise<{ session: SessionRecord; deposit: SessionDepositRecord }> {
+    return this.transaction('rw', [this.sessions, this.cashTransactions, this.auditLogs], async () => {
+      const session = await this.sessions.get(params.sessionId);
+      if (!session) throw new Error('Session not found');
+      if (params.amountMMK <= 0) throw new Error('Deposit amount must be greater than 0 MMK');
+
+      const now = new Date().toISOString();
+      const depositId = 'dep_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+
+      let cashTxId: string | undefined;
+      const isCash = String(params.paymentMethod).toLowerCase() === 'cash';
+
+      if (isCash) {
+        cashTxId = 'ctx_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+        await this.cashTransactions.add({
+          id: cashTxId,
+          transactionCode: 'CTX-' + Date.now().toString().slice(-6),
+          type: 'inflow',
+          category: 'sale_cash',
+          amountMMK: roundMMK(params.amountMMK),
+          referenceType: 'sale',
+          referenceId: session.id,
+          notes: `Session Deposit: ${session.sessionCode} (${session.customerName})`,
+          transactionTime: now,
+          performedBy: params.currentUser.name,
+          createdAt: now,
+        });
+      }
+
+      const depositRecord: SessionDepositRecord = {
+        id: depositId,
+        sessionId: session.id,
+        amountMMK: roundMMK(params.amountMMK),
+        paymentMethod: params.paymentMethod,
+        referenceNo: params.referenceNo,
+        notes: params.notes,
+        status: 'active',
+        cashTransactionId: cashTxId,
+        receivedBy: params.currentUser.name,
+        createdAt: now,
+      };
+
+      const existingDeposits = session.deposits || [];
+      const updatedDeposits = [...existingDeposits, depositRecord];
+      const newDepositTotal = updatedDeposits
+        .filter(d => d.status === 'active')
+        .reduce((sum, d) => sum + d.amountMMK, 0);
+
+      const updatedSession: SessionRecord = {
+        ...session,
+        depositAmountMMK: newDepositTotal,
+        depositPaymentMethod: params.paymentMethod,
+        deposits: updatedDeposits,
+        updatedAt: now,
+      };
+
+      await this.sessions.put(updatedSession);
+
+      await this.auditLogs.add({
+        id: 'aud_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+        timestamp: now,
+        userId: params.currentUser.id,
+        userName: params.currentUser.name,
+        userRole: params.currentUser.role,
+        action: 'ADD_SESSION_DEPOSIT',
+        entity: 'Session',
+        entityId: session.id,
+        newValue: JSON.stringify({ amountMMK: params.amountMMK, paymentMethod: params.paymentMethod }),
+      });
+
+      return { session: updatedSession, deposit: depositRecord };
+    });
+  }
+
+  /**
+   * ATOMIC TRANSACTION: Refund Session Deposit
+   */
+  async refundSessionDepositTransaction(params: {
+    sessionId: string;
+    depositId: string;
+    reason: string;
+    currentUser: { id: string; name: string; role: any };
+  }): Promise<{ session: SessionRecord; refundedDeposit: SessionDepositRecord }> {
+    return this.transaction('rw', [this.sessions, this.cashTransactions, this.auditLogs], async () => {
+      const session = await this.sessions.get(params.sessionId);
+      if (!session) throw new Error('Session not found');
+
+      const existingDeposits = session.deposits || [];
+      const deposit = existingDeposits.find(d => d.id === params.depositId);
+      if (!deposit) throw new Error('Deposit record not found');
+      if (deposit.status !== 'active') {
+        throw new Error(`Deposit cannot be refunded because it is already ${deposit.status}`);
+      }
+
+      const now = new Date().toISOString();
+      const isCash = String(deposit.paymentMethod).toLowerCase() === 'cash';
+
+      if (isCash) {
+        const cashTxId = 'ctx_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+        await this.cashTransactions.add({
+          id: cashTxId,
+          transactionCode: 'CTX-' + Date.now().toString().slice(-6),
+          type: 'outflow',
+          category: 'manual_adjustment',
+          amountMMK: deposit.amountMMK,
+          referenceType: 'manual',
+          referenceId: session.id,
+          notes: `Deposit Refund: ${session.sessionCode} - ${params.reason}`,
+          transactionTime: now,
+          performedBy: params.currentUser.name,
+          createdAt: now,
+        });
+      }
+
+      const updatedDeposits: SessionDepositRecord[] = existingDeposits.map(d => {
+        if (d.id === params.depositId) {
+          return {
+            ...d,
+            status: 'refunded' as const,
+            refundedAt: now,
+            refundedBy: params.currentUser.name,
+            refundReason: params.reason,
+          };
+        }
+        return d;
+      });
+
+      const newDepositTotal = updatedDeposits
+        .filter(d => d.status === 'active')
+        .reduce((sum, d) => sum + d.amountMMK, 0);
+
+      const updatedSession: SessionRecord = {
+        ...session,
+        depositAmountMMK: newDepositTotal,
+        deposits: updatedDeposits,
+        updatedAt: now,
+      };
+
+      await this.sessions.put(updatedSession);
+
+      await this.auditLogs.add({
+        id: 'aud_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+        timestamp: now,
+        userId: params.currentUser.id,
+        userName: params.currentUser.name,
+        userRole: params.currentUser.role,
+        action: 'REFUND_SESSION_DEPOSIT',
+        entity: 'Session',
+        entityId: session.id,
+        reason: params.reason,
+        newValue: JSON.stringify({ refundedDepositId: deposit.id, amountMMK: deposit.amountMMK }),
+      });
+
+      const refundedDeposit = updatedDeposits.find(d => d.id === params.depositId)!;
+      return { session: updatedSession, refundedDeposit };
+    });
+  }
+
+  /**
+   * ATOMIC TRANSACTION: Authorized Manual Session Adjustment
+   */
+  async adjustSessionTransaction(params: {
+    sessionId: string;
+    adjustments: {
+      startTime?: string;
+      endTime?: string;
+      plannedDurationMinutes?: number;
+      hourlyRateMMK?: number;
+      discountMMK?: number;
+      discountPercent?: number;
+    };
+    reason: string;
+    currentUser: { id: string; name: string; role: any };
+  }): Promise<SessionRecord> {
+    return this.transaction('rw', [this.sessions, this.auditLogs], async () => {
+      const session = await this.sessions.get(params.sessionId);
+      if (!session) throw new Error('Session not found');
+
+      if (!params.reason || !params.reason.trim()) {
+        throw new Error('An explicit reason is required for financial and time adjustments');
+      }
+
+      const now = new Date().toISOString();
+      const records: SessionAdjustmentRecord[] = [];
+
+      const updatedSession: SessionRecord = { ...session };
+
+      if (params.adjustments.startTime && params.adjustments.startTime !== session.startTime) {
+        records.push({
+          id: 'adj_' + Date.now() + '_1',
+          sessionId: session.id,
+          field: 'startTime',
+          oldValue: session.startTime,
+          newValue: params.adjustments.startTime,
+          reason: params.reason,
+          adjustedBy: params.currentUser.name,
+          adjustedAt: now,
+        });
+        updatedSession.startTime = params.adjustments.startTime;
+      }
+
+      if (params.adjustments.plannedDurationMinutes !== undefined && params.adjustments.plannedDurationMinutes !== session.plannedDurationMinutes) {
+        records.push({
+          id: 'adj_' + Date.now() + '_2',
+          sessionId: session.id,
+          field: 'duration',
+          oldValue: session.plannedDurationMinutes,
+          newValue: params.adjustments.plannedDurationMinutes,
+          reason: params.reason,
+          adjustedBy: params.currentUser.name,
+          adjustedAt: now,
+        });
+        updatedSession.plannedDurationMinutes = params.adjustments.plannedDurationMinutes;
+      }
+
+      if (params.adjustments.hourlyRateMMK !== undefined && params.adjustments.hourlyRateMMK !== session.hourlyRateMMK) {
+        records.push({
+          id: 'adj_' + Date.now() + '_3',
+          sessionId: session.id,
+          field: 'rate',
+          oldValue: session.hourlyRateMMK || 0,
+          newValue: params.adjustments.hourlyRateMMK,
+          reason: params.reason,
+          adjustedBy: params.currentUser.name,
+          adjustedAt: now,
+        });
+        updatedSession.hourlyRateMMK = roundMMK(params.adjustments.hourlyRateMMK);
+      }
+
+      if (params.adjustments.discountMMK !== undefined || params.adjustments.discountPercent !== undefined) {
+        records.push({
+          id: 'adj_' + Date.now() + '_4',
+          sessionId: session.id,
+          field: 'discount',
+          oldValue: `${session.discountMMK || 0} MMK / ${session.discountPercent || 0}%`,
+          newValue: `${params.adjustments.discountMMK || 0} MMK / ${params.adjustments.discountPercent || 0}%`,
+          reason: params.reason,
+          adjustedBy: params.currentUser.name,
+          adjustedAt: now,
+        });
+        updatedSession.discountMMK = params.adjustments.discountMMK !== undefined ? roundMMK(params.adjustments.discountMMK) : session.discountMMK;
+        updatedSession.discountPercent = params.adjustments.discountPercent !== undefined ? params.adjustments.discountPercent : session.discountPercent;
+        updatedSession.discountReason = params.reason;
+      }
+
+      updatedSession.adjustments = [...(session.adjustments || []), ...records];
+      updatedSession.updatedAt = now;
+
+      await this.sessions.put(updatedSession);
+
+      await this.auditLogs.add({
+        id: 'aud_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+        timestamp: now,
+        userId: params.currentUser.id,
+        userName: params.currentUser.name,
+        userRole: params.currentUser.role,
+        action: 'ADJUST_SESSION',
+        entity: 'Session',
+        entityId: session.id,
+        reason: params.reason,
+        newValue: JSON.stringify(params.adjustments),
+      });
+
+      return updatedSession;
     });
   }
 
@@ -915,6 +1360,8 @@ export class MyanmarBusinessDB extends Dexie {
       this.customerLedger,
       this.cashTransactions,
       this.auditLogs,
+      this.giftCards,
+      this.giftCardRedemptions,
     ], async () => {
       const now = new Date().toISOString();
 
@@ -1069,6 +1516,37 @@ export class MyanmarBusinessDB extends Dexie {
           });
         } catch (e) {
           // Safe fallback
+        }
+      }
+
+      // 6B. Process Gift Card Payments
+      const giftCardPayments = processedPayments.filter(p => p.method.toLowerCase() === 'gift_card');
+      for (const gcPayment of giftCardPayments) {
+        const cardRef = (gcPayment.referenceNo || gcPayment.notes || '').trim();
+        if (cardRef && gcPayment.amountMMK > 0) {
+          const card = (await this.giftCards.get(cardRef)) || (await this.giftCards.where('cardNumber').equals(cardRef).first());
+          if (card) {
+            if (card.currentBalanceMMK < gcPayment.amountMMK) {
+              throw new Error(`Insufficient gift card balance on ${card.cardNumber}. Available: ${card.currentBalanceMMK} MMK`);
+            }
+            const balanceAfter = card.currentBalanceMMK - gcPayment.amountMMK;
+            await this.giftCards.update(card.id, {
+              currentBalanceMMK: balanceAfter,
+              status: balanceAfter === 0 ? 'exhausted' : 'active',
+              updatedAt: now,
+            });
+            await this.giftCardRedemptions.add({
+              id: 'gcr_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+              giftCardId: card.id,
+              cardNumber: card.cardNumber,
+              invoiceId,
+              amountMMK: gcPayment.amountMMK,
+              balanceBeforeMMK: card.currentBalanceMMK,
+              balanceAfterMMK: balanceAfter,
+              redeemedAt: now,
+              redeemedBy: params.currentUser.name,
+            });
+          }
         }
       }
 
@@ -2631,6 +3109,16 @@ export class MyanmarBusinessDB extends Dexie {
         cashTransactions: await this.cashTransactions.toArray(),
         expenses: await this.expenses.toArray(),
         cashClosings: await this.cashClosings.toArray(),
+        bookings: await this.bookings.toArray(),
+        pricingRules: await this.pricingRules.toArray(),
+        membershipPlans: await this.membershipPlans.toArray(),
+        customerMemberships: await this.customerMemberships.toArray(),
+        servicePackages: await this.servicePackages.toArray(),
+        customerPackages: await this.customerPackages.toArray(),
+        packageRedemptions: await this.packageRedemptions.toArray(),
+        giftCards: await this.giftCards.toArray(),
+        giftCardRedemptions: await this.giftCardRedemptions.toArray(),
+        tips: await this.tips.toArray(),
         auditLogs: await this.auditLogs.toArray(),
         backupMetadata: await this.backupMetadata.toArray(),
         settings: await this.settings.toArray(),
@@ -2684,6 +3172,16 @@ export class MyanmarBusinessDB extends Dexie {
       this.cashTransactions,
       this.expenses,
       this.cashClosings,
+      this.bookings,
+      this.pricingRules,
+      this.membershipPlans,
+      this.customerMemberships,
+      this.servicePackages,
+      this.customerPackages,
+      this.packageRedemptions,
+      this.giftCards,
+      this.giftCardRedemptions,
+      this.tips,
       this.auditLogs,
       this.backupMetadata,
       this.settings,
@@ -2725,6 +3223,16 @@ export class MyanmarBusinessDB extends Dexie {
         this.cashTransactions.clear(),
         this.expenses.clear(),
         this.cashClosings.clear(),
+        this.bookings.clear(),
+        this.pricingRules.clear(),
+        this.membershipPlans.clear(),
+        this.customerMemberships.clear(),
+        this.servicePackages.clear(),
+        this.customerPackages.clear(),
+        this.packageRedemptions.clear(),
+        this.giftCards.clear(),
+        this.giftCardRedemptions.clear(),
+        this.tips.clear(),
         this.auditLogs.clear(),
         this.backupMetadata.clear(),
         this.settings.clear(),
@@ -2767,6 +3275,16 @@ export class MyanmarBusinessDB extends Dexie {
       if (data.cashTransactions?.length) await this.cashTransactions.bulkPut(data.cashTransactions);
       if (data.expenses?.length) await this.expenses.bulkPut(data.expenses);
       if (data.cashClosings?.length) await this.cashClosings.bulkPut(data.cashClosings);
+      if (data.bookings?.length) await this.bookings.bulkPut(data.bookings);
+      if (data.pricingRules?.length) await this.pricingRules.bulkPut(data.pricingRules);
+      if (data.membershipPlans?.length) await this.membershipPlans.bulkPut(data.membershipPlans);
+      if (data.customerMemberships?.length) await this.customerMemberships.bulkPut(data.customerMemberships);
+      if (data.servicePackages?.length) await this.servicePackages.bulkPut(data.servicePackages);
+      if (data.customerPackages?.length) await this.customerPackages.bulkPut(data.customerPackages);
+      if (data.packageRedemptions?.length) await this.packageRedemptions.bulkPut(data.packageRedemptions);
+      if (data.giftCards?.length) await this.giftCards.bulkPut(data.giftCards);
+      if (data.giftCardRedemptions?.length) await this.giftCardRedemptions.bulkPut(data.giftCardRedemptions);
+      if (data.tips?.length) await this.tips.bulkPut(data.tips);
       if (data.auditLogs?.length) await this.auditLogs.bulkPut(data.auditLogs);
       if (data.backupMetadata?.length) await this.backupMetadata.bulkPut(data.backupMetadata);
       if (data.settings?.length) await this.settings.bulkPut(data.settings);
@@ -2784,6 +3302,623 @@ export class MyanmarBusinessDB extends Dexie {
         newValue: `Restored from backup created at ${parsed.exportedAt || 'unknown date'}`,
       });
     });
+  }
+
+  /**
+   * Seed default pricing rules for KTV, PS5, VIP, and general session services
+   */
+  async seedDefaultPricingRules(): Promise<void> {
+    const count = await this.pricingRules.count();
+    if (count > 0) return;
+
+    const now = new Date().toISOString();
+    const defaultRules: PricingRule[] = [
+      {
+        id: 'prule_ktv_std',
+        code: 'KTV-STD',
+        name: 'Standard KTV Hourly Tier',
+        nameMm: 'သာမန် KTV အခန်းနှုန်းထား',
+        description: 'Standard KTV room pricing with 60m min duration and 15m block rounding',
+        roomType: 'ktv_small',
+        baseHourlyRateMMK: 15000,
+        weekdayHourlyRateMMK: 15000,
+        weekendHourlyRateMMK: 18000,
+        isPeakHourEnabled: true,
+        peakHourStart: '18:00',
+        peakHourEnd: '23:59',
+        peakHourlyRateMMK: 20000,
+        minDurationMinutes: 60,
+        additionalBlockMinutes: 15,
+        roundingRule: 'ceil_15',
+        gracePeriodMinutes: 5,
+        isActive: true,
+        sortOrder: 1,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: 'prule_ktv_vip',
+        code: 'KTV-VIP',
+        name: 'VIP KTV Luxury Tier',
+        nameMm: 'ဗွီအိုင်ပီ KTV အထူးနှုန်းထား',
+        description: 'VIP KTV room pricing with night peak surcharge and 30m block rounding',
+        roomType: 'vip_suite',
+        baseHourlyRateMMK: 25000,
+        weekdayHourlyRateMMK: 25000,
+        weekendHourlyRateMMK: 30000,
+        isPeakHourEnabled: true,
+        peakHourStart: '18:00',
+        peakHourEnd: '23:59',
+        peakHourlyRateMMK: 35000,
+        minDurationMinutes: 60,
+        additionalBlockMinutes: 30,
+        roundingRule: 'ceil_30',
+        gracePeriodMinutes: 10,
+        isActive: true,
+        sortOrder: 2,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: 'prule_ps5_std',
+        code: 'PS5-STD',
+        name: 'PS5 / Console Gaming Standard',
+        nameMm: 'PS5 ဂိမ်းကစားချိန် သာမန်နှုန်း',
+        description: 'PS5 gaming room/station rate with 30m min duration',
+        roomType: 'ALL',
+        baseHourlyRateMMK: 6000,
+        weekdayHourlyRateMMK: 6000,
+        weekendHourlyRateMMK: 8000,
+        isPeakHourEnabled: true,
+        peakHourStart: '17:00',
+        peakHourEnd: '22:00',
+        peakHourlyRateMMK: 8000,
+        minDurationMinutes: 30,
+        additionalBlockMinutes: 15,
+        roundingRule: 'round_15',
+        gracePeriodMinutes: 5,
+        isActive: true,
+        sortOrder: 3,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: 'prule_spa_std',
+        code: 'SPA-STD',
+        name: 'Spa / Massage Standard Session',
+        nameMm: 'စပါ / နှိပ်နယ်ခန်း ပုံမှန်နှုန်းထား',
+        description: 'Spa room hourly rate with exact minute rounding',
+        roomType: 'massage_bed',
+        baseHourlyRateMMK: 12000,
+        weekdayHourlyRateMMK: 12000,
+        weekendHourlyRateMMK: 15000,
+        isPeakHourEnabled: false,
+        minDurationMinutes: 45,
+        additionalBlockMinutes: 1,
+        roundingRule: 'exact_minute',
+        gracePeriodMinutes: 5,
+        isActive: true,
+        sortOrder: 4,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ];
+
+    await this.pricingRules.bulkAdd(defaultRules);
+  }
+
+  /**
+   * Seed default membership plans and service packages if none exist
+   */
+  async seedDefaultMembershipAndPackages(): Promise<void> {
+    const planCount = await this.membershipPlans.count();
+    const now = new Date().toISOString();
+
+    if (planCount === 0) {
+      const defaultPlans: MembershipPlan[] = [
+        {
+          id: 'mplan_silver',
+          name: 'Silver Club Membership',
+          nameMm: 'ငွေအဆင့် အသင်းဝင်',
+          durationDays: 30,
+          priceMMK: 30000,
+          discountPercent: 10,
+          benefitsSummary: '10% discount on all massage and room services for 30 days',
+          isActive: true,
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: 'mplan_gold',
+          name: 'Gold VIP Membership',
+          nameMm: 'ရွှေအဆင့် အသင်းဝင် (VIP)',
+          durationDays: 90,
+          priceMMK: 80000,
+          discountPercent: 15,
+          benefitsSummary: '15% discount on all services and VIP room booking priority for 90 days',
+          isActive: true,
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: 'mplan_diamond',
+          name: 'Diamond Elite Annual Membership',
+          nameMm: 'စိန်အဆင့် နှစ်စဉ်အသင်းဝင်',
+          durationDays: 365,
+          priceMMK: 250000,
+          discountPercent: 20,
+          benefitsSummary: '20% discount on all services, beverage perks and free room upgrades for 1 year',
+          isActive: true,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ];
+      await this.membershipPlans.bulkAdd(defaultPlans);
+    }
+
+    const pkgCount = await this.servicePackages.count();
+    if (pkgCount === 0) {
+      // Find sample service or fallback
+      const services = await this.services.toArray();
+      const firstService = services[0] || { id: 'srv_massage', name: 'Traditional Body Massage' };
+
+      const defaultPackages: ServicePackage[] = [
+        {
+          id: 'spkg_10massage',
+          name: '10x Body Massage Package',
+          nameMm: 'ကိုယ်ခန္ဓာ နှိပ်နယ်ခြင်း ၁၀ ကြိမ် ပက်ကေ့ချ်',
+          serviceId: firstService.id,
+          serviceName: firstService.name,
+          totalQty: 10,
+          priceMMK: 135000,
+          validityDays: 180,
+          isActive: true,
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: 'spkg_5foot',
+          name: '5x Foot Reflexology Package',
+          nameMm: 'ခြေဖဝါး နှိပ်နယ်ခြင်း ၅ ကြိမ် ပက်ကေ့ချ်',
+          serviceId: services[1]?.id || firstService.id,
+          serviceName: services[1]?.name || 'Foot Reflexology',
+          totalQty: 5,
+          priceMMK: 55000,
+          validityDays: 90,
+          isActive: true,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ];
+      await this.servicePackages.bulkAdd(defaultPackages);
+    }
+  }
+
+  /**
+   * ATOMIC PACKAGE REDEMPTION:
+   * Prevents over-redemption, checks status and expiry date, updates remaining balance atomically.
+   */
+  async redeemPackageTransaction(params: {
+    customerPackageId: string;
+    quantity: number;
+    customerId?: string;
+    sessionId?: string;
+    invoiceId?: string;
+    redeemedBy: string;
+    notes?: string;
+  }): Promise<{ customerPackage: CustomerPackage; redemption: PackageRedemptionRecord }> {
+    return this.transaction('rw', [this.customerPackages, this.packageRedemptions], async () => {
+      const pkg = await this.customerPackages.get(params.customerPackageId);
+      if (!pkg) {
+        throw new Error(`Customer package ${params.customerPackageId} not found.`);
+      }
+
+      if (pkg.status !== 'active') {
+        throw new Error(`Customer package is ${pkg.status} and cannot be redeemed.`);
+      }
+
+      const todayStr = new Date().toISOString().split('T')[0];
+      if (pkg.expiryDate && pkg.expiryDate < todayStr) {
+        await this.customerPackages.update(pkg.id, { status: 'expired', updatedAt: new Date().toISOString() });
+        throw new Error(`Customer package expired on ${pkg.expiryDate}.`);
+      }
+
+      if (pkg.remainingQty < params.quantity) {
+        throw new Error(`Over-redemption prevented: Requested ${params.quantity}, but only ${pkg.remainingQty} remaining.`);
+      }
+
+      const newRemaining = pkg.remainingQty - params.quantity;
+      const newUsed = pkg.usedQty + params.quantity;
+      const newStatus = newRemaining === 0 ? 'exhausted' : 'active';
+      const now = new Date().toISOString();
+
+      await this.customerPackages.update(pkg.id, {
+        remainingQty: newRemaining,
+        usedQty: newUsed,
+        status: newStatus,
+        updatedAt: now,
+      });
+
+      const redemption: PackageRedemptionRecord = {
+        id: `pred_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        customerPackageId: pkg.id,
+        customerId: params.customerId || pkg.customerId,
+        sessionId: params.sessionId,
+        invoiceId: params.invoiceId,
+        serviceId: pkg.serviceId,
+        serviceName: pkg.serviceName,
+        quantityRedeemed: params.quantity,
+        redeemedAt: now,
+        redeemedBy: params.redeemedBy,
+        notes: params.notes,
+      };
+
+      await this.packageRedemptions.add(redemption);
+
+      const updatedPkg: CustomerPackage = {
+        ...pkg,
+        remainingQty: newRemaining,
+        usedQty: newUsed,
+        status: newStatus,
+        updatedAt: now,
+      };
+
+      return { customerPackage: updatedPkg, redemption };
+    });
+  }
+
+  /**
+   * ATOMIC GIFT CARD REDEMPTION:
+   * Prevents duplicate redemption, checks status and expiry, prevents overdraft, updates balance atomically.
+   */
+  async redeemGiftCardTransaction(params: {
+    giftCardIdOrNumber: string;
+    amountMMK: number;
+    sessionId?: string;
+    invoiceId?: string;
+    redeemedBy: string;
+    notes?: string;
+  }): Promise<{ giftCard: GiftCard; redemption: GiftCardRedemptionRecord }> {
+    return this.transaction('rw', [this.giftCards, this.giftCardRedemptions], async () => {
+      let card = await this.giftCards.get(params.giftCardIdOrNumber);
+      if (!card) {
+        card = await this.giftCards.where('cardNumber').equals(params.giftCardIdOrNumber).first();
+      }
+
+      if (!card) {
+        throw new Error(`Gift Card '${params.giftCardIdOrNumber}' not found.`);
+      }
+
+      if (card.status !== 'active') {
+        throw new Error(`Gift Card is ${card.status} and cannot be redeemed.`);
+      }
+
+      const todayStr = new Date().toISOString().split('T')[0];
+      if (card.expiryDate && card.expiryDate < todayStr) {
+        await this.giftCards.update(card.id, { status: 'expired', updatedAt: new Date().toISOString() });
+        throw new Error(`Gift Card expired on ${card.expiryDate}.`);
+      }
+
+      if (card.currentBalanceMMK < params.amountMMK) {
+        throw new Error(`Insufficient gift card balance: Card has ${card.currentBalanceMMK.toLocaleString()} MMK, requested ${params.amountMMK.toLocaleString()} MMK.`);
+      }
+
+      const now = new Date().toISOString();
+      const balanceBefore = card.currentBalanceMMK;
+      const balanceAfter = balanceBefore - params.amountMMK;
+      const newStatus = balanceAfter === 0 ? 'exhausted' : 'active';
+
+      await this.giftCards.update(card.id, {
+        currentBalanceMMK: balanceAfter,
+        status: newStatus,
+        updatedAt: now,
+      });
+
+      const redemption: GiftCardRedemptionRecord = {
+        id: `gcred_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        giftCardId: card.id,
+        cardNumber: card.cardNumber,
+        sessionId: params.sessionId,
+        invoiceId: params.invoiceId,
+        amountMMK: params.amountMMK,
+        balanceBeforeMMK: balanceBefore,
+        balanceAfterMMK: balanceAfter,
+        redeemedAt: now,
+        redeemedBy: params.redeemedBy,
+        notes: params.notes,
+      };
+
+      await this.giftCardRedemptions.add(redemption);
+
+      const updatedCard: GiftCard = {
+        ...card,
+        currentBalanceMMK: balanceAfter,
+        status: newStatus,
+        updatedAt: now,
+      };
+
+      return { giftCard: updatedCard, redemption };
+    });
+  }
+
+  /**
+   * ATOMIC TIP RECORDING:
+   * Records tip attribution to staff, adds to staff ledger if applicable, does not mix into service revenue.
+   */
+  async recordTipTransaction(params: {
+    sessionId?: string;
+    invoiceId?: string;
+    staffId: string;
+    staffName: string;
+    amountMMK: number;
+    paymentMethod: PaymentMethod | string;
+    receivedBy: string;
+    notes?: string;
+  }): Promise<TipRecord> {
+    return this.transaction('rw', [this.tips, this.staffLedger], async () => {
+      const now = new Date().toISOString();
+      const tipId = `tip_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
+      const tipRecord: TipRecord = {
+        id: tipId,
+        sessionId: params.sessionId,
+        invoiceId: params.invoiceId,
+        staffId: params.staffId,
+        staffName: params.staffName,
+        amountMMK: params.amountMMK,
+        paymentMethod: params.paymentMethod,
+        receivedBy: params.receivedBy,
+        notes: params.notes,
+        createdAt: now,
+      };
+
+      await this.tips.add(tipRecord);
+
+      // Record in staff ledger as bonus/tip entry so staff can receive it in settlement
+      await this.staffLedger.add({
+        id: `stledg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        staffId: params.staffId,
+        staffName: params.staffName,
+        type: 'bonus',
+        direction: 'credit',
+        amountMMK: params.amountMMK,
+        isSettled: false,
+        notes: `Customer Tip for Session/Invoice ${params.invoiceId || params.sessionId || ''}`,
+        date: now.split('T')[0],
+        createdBy: params.receivedBy || 'system',
+        createdAt: now,
+      });
+
+      return tipRecord;
+    });
+  }
+
+  // ==========================================
+  // PHASE 28: CUSTOMER 360, SERVICE NOTES & REBOOKING
+  // ==========================================
+
+  public async addCustomerServiceNote(params: {
+    customerId: string;
+    customerName?: string;
+    sessionId?: string;
+    bookingId?: string;
+    serviceId?: string;
+    serviceName?: string;
+    staffId?: string;
+    staffName?: string;
+    category: CustomerServiceNote['category'];
+    title: string;
+    content: string;
+    tags?: string[];
+    focusAreas?: string[];
+    isPrivate?: boolean;
+    createdBy: string;
+    createdById?: string;
+    businessId?: string;
+    branchId?: string;
+  }): Promise<CustomerServiceNote> {
+    return this.transaction('rw', [this.customerServiceNotes, this.auditLogs], async () => {
+      const now = new Date().toISOString();
+      const noteId = `cnote_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const note: CustomerServiceNote = {
+        id: noteId,
+        businessId: params.businessId || 'default',
+        branchId: params.branchId || 'main',
+        customerId: params.customerId,
+        customerName: params.customerName,
+        sessionId: params.sessionId,
+        bookingId: params.bookingId,
+        serviceId: params.serviceId,
+        serviceName: params.serviceName,
+        staffId: params.staffId,
+        staffName: params.staffName,
+        category: params.category,
+        title: params.title.trim(),
+        content: params.content.trim(),
+        tags: params.tags,
+        focusAreas: params.focusAreas,
+        isPrivate: !!params.isPrivate,
+        createdAt: now,
+        createdBy: params.createdBy,
+        createdById: params.createdById,
+        updatedAt: now,
+      };
+
+      await this.customerServiceNotes.add(note);
+
+      await this.auditLogs.add({
+        id: `aud_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        timestamp: now,
+        userId: params.createdById || 'user',
+        userName: params.createdBy,
+        action: 'CUSTOMER_NOTE_ADD' as any,
+        entity: 'CustomerServiceNote',
+        entityId: noteId,
+        details: `Created ${params.category} note for customer ${params.customerName || params.customerId}`,
+      });
+
+      return note;
+    });
+  }
+
+  public async updateCustomerServiceNote(
+    id: string,
+    updates: Partial<CustomerServiceNote>,
+    currentUser?: { id?: string; name: string; role?: string }
+  ): Promise<CustomerServiceNote> {
+    return this.transaction('rw', [this.customerServiceNotes, this.auditLogs], async () => {
+      const existing = await this.customerServiceNotes.get(id);
+      if (!existing) throw new Error(`Note ${id} not found`);
+
+      const now = new Date().toISOString();
+      const updatedNote: CustomerServiceNote = {
+        ...existing,
+        ...updates,
+        updatedAt: now,
+      };
+
+      await this.customerServiceNotes.put(updatedNote);
+
+      await this.auditLogs.add({
+        id: `aud_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        timestamp: now,
+        userId: currentUser?.id || 'user',
+        userName: currentUser?.name || 'User',
+        action: 'CUSTOMER_NOTE_UPDATE' as any,
+        entity: 'CustomerServiceNote',
+        entityId: id,
+        details: `Updated note ${id}`,
+      });
+
+      return updatedNote;
+    });
+  }
+
+  public async deleteCustomerServiceNote(
+    id: string,
+    currentUser?: { id?: string; name: string; role?: string }
+  ): Promise<void> {
+    return this.transaction('rw', [this.customerServiceNotes, this.auditLogs], async () => {
+      const existing = await this.customerServiceNotes.get(id);
+      if (!existing) return;
+
+      await this.customerServiceNotes.delete(id);
+
+      await this.auditLogs.add({
+        id: `aud_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        timestamp: new Date().toISOString(),
+        userId: currentUser?.id || 'user',
+        userName: currentUser?.name || 'User',
+        action: 'CUSTOMER_NOTE_DELETE' as any,
+        entity: 'CustomerServiceNote',
+        entityId: id,
+        details: `Deleted note ${id}`,
+      });
+    });
+  }
+
+  public async updateCustomerPreferences(
+    customerId: string,
+    preferences: CustomerPreferenceProfile,
+    currentUser?: { id?: string; name: string }
+  ): Promise<Customer> {
+    return this.transaction('rw', [this.customers, this.auditLogs], async () => {
+      const customer = await this.customers.get(customerId);
+      if (!customer) throw new Error(`Customer ${customerId} not found`);
+
+      customer.preferences = preferences;
+      customer.updatedAt = new Date().toISOString();
+      customer.updatedBy = currentUser?.name;
+
+      await this.customers.put(customer);
+
+      await this.auditLogs.add({
+        id: `aud_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        timestamp: customer.updatedAt,
+        userId: currentUser?.id || 'user',
+        userName: currentUser?.name || 'User',
+        action: 'CUSTOMER_PREFERENCES_UPDATE' as any,
+        entity: 'Customer',
+        entityId: customerId,
+        details: `Updated preferences for customer ${customer.name}`,
+      });
+
+      return customer;
+    });
+  }
+
+  public async getCustomerServiceHistory(customerId: string): Promise<CustomerServiceHistoryItem[]> {
+    const history: CustomerServiceHistoryItem[] = [];
+
+    // 1. Sessions
+    const sessions = await this.sessions
+      .where('customerId')
+      .equals(customerId)
+      .toArray();
+
+    for (const sess of sessions) {
+      const inv = await this.invoices.where('sessionId').equals(sess.id).first();
+      const paymentMethod = inv?.payments?.[0]?.method || (sess.status === 'completed' ? 'paid' : sess.status);
+
+      history.push({
+        id: `hist_sess_${sess.id}`,
+        sourceType: 'session',
+        sourceId: sess.id,
+        code: sess.sessionCode,
+        date: sess.startTime ? sess.startTime.split('T')[0] : (sess.createdAt ? sess.createdAt.split('T')[0] : new Date().toISOString().split('T')[0]),
+        serviceId: sess.serviceId,
+        serviceName: sess.serviceName || 'Session Service',
+        staffId: sess.assignedStaff?.[0]?.staffId,
+        staffName: sess.assignedStaff?.map((s: any) => s.staffName).join(', ') || 'Unassigned',
+        roomId: sess.roomId,
+        roomName: sess.roomName || 'Room',
+        durationMinutes: sess.actualDurationMinutes || sess.plannedDurationMinutes || 60,
+        amountMMK: sess.finalTotalMMK || sess.basePriceMMK || inv?.totalMMK || 0,
+        paymentMethod: String(paymentMethod),
+        status: sess.status,
+        notes: sess.notes,
+        invoiceId: inv?.id,
+      });
+    }
+
+    // 2. Invoices (standalone service sales)
+    const invoices = await this.invoices
+      .where('customerId')
+      .equals(customerId)
+      .toArray();
+
+    for (const inv of invoices) {
+      if (inv.sessionId && sessions.some(s => s.id === inv.sessionId)) {
+        continue;
+      }
+      const serviceItems = inv.items?.filter(it => it.type === 'service' || it.type === 'session_fee') || [];
+      if (serviceItems.length > 0) {
+        for (const sit of serviceItems) {
+          history.push({
+            id: `hist_inv_${inv.id}_${sit.itemId || Math.random()}`,
+            sourceType: 'invoice',
+            sourceId: inv.id,
+            code: inv.invoiceCode || inv.billNumber || 'INV',
+            date: inv.createdAt ? inv.createdAt.split('T')[0] : new Date().toISOString().split('T')[0],
+            serviceId: sit.itemId,
+            serviceName: sit.description,
+            staffId: undefined,
+            staffName: inv.cashierName || 'Staff',
+            roomId: inv.roomId,
+            roomName: inv.roomName || 'Direct / POS',
+            durationMinutes: 60,
+            amountMMK: sit.totalPriceMMK,
+            paymentMethod: inv.payments?.map(p => p.method).join(', ') || 'cash',
+            status: inv.status,
+            notes: inv.notes,
+            invoiceId: inv.id,
+          });
+        }
+      }
+    }
+
+    // Sort descending by date
+    return history.sort((a, b) => b.date.localeCompare(a.date));
   }
 }
 

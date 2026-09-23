@@ -50,6 +50,9 @@ import { ExpensesView } from './components/views/ExpensesView';
 import { SettingsAuditView } from './components/views/SettingsAuditView';
 import { MasterDataView } from './components/views/MasterDataView';
 import { RecordsView } from './components/views/RecordsView';
+import { BookingsView } from './components/views/BookingsView';
+import { MembershipsPackagesView } from './components/views/MembershipsPackagesView';
+import { BookingRecord } from './types';
 
 export default function App() {
   // Application State
@@ -60,6 +63,7 @@ export default function App() {
   // Database collections
   const [rooms, setRooms] = useState<Room[]>([]);
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
+  const [bookings, setBookings] = useState<BookingRecord[]>([]);
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [staffLedger, setStaffLedger] = useState<StaffLedgerEntry[]>([]);
   const [services, setServices] = useState<ServiceItem[]>([]);
@@ -111,6 +115,7 @@ export default function App() {
         invList,
         expList,
         closeList,
+        bkgList,
         auditList,
         userList,
         settleList,
@@ -134,6 +139,7 @@ export default function App() {
         db.invoices.reverse().toArray(),
         db.expenses.reverse().toArray(),
         db.cashClosings.reverse().toArray(),
+        db.bookings.reverse().toArray(),
         db.auditLogs.reverse().toArray(),
         db.users.toArray(),
         db.staffSettlements.reverse().toArray(),
@@ -158,6 +164,7 @@ export default function App() {
       setInvoices(invList);
       setExpenses(expList);
       setClosings(closeList);
+      setBookings(bkgList);
       setAuditLogs(auditList);
       setUsers(userList);
       setSettlements(settleList);
@@ -294,6 +301,22 @@ export default function App() {
           />
         )}
 
+        {activeTab === 'bookings' && (
+          <BookingsView
+            bookings={bookings}
+            rooms={rooms}
+            staff={staff}
+            services={services}
+            customers={customers}
+            currentUser={effectiveUser}
+            lang={lang}
+            onRefreshData={refreshData}
+            onNavigateToRoom={(roomId) => {
+              setActiveTab('rooms');
+            }}
+          />
+        )}
+
         {activeTab === 'pos' && (
           <PosView
             products={products}
@@ -308,6 +331,17 @@ export default function App() {
             lang={lang}
             onRefresh={refreshData}
             onShowReceipt={inv => setActiveInvoiceReceipt(inv)}
+          />
+        )}
+
+        {activeTab === 'memberships' && (
+          <MembershipsPackagesView
+            currentUser={effectiveUser}
+            customers={customers}
+            services={services}
+            staff={staff}
+            lang={lang}
+            onRefresh={refreshData}
           />
         )}
 
@@ -329,6 +363,13 @@ export default function App() {
             currentUser={effectiveUser}
             lang={lang}
             onRefresh={refreshData}
+            bookings={bookings}
+            sessions={sessions}
+            invoices={invoices}
+            services={services}
+            staff={staff}
+            rooms={rooms}
+            onNavigateToTab={(tab: string) => setActiveTab(tab as any)}
           />
         )}
 

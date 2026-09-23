@@ -139,7 +139,7 @@ export class RealtimeClient {
       if (msg.type === 'EVENT' && msg.event) {
         const ev = msg.event;
         const eventId = ev.eventId;
-        const seq = ev.sequenceNumber;
+        const seq = ev.sequenceNumber ?? ev.sequence;
 
         // Deduplicate
         if (eventId && this.seenEventIds.has(eventId)) {

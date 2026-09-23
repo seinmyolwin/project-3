@@ -18,6 +18,7 @@ import {
   Search,
   Sparkles,
   BookOpen,
+  CalendarDays,
   Smartphone,
   Download,
 } from 'lucide-react';
@@ -26,7 +27,9 @@ import { SyncState } from '../services/syncManager';
 
 export type ActiveTab =
   | 'rooms'
+  | 'bookings'
   | 'pos'
+  | 'memberships'
   | 'staff'
   | 'customers'
   | 'expenses'
@@ -70,7 +73,9 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const navItems = [
     { id: 'rooms' as ActiveTab, icon: LayoutGrid, labelEn: 'Rooms & Sessions', labelMm: 'အခန်းနှင့် ဆက်ရှင်' },
+    { id: 'bookings' as ActiveTab, icon: CalendarDays, labelEn: 'Bookings', labelMm: 'ကြိုတင်ချိန်းဆိုမှု' },
     { id: 'pos' as ActiveTab, icon: ShoppingBag, labelEn: 'Direct POS', labelMm: 'အရောင်းကောင်တာ' },
+    { id: 'memberships' as ActiveTab, icon: Sparkles, labelEn: 'Memberships & Packages', labelMm: 'အသင်းဝင်နှင့် ပက်ကေ့ဂျ်' },
     { id: 'staff' as ActiveTab, icon: Users, labelEn: 'Staff & Commissions', labelMm: 'ဝန်ထမ်းနှင့် ကော်မရှင်' },
     { id: 'customers' as ActiveTab, icon: CreditCard, labelEn: 'Customers & Credit', labelMm: 'ဖောက်သည်နှင့် ကြွေးကျန်' },
     { id: 'expenses' as ActiveTab, icon: ReceiptText, labelEn: 'Expenses', labelMm: 'ကုန်ကျစရိတ်' },

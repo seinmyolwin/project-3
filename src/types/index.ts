@@ -171,6 +171,82 @@ export type SessionStatus =
   | 'cancelled'
   | 'voided';
 
+export interface SessionTransferRecord {
+  id: string;
+  sessionId: string;
+  fromRoomId: string;
+  fromRoomName: string;
+  toRoomId: string;
+  toRoomName: string;
+  transferredAt: string;
+  transferredBy: string;
+  reason?: string;
+  sourceRoomHourlyRateMMK?: number;
+  destRoomHourlyRateMMK?: number;
+}
+
+export interface SessionDepositRecord {
+  id: string;
+  sessionId: string;
+  amountMMK: number;
+  paymentMethod: PaymentMethod | string;
+  referenceNo?: string;
+  notes?: string;
+  status: 'active' | 'deducted' | 'refunded';
+  refundedAt?: string;
+  refundedBy?: string;
+  refundReason?: string;
+  cashTransactionId?: string;
+  receivedBy: string;
+  createdAt: string;
+}
+
+export interface SessionAdjustmentRecord {
+  id: string;
+  sessionId: string;
+  field: 'startTime' | 'endTime' | 'duration' | 'rate' | 'discount' | 'other';
+  oldValue: string | number;
+  newValue: string | number;
+  reason: string;
+  adjustedBy: string;
+  adjustedAt: string;
+}
+
+export type PricingRoundingRule =
+  | 'exact_minute'
+  | 'ceil_15'
+  | 'round_15'
+  | 'ceil_30'
+  | 'round_half_hour'
+  | 'ceil_60';
+
+export interface PricingRule {
+  id: string; // Primary key e.g. "prule_ktv_std"
+  code: string;
+  name: string;
+  nameMm: string;
+  description?: string;
+  roomType?: RoomType | 'ALL';
+  roomId?: string;
+  baseHourlyRateMMK: number;
+  weekdayHourlyRateMMK?: number;
+  weekendHourlyRateMMK?: number;
+  isPeakHourEnabled?: boolean;
+  peakHourStart?: string; // "18:00"
+  peakHourEnd?: string; // "23:59"
+  peakHourlyRateMMK?: number;
+  minDurationMinutes: number; // e.g. 30, 60
+  additionalBlockMinutes: number; // e.g. 1, 15, 30, 60
+  roundingRule: PricingRoundingRule;
+  gracePeriodMinutes: number; // e.g. 10
+  discountPercent?: number;
+  discountFixedMMK?: number;
+  isActive: boolean;
+  sortOrder?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface SessionRecord {
   id: string;
   sessionCode: string; // e.g. "SES-2026-0001"
@@ -184,9 +260,12 @@ export interface SessionRecord {
   customerPhone?: string;
   serviceId: string;
   serviceName: string;
+  pricingRuleId?: string;
+  pricingRuleConfig?: PricingRule;
   pricingRule?: SessionPricingRuleType;
   priceSnapshot?: SessionPriceSnapshot;
   basePriceMMK: number;
+  hourlyRateMMK?: number;
   roomSurchargeMMK: number;
   plannedDurationMinutes: number;
   actualDurationMinutes: number;
@@ -196,6 +275,17 @@ export interface SessionRecord {
   assignedStaff: SessionStaffAssignment[];
   extensions?: SessionExtensionRecord[];
   orderItems: SessionOrderItem[];
+  
+  // Phase 26: Deposits, Transfers, Adjustments & Discounts
+  depositAmountMMK?: number;
+  depositPaymentMethod?: PaymentMethod | string;
+  deposits?: SessionDepositRecord[];
+  transfers?: SessionTransferRecord[];
+  adjustments?: SessionAdjustmentRecord[];
+  discountMMK?: number;
+  discountPercent?: number;
+  discountReason?: string;
+  
   notes?: string;
   invoiceId?: string;
   createdBy?: string;
@@ -223,12 +313,16 @@ export type PaymentMethod =
   | 'bank'
   | 'other'
   | 'credit'
+  | 'gift_card'
+  | 'membership'
+  | 'package'
   | 'CASH'
   | 'KBZ_PAY'
   | 'WAVE'
   | 'BANK'
   | 'OTHER'
-  | 'CREDIT';
+  | 'CREDIT'
+  | 'GIFT_CARD';
 
 export interface PaymentRecord {
   id: string;
@@ -302,6 +396,12 @@ export interface Invoice {
   taxPercent: number;
   taxAmountMMK: number;
   totalMMK: number;
+  depositDeductedMMK?: number;
+  giftCardDeductedMMK?: number;
+  membershipDiscountMMK?: number;
+  tipAmountMMK?: number;
+  tips?: TipRecord[];
+  packageRedemptions?: Array<{ customerPackageId: string; packageName: string; quantity: number }>;
   paidAmountMMK: number;
   balanceDueMMK: number;
   outstandingAmountMMK?: number; // alias for balanceDueMMK
@@ -319,10 +419,13 @@ export interface Invoice {
 
 export interface Customer {
   id: string;
+  businessId?: string;
+  branchId?: string;
   name: string;
   nameMm?: string;
   phone: string;
   notes?: string;
+  preferences?: CustomerPreferenceProfile;
   creditAllowed?: boolean;
   creditLimitMMK: number;
   currentBalanceMMK: number; // Positive = owes money (debt)
@@ -490,6 +593,7 @@ export interface AuditLog {
   oldValue?: string;
   newValue?: string;
   reason?: string;
+  details?: string;
   ipAddress?: string;
 }
 
@@ -966,6 +1070,10 @@ export type CashTransactionCategory =
   | 'staff_settlement_cash'
   | 'opening_float'
   | 'cash_drop'
+  | 'membership_sale_cash'
+  | 'package_sale_cash'
+  | 'gift_card_sale_cash'
+  | 'tip_cash'
   | 'manual_adjustment';
 
 export interface CashTransaction {
@@ -999,5 +1107,297 @@ export interface BackupMetadata {
   notes?: string;
 }
 
+// 43. Operation Queue Record (Durable Offline-First Mutation Queue)
+export interface OperationQueueRecord {
+  id: string; // Primary key e.g. "op_queue_1790000000"
+  operationId: string;
+  operationType: string;
+  businessId: string;
+  branchId: string;
+  deviceId: string;
+  entityType: string;
+  entityId: string;
+  payload: Record<string, any>;
+  status: 'PENDING' | 'SYNCED' | 'FAILED' | 'CONFLICT';
+  createdAt: string;
+  syncedAt?: string;
+  retryCount: number;
+  lastError?: string;
+}
+
+// ==========================================
+// PHASE 25: BOOKINGS & APPOINTMENTS
+// ==========================================
+export type BookingStatus =
+  | 'PENDING'
+  | 'CONFIRMED'
+  | 'CHECKED_IN'
+  | 'IN_SERVICE'
+  | 'COMPLETED'
+  | 'CANCELLED'
+  | 'NO_SHOW';
+
+export interface BookingRecord {
+  id: string; // Primary key e.g. "bkg_123456"
+  bookingCode: string; // e.g. "BKG-2026-0001"
+  businessId: string;
+  branchId: string;
+  customerId?: string;
+  customerName: string;
+  customerPhone?: string;
+  serviceId?: string;
+  serviceName?: string;
+  roomId?: string;
+  roomName?: string;
+  staffId?: string;
+  staffName?: string;
+  date: string; // YYYY-MM-DD
+  startTime: string; // HH:mm
+  endTime: string; // HH:mm
+  durationMinutes: number;
+  status: BookingStatus;
+  notes?: string;
+  depositAmountMMK?: number;
+  depositPaymentMethod?: string;
+  sessionId?: string;
+  invoiceId?: string;
+  cancellationReason?: string;
+  cancelledBy?: string;
+  cancelledAt?: string;
+  checkedInAt?: string;
+  checkedInBy?: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ==========================================
+// PHASE 27: MEMBERSHIPS, PACKAGES, GIFT CARDS & TIPS
+// ==========================================
+
+export interface MembershipPlan {
+  id: string; // e.g. "mplan_gold"
+  businessId?: string;
+  branchId?: string;
+  name: string; // e.g. "Gold VIP Club"
+  nameMm?: string;
+  durationDays: number; // e.g. 30, 90, 365
+  priceMMK: number;
+  discountPercent: number; // e.g. 15 for 15% off
+  benefitsSummary?: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CustomerMembershipStatus = 'active' | 'expired' | 'cancelled';
+
+export interface CustomerMembership {
+  id: string;
+  businessId?: string;
+  branchId?: string;
+  customerId: string;
+  customerName: string;
+  customerPhone?: string;
+  planId: string;
+  planName: string;
+  startDate: string; // YYYY-MM-DD
+  expiryDate: string; // YYYY-MM-DD
+  discountPercent: number;
+  paidAmountMMK: number;
+  paymentMethod: PaymentMethod | string;
+  status: CustomerMembershipStatus;
+  invoiceId?: string;
+  createdBy?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ServicePackage {
+  id: string; // e.g. "spkg_10massage"
+  businessId?: string;
+  branchId?: string;
+  name: string;
+  nameMm?: string;
+  serviceId: string;
+  serviceName: string;
+  totalQty: number; // e.g. 10 sessions
+  priceMMK: number; // e.g. 120,000 MMK
+  validityDays: number; // e.g. 180 days
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CustomerPackageStatus = 'active' | 'exhausted' | 'expired' | 'cancelled';
+
+export interface CustomerPackage {
+  id: string;
+  businessId?: string;
+  branchId?: string;
+  customerId: string;
+  customerName: string;
+  customerPhone?: string;
+  packageId: string;
+  packageName: string;
+  serviceId: string;
+  serviceName: string;
+  purchasedQty: number;
+  usedQty: number;
+  remainingQty: number;
+  expiryDate: string; // YYYY-MM-DD
+  purchasePriceMMK: number;
+  paymentMethod: PaymentMethod | string;
+  status: CustomerPackageStatus;
+  invoiceId?: string;
+  createdBy?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PackageRedemptionRecord {
+  id: string;
+  businessId?: string;
+  branchId?: string;
+  customerPackageId: string;
+  customerId: string;
+  sessionId?: string;
+  invoiceId?: string;
+  serviceId: string;
+  serviceName: string;
+  quantityRedeemed: number;
+  redeemedAt: string;
+  redeemedBy: string;
+  notes?: string;
+}
+
+export type GiftCardStatus = 'active' | 'exhausted' | 'expired' | 'voided';
+
+export interface GiftCard {
+  id: string;
+  businessId?: string;
+  branchId?: string;
+  cardNumber: string; // e.g. "GC-2026-00123"
+  initialAmountMMK: number;
+  currentBalanceMMK: number;
+  customerId?: string;
+  customerName?: string;
+  issueDate: string;
+  expiryDate: string;
+  issuedBy: string;
+  status: GiftCardStatus;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GiftCardRedemptionRecord {
+  id: string;
+  businessId?: string;
+  branchId?: string;
+  giftCardId: string;
+  cardNumber: string;
+  sessionId?: string;
+  invoiceId?: string;
+  amountMMK: number;
+  balanceBeforeMMK: number;
+  balanceAfterMMK: number;
+  redeemedAt: string;
+  redeemedBy: string;
+  notes?: string;
+}
+
+export interface TipRecord {
+  id: string;
+  businessId?: string;
+  branchId?: string;
+  sessionId?: string;
+  invoiceId?: string;
+  staffId: string;
+  staffName: string;
+  amountMMK: number;
+  paymentMethod: PaymentMethod | string;
+  receivedBy: string;
+  notes?: string;
+  createdAt: string;
+}
+
+// ==========================================
+// PHASE 28: CUSTOMER 360, SERVICE NOTES & REBOOKING
+// ==========================================
+
+export type CustomerNoteCategory =
+  | 'preference'
+  | 'service'
+  | 'treatment'
+  | 'follow_up'
+  | 'general';
+
+export interface CustomerPreferenceProfile {
+  pressure?: 'soft' | 'medium' | 'firm' | 'deep_tissue' | 'not_specified';
+  massagePressure?: 'soft' | 'medium' | 'firm' | 'deep_tissue' | 'not_specified';
+  temperature?: 'cool' | 'normal' | 'warm' | 'not_specified';
+  roomTemperature?: 'cool' | 'normal' | 'warm' | 'not_specified';
+  drink?: string;
+  preferredDrink?: string;
+  oilOrFragrance?: string;
+  preferredOil?: string;
+  sensitivities?: string;
+  sensitivitiesAndAllergies?: string;
+  preferredStaffId?: string;
+  preferredStaffName?: string;
+  preferredRoomType?: RoomType | string;
+  specialRequests?: string;
+}
+
+export type Staff = StaffMember;
+export type Booking = BookingRecord;
+export type Session = SessionRecord;
+
+export interface CustomerServiceNote {
+  id: string;
+  businessId?: string;
+  branchId?: string;
+  customerId: string;
+  customerName?: string;
+  sessionId?: string;
+  bookingId?: string;
+  serviceId?: string;
+  serviceName?: string;
+  staffId?: string;
+  staffName?: string;
+  category: CustomerNoteCategory;
+  title: string;
+  content: string;
+  tags?: string[];
+  focusAreas?: string[];
+  isPrivate?: boolean; // sensitive: visible only to owner/manager/admin
+  createdAt: string;
+  createdBy: string;
+  createdById?: string;
+  updatedAt?: string;
+}
+
+export interface CustomerServiceHistoryItem {
+  id: string;
+  sourceType: 'session' | 'invoice' | 'booking';
+  sourceId: string;
+  code: string;
+  date: string;
+  serviceId?: string;
+  serviceName: string;
+  staffId?: string;
+  staffName: string;
+  roomId?: string;
+  roomName: string;
+  durationMinutes: number;
+  amountMMK: number;
+  paymentMethod: string;
+  status: string;
+  notes?: string;
+  invoiceId?: string;
+}
+
 export * from './multiDevice';
+
 
