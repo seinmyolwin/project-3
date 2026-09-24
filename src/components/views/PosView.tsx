@@ -896,76 +896,71 @@ export const PosView: React.FC<PosViewProps> = ({
     .reduce((sum, i) => sum + (i.balanceDueMMK || 0), 0);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3 sm:space-y-4">
       {/* Top Header & Metrics Bar */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-gray-200/80 bg-white p-5 shadow-xs">
+      <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between rounded-xl border border-gray-200/80 bg-white p-3 sm:p-4 shadow-xs">
         <div>
-          <div className="flex items-center gap-2 text-emerald-800">
-            <Receipt className="h-6 w-6 text-emerald-600" />
-            <h1 className="text-xl font-bold tracking-tight text-gray-900">
-              {isMm ? 'အရောင်းနှင့် ဘေလ်စီမံခန့်ခွဲမှု (POS & Billing)' : 'Billing & Point of Sale (POS)'}
+          <div className="flex items-center gap-1.5 text-emerald-800">
+            <Receipt className="h-5 w-5 text-emerald-600 shrink-0" />
+            <h1 className="text-base sm:text-lg font-bold tracking-tight text-gray-900">
+              {isMm ? 'အရောင်းနှင့် ဘေလ်စီမံခန့်ခွဲမှု (POS)' : 'Billing & Point of Sale (POS)'}
             </h1>
           </div>
-          <p className="mt-1 text-xs text-gray-500">
-            {isMm
-              ? 'တိုက်ရိုက်အရောင်း၊ အခန်းနှင့် ဝန်ဆောင်မှုဘေလ်ရှင်းခြင်း၊ အကြွေးနှင့် ဘေလ်မှတ်တမ်းများ'
-              : 'Direct sales, session checkout, split tender payments, credit management, and billing ledger.'}
-          </p>
         </div>
 
         {/* Quick KPI Counters */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 px-3.5 py-2">
-            <span className="block text-[10px] font-bold uppercase tracking-wider text-emerald-700">
-              {isMm ? 'ယနေ့ အရောင်းရငွေ' : "Today's Revenue"}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="rounded-lg border border-emerald-100 bg-emerald-50/70 px-2.5 py-1">
+            <span className="block text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-emerald-700">
+              {isMm ? 'ယနေ့ အရောင်း' : "Today's Rev"}
             </span>
-            <span className="text-sm font-extrabold text-emerald-900">{formatMMK(todayTotalRevenue)}</span>
+            <span className="text-xs sm:text-sm font-extrabold text-emerald-900">{formatMMK(todayTotalRevenue)}</span>
           </div>
 
-          <div className="rounded-xl border border-amber-100 bg-amber-50/70 px-3.5 py-2">
-            <span className="block text-[10px] font-bold uppercase tracking-wider text-amber-700">
-              {isMm ? 'ရရန်ကျန်ငွေ / အကြွေး' : 'Outstanding Balance'}
+          <div className="rounded-lg border border-amber-100 bg-amber-50/70 px-2.5 py-1">
+            <span className="block text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-amber-700">
+              {isMm ? 'အကြွေးကျန်' : 'Outstanding'}
             </span>
-            <span className="text-sm font-extrabold text-amber-900">{formatMMK(totalOutstandingBalance)}</span>
+            <span className="text-xs sm:text-sm font-extrabold text-amber-900">{formatMMK(totalOutstandingBalance)}</span>
           </div>
 
-          <div className="rounded-xl border border-blue-100 bg-blue-50/70 px-3.5 py-2">
-            <span className="block text-[10px] font-bold uppercase tracking-wider text-blue-700">
-              {isMm ? 'လက်ရှိ ဝန်ဆောင်မှုများ' : 'Active Sessions'}
+          <div className="rounded-lg border border-blue-100 bg-blue-50/70 px-2.5 py-1">
+            <span className="block text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-blue-700">
+              {isMm ? 'အခန်းများ' : 'Active'}
             </span>
-            <span className="text-sm font-extrabold text-blue-900">{activeSessions.length}</span>
+            <span className="text-xs sm:text-sm font-extrabold text-blue-900">{activeSessions.length}</span>
           </div>
         </div>
       </div>
 
       {/* Main Module Tabs */}
-      <div className="flex border-b border-gray-200">
+      <div className="flex border-b border-gray-200 overflow-x-auto scrollbar-none">
         <button
           type="button"
           onClick={() => setActiveSubTab('direct')}
-          className={`flex items-center gap-2 border-b-2 px-5 py-3 text-xs font-bold transition-all ${
+          className={`flex items-center gap-1.5 border-b-2 px-3.5 py-2 text-xs font-bold transition-all whitespace-nowrap shrink-0 ${
             activeSubTab === 'direct'
               ? 'border-emerald-600 text-emerald-700'
               : 'border-transparent text-gray-500 hover:text-gray-700'
           }`}
         >
-          <ShoppingBag className="h-4 w-4" />
-          <span>{isMm ? 'တိုက်ရိုက် အရောင်း (Direct Sales / Walk-in)' : 'Direct POS Sales'}</span>
+          <ShoppingBag className="h-3.5 w-3.5" />
+          <span>{isMm ? 'တိုက်ရိုက် အရောင်း (Direct Sales)' : 'Direct POS Sales'}</span>
         </button>
 
         <button
           type="button"
           onClick={() => setActiveSubTab('sessions')}
-          className={`flex items-center gap-2 border-b-2 px-5 py-3 text-xs font-bold transition-all relative ${
+          className={`flex items-center gap-1.5 border-b-2 px-3.5 py-2 text-xs font-bold transition-all relative whitespace-nowrap shrink-0 ${
             activeSubTab === 'sessions'
               ? 'border-emerald-600 text-emerald-700'
               : 'border-transparent text-gray-500 hover:text-gray-700'
           }`}
         >
-          <Clock className="h-4 w-4" />
-          <span>{isMm ? 'အခန်း / ဝန်ဆောင်မှု ဘေလ်ရှင်းရန်' : 'Active Sessions Billing'}</span>
+          <Clock className="h-3.5 w-3.5" />
+          <span>{isMm ? 'အခန်း ဘေလ်ရှင်းရန်' : 'Active Sessions'}</span>
           {activeSessions.length > 0 && (
-            <span className="rounded-full bg-emerald-600 px-1.5 py-0.2 text-[10px] font-bold text-white">
+            <span className="rounded-full bg-emerald-600 px-1.5 py-0.2 text-[9px] font-bold text-white">
               {activeSessions.length}
             </span>
           )}

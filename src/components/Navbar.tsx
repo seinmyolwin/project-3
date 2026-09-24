@@ -91,12 +91,13 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   return (
     <header className="sticky top-0 z-40 border-b border-cyan-500/20 bg-[#07090e]/95 backdrop-blur-md shadow-md">
-      {/* Top Banner with Compact Proportioned Boxes */}
-      <div className="flex flex-wrap lg:flex-nowrap items-center justify-between gap-2 px-3 py-2 bg-[#0b0f19] border-b border-cyan-900/30">
-        <div className="flex items-center gap-2.5 min-w-0">
+      {/* Top Header Row - Compact, Proportioned, Non-wrapping */}
+      <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 sm:px-4 sm:py-2 bg-[#0b0f19] border-b border-cyan-900/30">
+        {/* Brand & Status Section */}
+        <div className="flex items-center gap-2 min-w-0">
           <div
             onClick={() => onSelectTab('dashboard')}
-            className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#07090e] border border-cyan-500/40 shadow-xs overflow-hidden shrink-0 cursor-pointer hover:border-cyan-400 transition-all"
+            className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-lg bg-[#07090e] border border-cyan-500/40 shadow-xs overflow-hidden shrink-0 cursor-pointer hover:border-cyan-400 transition-all"
             title="Go to Dashboard"
           >
             {!logoFailed ? (
@@ -124,65 +125,78 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
             )}
           </div>
+
           <div className="min-w-0">
-            <h1 className="text-xs sm:text-sm font-extrabold tracking-tight text-white truncate">
+            <h1 className="text-xs sm:text-sm font-extrabold tracking-tight text-white truncate max-w-[120px] xs:max-w-[160px] sm:max-w-[260px] md:max-w-none">
               {isMm ? settings?.shopNameMm || 'ရွှေသီရိ စပါနှင့် ကာရာအိုကေ' : settings?.shopName || 'Shwe Thiri Spa & KTV'}
             </h1>
-            <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-              <div className="inline-flex items-center gap-1 rounded-md bg-emerald-500/20 px-2 py-0.5 text-[10px] font-black text-emerald-300 border border-emerald-500/50 shadow-xs">
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <div className="inline-flex items-center gap-1 rounded-md bg-emerald-500/20 px-1.5 py-0.5 text-[9px] sm:text-[10px] font-black text-emerald-300 border border-emerald-500/50 shadow-xs">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping inline-block"></span>
                 <span>LIVE!</span>
               </div>
 
               <button
                 onClick={onOpenLANModal}
-                className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold border transition-all cursor-pointer ${
+                className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[9px] sm:text-[10px] font-bold border transition-all cursor-pointer ${
                   syncState === 'ONLINE_LAN' || syncState === 'SYNCED'
                     ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40'
                     : 'bg-cyan-500/15 text-cyan-300 border-cyan-500/40'
                 }`}
+                title={syncMessage || 'LAN Connection Status'}
               >
-                <Radio className="h-3 w-3 animate-pulse" />
+                <Radio className="h-2.5 w-2.5 sm:h-3 sm:w-3 animate-pulse" />
                 <span>{syncState === 'ONLINE_LAN' || syncState === 'SYNCED' ? 'LAN' : 'Offline'}</span>
               </button>
-
-              <button
-                onClick={onOpenSearchModal}
-                className="inline-flex items-center gap-1 rounded-md bg-purple-500/15 px-2 py-0.5 text-[10px] font-bold text-purple-300 border border-purple-500/40 hover:bg-purple-500/25"
-              >
-                <Search className="h-3 w-3 text-purple-400" />
-                <span>{isMm ? 'ရှာရန်' : 'Search'}</span>
-              </button>
-
-              {currentUser?.role === 'owner' && (
-                <button
-                  onClick={onOpenSetupWizard}
-                  className="inline-flex items-center gap-1 rounded-md bg-gradient-to-r from-emerald-500 to-cyan-500 px-2 py-0.5 text-[10px] font-black text-slate-950 border border-emerald-400/50"
-                >
-                  <Sparkles className="h-3 w-3" />
-                  <span>Setup</span>
-                </button>
-              )}
-
-              {onOpenPWAModal && (
-                <button
-                  onClick={onOpenPWAModal}
-                  className="inline-flex items-center gap-1 rounded-md bg-cyan-500/20 px-2 py-0.5 text-[10px] font-bold text-cyan-200 border border-cyan-500/40"
-                >
-                  <Download className="h-3 w-3" />
-                  <span>App</span>
-                </button>
-              )}
             </div>
           </div>
         </div>
 
-        {/* Right side: language & user info */}
-        <div className="flex items-center gap-2">
+        {/* Header Action Tools & User Profile */}
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+          {/* Quick Search */}
+          <button
+            onClick={onOpenSearchModal}
+            className="inline-flex items-center gap-1 rounded-lg bg-purple-500/15 p-1.5 sm:px-2 sm:py-1 text-[10px] font-bold text-purple-300 border border-purple-500/40 hover:bg-purple-500/25 transition-all"
+            title={isMm ? 'ရှာဖွေရန်' : 'Search (Ctrl+K)'}
+            aria-label="Search"
+          >
+            <Search className="h-3.5 w-3.5 text-purple-400" />
+            <span className="hidden md:inline">{isMm ? 'ရှာရန်' : 'Search'}</span>
+          </button>
+
+          {/* Setup Wizard (Owner Only) */}
+          {currentUser?.role === 'owner' && (
+            <button
+              onClick={onOpenSetupWizard}
+              className="inline-flex items-center gap-1 rounded-lg bg-gradient-to-r from-emerald-500 to-cyan-500 p-1.5 sm:px-2 sm:py-1 text-[10px] font-black text-slate-950 border border-emerald-400/50 transition-all"
+              title="Setup Wizard"
+              aria-label="Setup Wizard"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              <span className="hidden md:inline">Setup</span>
+            </button>
+          )}
+
+          {/* App / PWA Install */}
+          {onOpenPWAModal && (
+            <button
+              onClick={onOpenPWAModal}
+              className="inline-flex items-center gap-1 rounded-lg bg-cyan-500/20 p-1.5 sm:px-2 sm:py-1 text-[10px] font-bold text-cyan-200 border border-cyan-500/40 hover:bg-cyan-500/30 transition-all"
+              title="Install App / PWA"
+              aria-label="Install App"
+            >
+              <Download className="h-3.5 w-3.5" />
+              <span className="hidden lg:inline">App</span>
+            </button>
+          )}
+
           {/* Language Toggle */}
           <button
             onClick={onToggleLang}
-            className="flex items-center gap-1 rounded-lg border border-cyan-500/30 bg-[#111827] px-2.5 py-1 text-[11px] font-bold text-cyan-300 hover:bg-cyan-950/40"
+            className="flex items-center gap-1 rounded-lg border border-cyan-500/30 bg-[#111827] px-2 py-1 text-[10px] sm:text-[11px] font-bold text-cyan-300 hover:bg-cyan-950/40 transition-all"
+            title={isMm ? 'Switch to English' : 'မြန်မာဘာသာသို့ ပြောင်းမည်'}
+            aria-label="Toggle Language"
           >
             <Globe className="h-3.5 w-3.5 text-cyan-400" />
             <span>{isMm ? 'EN' : 'မြန်မာ'}</span>
@@ -191,18 +205,20 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Current User & PIN switch */}
           <button
             onClick={onOpenPINModal}
-            className="flex items-center gap-2 rounded-lg border border-purple-500/30 bg-[#111827] px-2.5 py-1 text-xs text-slate-200 hover:bg-purple-950/30"
+            className="flex items-center gap-1.5 rounded-lg border border-purple-500/30 bg-[#111827] px-2 py-1 text-xs text-slate-200 hover:bg-purple-950/30 transition-all"
+            title="Switch User / Lock PIN"
+            aria-label="Switch User"
           >
-            <div className="h-2 w-2 rounded-full bg-emerald-400 animate-ping" />
-            <div className="text-left">
-              <div className="font-bold text-white text-[11px] truncate max-w-[100px] sm:max-w-[130px]">
+            <div className="h-2 w-2 rounded-full bg-emerald-400 animate-ping shrink-0" />
+            <div className="text-left hidden sm:block">
+              <div className="font-bold text-white text-[11px] truncate max-w-[90px] md:max-w-[130px]">
                 {currentUser?.name || 'Cashier'}
               </div>
-              <div className="text-[9px] text-purple-400 uppercase font-semibold">
+              <div className="text-[9px] text-purple-400 uppercase font-semibold leading-tight">
                 {currentUser?.role || 'cashier'}
               </div>
             </div>
-            <Lock className="h-3 w-3 text-purple-400" />
+            <Lock className="h-3.5 w-3.5 text-purple-400 shrink-0" />
           </button>
 
           {/* Explicit Logout Button */}
@@ -210,7 +226,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               onClick={onLogout}
               title={isMm ? 'အကောင့်မှထွက်မည်' : 'Logout'}
-              className="flex items-center gap-1 rounded-lg border border-rose-500/30 bg-rose-950/30 px-2 py-1.5 text-xs text-rose-300 hover:bg-rose-900/50 hover:text-white transition-all cursor-pointer"
+              aria-label="Logout"
+              className="flex items-center justify-center rounded-lg border border-rose-500/30 bg-rose-950/30 p-1.5 text-rose-300 hover:bg-rose-900/50 hover:text-white transition-all cursor-pointer"
             >
               <LogOut className="h-3.5 w-3.5" />
             </button>
@@ -218,9 +235,9 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
       </div>
 
-      {/* Main Compact Tab Navigation Bar - One row for Phone, Tablet, PC */}
-      <div className="flex overflow-x-auto px-3 py-1.5 bg-[#0b0f19] border-t border-slate-800 scrollbar-none">
-        <nav className="flex gap-1.5 w-full justify-start lg:justify-center" aria-label="Tabs">
+      {/* Main Compact Tab Navigation Bar - Ultra-compact single horizontal scrollable row */}
+      <div className="flex overflow-x-auto px-2 py-1 sm:px-3 sm:py-1.5 bg-[#0b0f19] border-t border-slate-800 scrollbar-none">
+        <nav className="flex gap-1 sm:gap-1.5 w-full justify-start lg:justify-center" aria-label="Tabs">
           {navItems.map(item => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
@@ -228,7 +245,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 key={item.id}
                 onClick={() => onSelectTab(item.id)}
-                className={`flex items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-bold transition-all shrink-0 ${
+                className={`flex items-center gap-1 sm:gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1 sm:px-3 sm:py-1.5 text-xs font-bold transition-all shrink-0 ${
                   isActive
                     ? 'bg-gradient-to-r from-cyan-600 to-purple-600 text-white shadow-sm border border-cyan-400/40'
                     : 'bg-[#111827] text-slate-300 border border-slate-800 hover:bg-[#1f293d] hover:text-white'

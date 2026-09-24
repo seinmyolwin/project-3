@@ -973,35 +973,7 @@ export class PersistentSQLiteStorage {
       VALUES ('PAIR-MANDALAY-2026', 'BIZ_SHOP_001', 'BR_MAIN', 'CASHIER', '${expiresAt}', 0, 'SYSTEM');
     `);
 
-    // Seed Users with Salted SHA-256 PIN & Password Hashing
-    const ownerSalt = crypto.randomBytes(16).toString('hex');
-    const ownerHash = crypto.createHash('sha256').update('1234' + ownerSalt).digest('hex');
-
-    const aungminSalt = crypto.randomBytes(16).toString('hex');
-    const aungminHash = crypto.createHash('sha256').update('aungmin123' + aungminSalt).digest('hex');
-
-    const mgrSalt = crypto.randomBytes(16).toString('hex');
-    const mgrHash = crypto.createHash('sha256').update('5678' + mgrSalt).digest('hex');
-
-    const staffSalt = crypto.randomBytes(16).toString('hex');
-    const staffHash = crypto.createHash('sha256').update('0000' + staffSalt).digest('hex');
-
-    const dawhlaSalt = crypto.randomBytes(16).toString('hex');
-    const dawhlaHash = crypto.createHash('sha256').update('dawhla123' + dawhlaSalt).digest('hex');
-
-    const koaungSalt = crypto.randomBytes(16).toString('hex');
-    const koaungHash = crypto.createHash('sha256').update('koaung123' + koaungSalt).digest('hex');
-
-    this.db.run(`
-      INSERT OR IGNORE INTO users (id, business_id, branch_id, username, name, role, password_hash, salt, is_active, created_at)
-      VALUES 
-        ('usr_owner', 'BIZ_SHOP_001', 'BR_MAIN', 'owner', 'ကိုအောင်မင်း (Shop Owner)', 'owner', '${ownerHash}', '${ownerSalt}', 1, '${now}'),
-        ('usr_manager', 'BIZ_SHOP_001', 'BR_MAIN', 'manager', 'ဒေါ်လှ (Manager)', 'manager', '${mgrHash}', '${mgrSalt}', 1, '${now}'),
-        ('usr_cashier', 'BIZ_SHOP_001', 'BR_MAIN', 'cashier', 'ကိုအောင် (Cashier)', 'cashier', '${staffHash}', '${staffSalt}', 1, '${now}'),
-        ('usr_owner_1', 'BIZ_SHOP_001', 'BR_MAIN', 'aungmin', 'ကိုအောင်မင်း (Shop Owner)', 'owner', '${aungminHash}', '${aungminSalt}', 1, '${now}'),
-        ('usr_mgr_1', 'BIZ_SHOP_001', 'BR_MAIN', 'dawhla', 'ဒေါ်လှ (Manager)', 'manager', '${dawhlaHash}', '${dawhlaSalt}', 1, '${now}'),
-        ('usr_staff_1', 'BIZ_SHOP_001', 'BR_MAIN', 'koaung', 'ကိုအောင် (Cashier)', 'cashier', '${koaungHash}', '${koaungSalt}', 1, '${now}');
-    `);
+    // Users table created empty. Initial Owner user is created via First-Run Owner Setup.
 
     // Seed Sample Rooms
     this.db.run(`
@@ -6265,19 +6237,19 @@ export class PersistentSQLiteStorage {
       if (!this.db) throw new Error('Database uninitialized');
       const now = new Date().toISOString();
 
-      const custStmt = this.db.prepare(`SELECT name, loyalty_points FROM customers WHERE id = ?`);
+      const custStmt = this.db.prepare(`SELECT balance_after FROM customer_loyalty_ledger WHERE customer_id = ? ORDER BY created_at DESC LIMIT 1`);
       custStmt.bind([params.customerId]);
       let currentPts = 0;
-      let custName = params.customerName || 'Customer';
       if (custStmt.step()) {
         const cObj = custStmt.getAsObject();
-        currentPts = (cObj.loyalty_points as number) || 0;
-        custName = (cObj.name as string) || custName;
+        currentPts = (cObj.balance_after as number) || 0;
       }
       custStmt.free();
 
-      const newBal = Math.max(0, currentPts + (params.points || 0));
-      this.db.run(`UPDATE customers SET loyalty_points = ? WHERE id = ?`, [newBal, params.customerId]);
+      const ptsVal = Math.abs(params.points || 0);
+      const change = params.type === 'redeem' ? -ptsVal : ptsVal;
+      const newBal = Math.max(0, currentPts + change);
+      const custName = params.customerName || 'Customer';
 
       const entryId = `loy_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
       this.db.run(`
@@ -6287,7 +6259,7 @@ export class PersistentSQLiteStorage {
         entryId,
         params.customerId,
         custName,
-        params.points,
+        ptsVal,
         newBal,
         params.type || 'earn',
         params.referenceType || 'manual',
@@ -6297,8 +6269,40 @@ export class PersistentSQLiteStorage {
         now,
       ]);
 
-      return { id: entryId, balanceAfter: newBal };
+      return { id: entryId, points: ptsVal, balanceAfter: newBal };
     });
+  }
+
+  // Performance Bonus Rules
+  public getPerformanceBonusRules(businessId: string = 'BIZ_SHOP_001'): any[] {
+    if (!this.db) return [];
+    const stmt = this.db.prepare(`SELECT * FROM performance_bonus_rules WHERE business_id = ? ORDER BY created_at DESC`);
+    stmt.bind([businessId]);
+    const res: any[] = [];
+    while (stmt.step()) res.push(stmt.getAsObject());
+    stmt.free();
+    return res;
+  }
+
+  public savePerformanceBonusRule(rule: any): any {
+    if (!this.db) throw new Error('Database uninitialized');
+    const now = new Date().toISOString();
+    this.db.run(`
+      INSERT OR REPLACE INTO performance_bonus_rules (id, business_id, branch_id, rule_name, min_revenue_mmk, min_sessions, min_attendance_days, bonus_amount_mmk, is_active, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      rule.id || `prule_${Date.now()}`,
+      rule.businessId || 'BIZ_SHOP_001',
+      rule.branchId || 'BR_MAIN',
+      rule.ruleName,
+      rule.minRevenueMMK || 0,
+      rule.minSessions || 0,
+      rule.minAttendanceDays || 0,
+      rule.bonusAmountMMK || 0,
+      rule.isActive !== false ? 1 : 0,
+      rule.createdAt || now,
+    ]);
+    return rule;
   }
 
   public close(): void {

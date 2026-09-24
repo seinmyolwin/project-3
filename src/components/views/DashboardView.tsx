@@ -341,53 +341,48 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3.5 sm:space-y-5">
       {/* 1. Manager Overview Header */}
-      <div className="relative overflow-hidden rounded-3xl border border-cyan-500/30 bg-gradient-to-r from-slate-950 via-slate-900 to-cyan-950 p-6 shadow-2xl text-white">
-        <div className="absolute -right-10 -top-10 h-64 w-64 rounded-full bg-cyan-500/10 blur-3xl pointer-events-none" />
-        <div className="absolute right-20 bottom-0 h-48 w-48 rounded-full bg-purple-500/10 blur-3xl pointer-events-none" />
+      <div className="relative overflow-hidden rounded-2xl border border-cyan-500/30 bg-gradient-to-r from-slate-950 via-slate-900 to-cyan-950 p-3.5 sm:p-5 shadow-xl text-white">
+        <div className="absolute -right-10 -top-10 h-32 w-32 rounded-full bg-cyan-500/10 blur-2xl pointer-events-none" />
+        <div className="absolute right-20 bottom-0 h-24 w-24 rounded-full bg-purple-500/10 blur-2xl pointer-events-none" />
 
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-black text-emerald-400 border border-emerald-500/40">
-                <span className="h-2 w-2 rounded-full bg-emerald-400 animate-ping" />
+            <div className="flex items-center gap-2 mb-0.5">
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] sm:text-xs font-black text-emerald-400 border border-emerald-500/40">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping" />
                 {isMm ? 'ဆိုင်လုပ်ငန်းများ ပုံမှန်လည်ပတ်နေပါသည်' : 'Shop Operations Active'}
               </span>
-              <span className="text-xs text-cyan-300 font-mono">
+              <span className="text-[10px] sm:text-xs text-cyan-300 font-mono">
                 {todayStr} • {currentUser.name} ({currentUser.role})
               </span>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
+            <h1 className="text-lg sm:text-xl font-extrabold tracking-tight text-white">
               {isMm ? (settings?.shopNameMm || 'ရွှေသီရိ စပါနှင့် ကာရာအိုကေ') : (settings?.shopName || 'Shwe Thiri Spa & KTV')}
             </h1>
-            <p className="text-xs sm:text-sm text-slate-300 mt-1">
-              {isMm
-                ? 'စီမံခန့်ခွဲမှုနေရာ'
-                : 'Management Area'}
-            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => onNavigateTab('pos')}
-              className="flex items-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-2.5 text-xs font-black text-white shadow-lg hover:from-cyan-400 hover:to-blue-500 active:scale-95 transition-all cursor-pointer"
+              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-3 py-2 text-xs font-black text-white shadow-md hover:from-cyan-400 hover:to-blue-500 active:scale-95 transition-all cursor-pointer"
             >
-              <ShoppingBag className="h-4 w-4" />
+              <ShoppingBag className="h-3.5 w-3.5" />
               <span>{isMm ? 'အရောင်းကောင်တာ (POS)' : 'New POS Sale'}</span>
             </button>
             <button
               onClick={() => onNavigateTab('rooms')}
-              className="flex items-center gap-2 rounded-2xl bg-gradient-to-r from-purple-600 to-indigo-600 px-4 py-2.5 text-xs font-black text-white shadow-lg hover:from-purple-500 hover:to-indigo-500 active:scale-95 transition-all cursor-pointer"
+              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 px-3 py-2 text-xs font-black text-white shadow-md hover:from-purple-500 hover:to-indigo-500 active:scale-95 transition-all cursor-pointer"
             >
-              <BedDouble className="h-4 w-4" />
+              <BedDouble className="h-3.5 w-3.5" />
               <span>{isMm ? 'အခန်းများကြည့်ရန်' : 'Room Manager'}</span>
             </button>
           </div>
         </div>
 
         {actionMessage && (
-          <div className="mt-4 flex items-center justify-between rounded-xl bg-emerald-500/20 border border-emerald-500/40 p-3 text-xs text-emerald-200">
+          <div className="mt-2.5 flex items-center justify-between rounded-lg bg-emerald-500/20 border border-emerald-500/40 p-2 text-xs text-emerald-200">
             <div className="flex items-center gap-2">
               <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
               <span>{actionMessage}</span>
@@ -398,16 +393,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       </div>
 
       {/* Date Range Filter Bar for Dashboard */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-xl text-white">
+      <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-900 border border-slate-800 p-2.5 sm:p-3 rounded-xl shadow-md text-white">
         <div className="flex items-center gap-2">
-          <CalendarDays className="h-4 w-4 text-cyan-400" />
-          <span className="text-xs font-bold">{isMm ? 'ဒက်ရှ်ဘုတ် ကာလအလိုက် စစ်ဆေးရန် (Period):' : 'Dashboard Period Filter:'}</span>
+          <CalendarDays className="h-3.5 w-3.5 text-cyan-400" />
+          <span className="text-xs font-bold">{isMm ? 'ကာလ စစ်ဆေးရန်:' : 'Period Filter:'}</span>
         </div>
-        <div className="flex flex-wrap items-center gap-1 bg-slate-800 p-1 rounded-xl">
+        <div className="flex flex-wrap items-center gap-1 bg-slate-800 p-1 rounded-lg">
           {[
             { id: 'today', labelEn: 'Today', labelMm: 'ယနေ့' },
             { id: 'yesterday', labelEn: 'Yesterday', labelMm: 'မနေ့က' },
-            { id: 'week', labelEn: 'Last 7 Days', labelMm: '၇ ရက်' },
+            { id: 'week', labelEn: '7 Days', labelMm: '၇ ရက်' },
             { id: 'month', labelEn: 'This Month', labelMm: 'ဒီလ' },
             { id: 'prev_month', labelEn: 'Prev Month', labelMm: 'ပြီးခဲ့သောလ' },
             { id: 'all', labelEn: 'All Time', labelMm: 'အားလုံး' },
@@ -415,9 +410,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <button
               key={tab.id}
               onClick={() => setDashDateFilter(tab.id as any)}
-              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
+              className={`rounded-md px-2.5 py-1 text-[11px] sm:text-xs font-semibold transition-all ${
                 dashDateFilter === tab.id
-                  ? 'bg-cyan-500 text-slate-950 font-bold shadow-md'
+                  ? 'bg-cyan-500 text-slate-950 font-bold shadow-xs'
                   : 'text-slate-300 hover:text-white'
               }`}
             >

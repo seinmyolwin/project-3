@@ -64,52 +64,52 @@ export const RecordsView: React.FC<RecordsViewProps> = ({
   const [subTab, setSubTab] = useState<'cashClosing' | 'reports'>(defaultSubTab);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3.5 sm:space-y-4">
       {/* Records Sub-Tab Header Navigation */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-gray-200/80 bg-white p-4 shadow-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-gray-200/80 bg-white p-3 sm:p-3.5 shadow-xs">
         <div>
           <div className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-100 text-cyan-700">
-              <BookOpen className="h-5 w-5" />
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-100 text-cyan-700 shrink-0">
+              <BookOpen className="h-4 w-4" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-gray-900">
+              <h2 className="text-base sm:text-lg font-bold text-gray-900">
                 {isMm ? 'မှတ်တမ်းနှင့် အစီရင်ခံစာများ' : 'Records & Financial Reports'}
               </h2>
-              <p className="text-xs text-gray-500">
+              <p className="text-[11px] sm:text-xs text-gray-500">
                 {isMm
-                  ? 'နေ့စဉ် စာရင်းပိတ်မှတ်တမ်းနှင့် ဘဏ္ဍာရေး အမြတ်/အရှုံး အစီရင်ခံစာများ'
-                  : 'Daily cash closing logs and financial profit & loss statements'}
+                  ? 'နေ့စဉ် စာရင်းပိတ်မှတ်တမ်းနှင့် အမြတ်/အရှုံး အစီရင်ခံစာများ'
+                  : 'Daily cash closing logs and financial P&L statements'}
               </p>
             </div>
           </div>
         </div>
 
         {/* Sub-tab selection buttons */}
-        <div className="flex flex-wrap gap-2 rounded-xl bg-gray-100 p-1.5 border border-gray-200">
+        <div className="flex flex-wrap gap-1.5 rounded-lg bg-gray-100 p-1 border border-gray-200">
           <button
             type="button"
             onClick={() => setSubTab('cashClosing')}
-            className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-xs font-bold transition-all cursor-pointer ${
+            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition-all cursor-pointer ${
               subTab === 'cashClosing'
                 ? 'bg-cyan-600 text-white shadow-xs'
                 : 'text-gray-700 hover:bg-gray-200 hover:text-gray-900'
             }`}
           >
-            <BadgePercent className="h-4 w-4" />
+            <BadgePercent className="h-3.5 w-3.5" />
             <span>{isMm ? 'နေ့စဉ် စာရင်းပိတ်' : 'Daily Cash Closing'}</span>
           </button>
 
           <button
             type="button"
             onClick={() => setSubTab('reports')}
-            className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-xs font-bold transition-all cursor-pointer ${
+            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition-all cursor-pointer ${
               subTab === 'reports'
                 ? 'bg-purple-600 text-white shadow-xs'
                 : 'text-gray-700 hover:bg-gray-200 hover:text-gray-900'
             }`}
           >
-            <TrendingUp className="h-4 w-4" />
+            <TrendingUp className="h-3.5 w-3.5" />
             <span>{isMm ? 'အစီရင်ခံစာ' : 'Reports & P&L'}</span>
           </button>
         </div>

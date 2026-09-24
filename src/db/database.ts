@@ -4013,6 +4013,29 @@ export class MyanmarBusinessDB extends Dexie {
     });
   }
 
+  /**
+   * ATOMIC PERFORMANCE BONUS RULE SAVE:
+   */
+  async savePerformanceBonusRule(rule: Partial<PerformanceBonusRuleRecord>): Promise<PerformanceBonusRuleRecord> {
+    return this.transaction('rw', [this.performanceBonusRules], async () => {
+      const now = new Date().toISOString();
+      const ruleRecord: PerformanceBonusRuleRecord = {
+        id: rule.id || `prule_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        businessId: rule.businessId || 'BIZ_SHOP_001',
+        branchId: rule.branchId || 'BR_MAIN',
+        ruleName: rule.ruleName || 'Standard Performance Bonus',
+        minRevenueMMK: rule.minRevenueMMK || 0,
+        minSessions: rule.minSessions || 0,
+        minAttendanceDays: rule.minAttendanceDays || 0,
+        bonusAmountMMK: rule.bonusAmountMMK || 50000,
+        isActive: rule.isActive !== false,
+        createdAt: rule.createdAt || now,
+      };
+      await this.performanceBonusRules.put(ruleRecord);
+      return ruleRecord;
+    });
+  }
+
   // ==========================================
   // PHASE 28: CUSTOMER 360, SERVICE NOTES & REBOOKING
   // ==========================================

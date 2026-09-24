@@ -719,18 +719,18 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
   }, [sessions, historyStatusFilter, historySearchQuery]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3.5 sm:space-y-5">
       {/* Top Header & View Tabs */}
-      <div className="flex flex-wrap items-center justify-between gap-4 bg-[#0b0f19] p-5 rounded-3xl border border-cyan-500/20 shadow-lg">
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-500 via-purple-600 to-pink-500 text-white shadow-lg neon-glow-cyan">
-            <Flame className="h-6 w-6" />
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-[#0b0f19] p-3 sm:p-4 rounded-xl border border-cyan-500/20 shadow-md">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-500 via-purple-600 to-pink-500 text-white shadow-md neon-glow-cyan shrink-0">
+            <Flame className="h-4 w-4" />
           </div>
           <div>
-            <h2 className="text-xl font-black text-white tracking-tight sm:text-2xl">
+            <h2 className="text-base sm:text-lg font-black text-white tracking-tight">
               {isMm ? 'ဆက်ရှင်နှင့် အခန်း စီမံခန့်ခွဲမှု' : 'Session & Room Operations'}
             </h2>
-            <p className="text-xs text-slate-400 font-medium">
+            <p className="text-[11px] sm:text-xs text-slate-400 font-medium">
               {isMm
                 ? 'အချိန်နှင့်တပြေးညီ အခန်းအခြေအနေ၊ ကြာချိန်၊ ကော်မရှင်နှင့် ငွေရှင်းလွှာ'
                 : 'Real-time room occupancy, live timers, staff commissions & instant checkout'}
@@ -738,39 +738,39 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
           </div>
         </div>
 
-        {/* View Switcher Tabs */}
-        <div className="flex items-center gap-3">
-          <div className="flex rounded-2xl bg-[#111827] p-1 border border-slate-800">
+        {/* View Switcher Tabs & Quick Start */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex rounded-xl bg-[#111827] p-1 border border-slate-800">
             <button
               onClick={() => setTabMode('rooms')}
-              className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition-all min-h-[44px] ${
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
                 tabMode === 'rooms'
-                  ? 'bg-gradient-to-r from-cyan-600 to-purple-600 text-white shadow-lg neon-glow-cyan border border-cyan-400/40'
+                  ? 'bg-gradient-to-r from-cyan-600 to-purple-600 text-white shadow-md neon-glow-cyan border border-cyan-400/40'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              <Users className="h-4 w-4" />
+              <Users className="h-3.5 w-3.5" />
               <span>{isMm ? 'လက်ရှိ အခန်းများ' : 'Active Rooms'}</span>
             </button>
             <button
               onClick={() => setTabMode('history')}
-              className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition-all min-h-[44px] ${
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
                 tabMode === 'history'
-                  ? 'bg-gradient-to-r from-cyan-600 to-purple-600 text-white shadow-lg neon-glow-cyan border border-cyan-400/40'
+                  ? 'bg-gradient-to-r from-cyan-600 to-purple-600 text-white shadow-md neon-glow-cyan border border-cyan-400/40'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              <Clock className="h-4 w-4" />
+              <Clock className="h-3.5 w-3.5" />
               <span>{isMm ? 'ဆက်ရှင် မှတ်တမ်း' : 'Session History'}</span>
             </button>
           </div>
 
           <button
             onClick={() => handleOpenStart()}
-            className="flex items-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-500 to-emerald-600 px-5 py-3 text-xs font-extrabold text-white shadow-lg neon-glow-cyan hover:brightness-110 active:scale-95 transition-all min-h-[48px]"
+            className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-emerald-600 px-3.5 py-2 text-xs font-extrabold text-white shadow-md neon-glow-cyan hover:brightness-110 active:scale-95 transition-all cursor-pointer"
           >
-            <Play className="h-4 w-4 fill-white" />
-            <span>{isMm ? 'ဧည့်သည် ဆက်ရှင်စတင်မည်' : 'Check-in & Start'}</span>
+            <Play className="h-3.5 w-3.5 fill-current" />
+            <span>{isMm ? '+ အခန်း စတင်မည်' : '+ Start Session'}</span>
           </button>
         </div>
       </div>

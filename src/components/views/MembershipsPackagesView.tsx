@@ -734,7 +734,7 @@ export const MembershipsPackagesView: React.FC<MembershipsPackagesViewProps> = (
   }, [tips]);
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className="space-y-3.5 sm:space-y-5 pb-8">
       {/* Toast Feedback */}
       {feedbackMsg && (
         <div
@@ -750,17 +750,17 @@ export const MembershipsPackagesView: React.FC<MembershipsPackagesViewProps> = (
       )}
 
       {/* Header Banner */}
-      <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-gradient-to-r from-[#0b0f19] via-[#0d1424] to-[#0b0f19] border border-cyan-500/20 p-5 shadow-lg">
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-950/60 border border-cyan-500/40 text-cyan-400 shadow-md">
-            <Sparkles className="h-6 w-6" />
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-gradient-to-r from-[#0b0f19] via-[#0d1424] to-[#0b0f19] border border-cyan-500/20 p-3 sm:p-4 shadow-md">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-lg bg-cyan-950/60 border border-cyan-500/40 text-cyan-400 shadow-xs shrink-0">
+            <Sparkles className="h-4 w-4" />
           </div>
           <div>
-            <h1 className="text-xl font-black text-white tracking-wide">
-              {isMm ? 'အသင်းဝင်၊ ပက်ကေ့ဂျ်နှင့် လက်ဆောင်ကတ် စီမံခန့်ခွဲမှု' : 'Memberships, Packages & Customer Value'}
+            <h1 className="text-base sm:text-lg font-bold text-white tracking-wide">
+              {isMm ? 'အသင်းဝင်၊ ပက်ကေ့ဂျ်နှင့် လက်ဆောင်ကတ်' : 'Memberships & Packages'}
             </h1>
-            <p className="text-xs text-cyan-300/70 font-mono mt-0.5">
-              {isMm ? 'Spa / Salon / KTV ဖောက်သည်ဝန်ဆောင်မှုနှင့် စာရင်းကိုင် စနစ်' : 'Client Value Retainers & Staff Attribution Engine'}
+            <p className="text-[11px] sm:text-xs text-cyan-300/70 font-mono">
+              {isMm ? 'Spa / Salon / KTV ဖောက်သည် ဝန်ဆောင်မှု စီမံခန့်ခွဲမှု' : 'Client Value Retainers & Staff Attribution'}
             </p>
           </div>
         </div>
@@ -768,21 +768,21 @@ export const MembershipsPackagesView: React.FC<MembershipsPackagesViewProps> = (
         <button
           onClick={loadData}
           disabled={isLoading}
-          className="flex items-center gap-2 rounded-xl border border-cyan-500/30 bg-cyan-950/40 px-3.5 py-2 text-xs font-semibold text-cyan-300 hover:bg-cyan-900/50 transition-all shadow-xs"
+          className="flex items-center gap-1.5 rounded-lg border border-cyan-500/30 bg-cyan-950/40 px-2.5 py-1.5 text-xs font-semibold text-cyan-300 hover:bg-cyan-900/50 transition-all shadow-xs"
         >
           <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-          {isMm ? 'ဒေတာ ပြန်လည်ရယူရန်' : 'Refresh'}
+          <span>{isMm ? 'ပြန်ယူမည်' : 'Refresh'}</span>
         </button>
       </div>
 
       {/* Sub-Navigation Tabs */}
-      <div className="flex flex-wrap gap-2 border-b border-gray-800 pb-3">
+      <div className="flex gap-1.5 border-b border-gray-800 pb-2 overflow-x-auto scrollbar-none flex-nowrap">
         {[
           { id: 'memberships' as SubTab, labelEn: 'Membership Plans', labelMm: 'အသင်းဝင်ကတ်များ', icon: Sparkles, badge: customerMemberships.length },
           { id: 'packages' as SubTab, labelEn: 'Service Packages', labelMm: 'ဝန်ဆောင်မှု ပက်ကေ့ဂျ်', icon: Package, badge: customerPackages.length },
           { id: 'giftcards' as SubTab, labelEn: 'Gift Cards', labelMm: 'လက်ဆောင်ကတ်', icon: Gift, badge: giftCards.length },
           { id: 'tips' as SubTab, labelEn: 'Staff Tips', labelMm: 'ဆုငွေ / Tip', icon: Coins, badge: tips.length },
-          { id: 'customer360' as SubTab, labelEn: 'Customer 360° Value Profile', labelMm: 'ဖောက်သည် အသေးစိတ် အချက်အလက်', icon: UserCheck },
+          { id: 'customer360' as SubTab, labelEn: 'Customer 360° Profile', labelMm: 'ဖောက်သည် အသေးစိတ်', icon: UserCheck },
         ].map(tab => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -790,13 +790,13 @@ export const MembershipsPackagesView: React.FC<MembershipsPackagesViewProps> = (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition-all ${
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all whitespace-nowrap shrink-0 ${
                 isActive
                   ? 'bg-cyan-500 text-gray-950 shadow-md shadow-cyan-500/20'
                   : 'bg-[#0f1422] text-gray-400 hover:text-gray-200 hover:bg-[#161d31] border border-gray-800/80'
               }`}
             >
-              <Icon className="h-4 w-4" />
+              <Icon className="h-3.5 w-3.5" />
               <span>{isMm ? tab.labelMm : tab.labelEn}</span>
               {tab.badge !== undefined && (
                 <span

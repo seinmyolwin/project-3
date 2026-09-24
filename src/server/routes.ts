@@ -1867,5 +1867,23 @@ export function createApiRouter(storage: PersistentSQLiteStorage = serverStorage
     }
   });
 
+  router.get('/performance-bonus-rules', requireAuth(), (req: Request, res: Response) => {
+    try {
+      const rules = storage.getPerformanceBonusRules();
+      res.json({ success: true, rules });
+    } catch (err: any) {
+      res.status(500).json({ error: 'PERFORMANCE_RULES_FETCH_FAILED', message: err.message });
+    }
+  });
+
+  router.post('/performance-bonus-rules', requireAuth(['owner', 'manager']), (req: Request, res: Response) => {
+    try {
+      const rule = storage.savePerformanceBonusRule(req.body);
+      res.json({ success: true, rule });
+    } catch (err: any) {
+      res.status(500).json({ error: 'PERFORMANCE_RULE_SAVE_FAILED', message: err.message });
+    }
+  });
+
   return router;
 }

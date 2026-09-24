@@ -313,6 +313,13 @@ async function runAllTests() {
     const storage = new PersistentSQLiteStorage(testDbPath);
     await storage.initialize();
 
+    storage.createUser({
+      name: 'Aung Min',
+      username: 'aungmin',
+      password: 'aungmin123',
+      role: 'owner',
+    });
+
     // Valid credentials
     const userValid = storage.authenticateUser('aungmin', 'aungmin123');
     assert(!!userValid, 'Owner credentials should succeed');

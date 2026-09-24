@@ -1179,7 +1179,7 @@ async function internalSeedDatabaseIfEmpty(): Promise<void> {
     db.expenses,
   ], async () => {
     await db.settings.put(defaultSettings);
-    await db.users.bulkPut(defaultUsers);
+    // Users are created during First-Run Owner Setup (no default credentials seeded)
     await db.rooms.bulkPut(defaultRooms);
     await db.diningTables.bulkPut(defaultTables);
     await db.staffTypes.bulkPut(defaultStaffTypes);

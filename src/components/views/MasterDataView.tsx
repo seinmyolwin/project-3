@@ -209,29 +209,24 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3.5 sm:space-y-4">
       {/* Master Data Navigation Bar */}
-      <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-xs">
-        <div className="flex items-center justify-between pb-3 mb-3 border-b border-gray-100">
+      <div className="bg-white p-3 sm:p-3.5 rounded-xl border border-gray-200 shadow-xs">
+        <div className="flex items-center justify-between pb-2 mb-2 border-b border-gray-100">
           <div className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-100 text-amber-800">
-              <Database className="h-5 w-5" />
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 text-amber-800 shrink-0">
+              <Database className="h-4 w-4" />
             </div>
             <div>
-              <h1 className="text-base font-bold text-gray-900">
+              <h1 className="text-sm sm:text-base font-bold text-gray-900">
                 {isMm ? 'ပင်မ အချက်အလက် စီမံခန့်ခွဲမှု (Master Data)' : 'Master Data Configuration'}
               </h1>
-              <p className="text-xs text-gray-500">
-                {isMm
-                  ? 'လုပ်ငန်းလည်ပတ်မှုဆိုင်ရာ ပင်မဒေတာ ၁၂ မျိုး အပြည့်အစုံ'
-                  : 'Manage all 12 core foundational master entities with version safety and referential integrity.'}
-              </p>
             </div>
           </div>
         </div>
 
         {/* Grouped Tabs */}
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-1.5">
           {navGroups.flatMap((group) => group.tabs).map((tab) => {
             const Icon = tab.icon;
             const isActive = activeSubTab === tab.id;
@@ -240,16 +235,16 @@ export const MasterDataView: React.FC<MasterDataViewProps> = ({
               <button
                 key={tab.id}
                 onClick={() => setActiveSubTab(tab.id)}
-                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
                   isActive
-                    ? 'bg-amber-600 text-white shadow-sm ring-1 ring-amber-600'
+                    ? 'bg-amber-600 text-white shadow-xs ring-1 ring-amber-600'
                     : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200/80'
                 }`}
               >
-                <Icon className={`h-4 w-4 ${isActive ? 'text-white' : 'text-slate-500'}`} />
+                <Icon className={`h-3.5 w-3.5 ${isActive ? 'text-white' : 'text-slate-500'}`} />
                 <span>{tab.label}</span>
                 <span
-                  className={`ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                  className={`ml-0.5 px-1.5 py-0.2 rounded-full text-[9px] font-mono ${
                     isActive
                       ? 'bg-white/20 text-white'
                       : 'bg-slate-200/80 text-slate-700'

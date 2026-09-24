@@ -586,19 +586,19 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
   const timeHours = Array.from({ length: 15 }, (_, i) => i + 8);
 
   return (
-    <div className="space-y-6 pb-20">
+    <div className="space-y-3.5 sm:space-y-5 pb-10">
       {/* Top Header & Quick Action Banner */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-[#0b0f19] p-4 sm:p-6 rounded-2xl border border-cyan-900/40 shadow-xl">
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-cyan-950/80 border border-cyan-500/30 text-cyan-400 shadow-md">
-            <CalendarDays className="h-6 w-6" />
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#0b0f19] p-3 sm:p-4 rounded-xl border border-cyan-900/40 shadow-md">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-lg bg-cyan-950/80 border border-cyan-500/30 text-cyan-400 shadow-xs shrink-0">
+            <CalendarDays className="h-4 w-4" />
           </div>
           <div>
-            <h1 className="text-xl sm:text-2xl font-bold text-white tracking-wide">
-              {isMm ? 'ကြိုတင်ချိန်းဆိုမှုနှင့် အခန်း/ဝန်ထမ်း စီမံခန့်ခွဲမှု' : 'Bookings & Resource Scheduling'}
+            <h1 className="text-base sm:text-lg font-bold text-white tracking-wide">
+              {isMm ? 'ကြိုတင်ချိန်းဆိုမှု စီမံခန့်ခွဲမှု' : 'Bookings & Resource Scheduling'}
             </h1>
-            <p className="text-xs sm:text-sm text-cyan-300/70">
-              {isMm ? 'အချိန်ထပ်မံမှု ကာကွယ်ခြင်းနှင့် အခန်း/ဝန်ထမ်း အလိုအလျောက် နေရာချခြင်း' : 'Anti-conflict scheduling, room & therapist resource reservation'}
+            <p className="text-[11px] sm:text-xs text-cyan-300/70">
+              {isMm ? 'အချိန်ထပ်မံမှု ကာကွယ်ခြင်းနှင့် အခန်း/ဝန်ထမ်း နေရာချခြင်း' : 'Anti-conflict scheduling & resource reservation'}
             </p>
           </div>
         </div>

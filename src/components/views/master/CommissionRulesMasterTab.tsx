@@ -4,8 +4,10 @@ import {
   CommissionType,
   CommissionTier,
   UserAccount,
+  PerformanceBonusRuleRecord,
 } from '../../../types';
 import { db } from '../../../db/database';
+import { syncManager } from '../../../services/syncManager';
 import { Language } from '../../../utils/translations';
 import { formatMMK } from '../../../domain/financial';
 import {
@@ -45,6 +47,78 @@ export const CommissionRulesMasterTab: React.FC<CommissionRulesMasterTabProps> =
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [activeFilter, setActiveFilter] = useState<string>('all');
+
+  // Subtab State: Commission vs Performance Bonus Rules
+  const [activeTab, setActiveTab] = useState<'commission' | 'performance_bonus'>('commission');
+  const [pBonusRules, setPBonusRules] = useState<PerformanceBonusRuleRecord[]>([]);
+  const [showPBonusModal, setShowPBonusModal] = useState(false);
+  const [editingPBonus, setEditingPBonus] = useState<PerformanceBonusRuleRecord | null>(null);
+  const [pbRuleName, setPbRuleName] = useState('Monthly Top Performer');
+  const [pbMinRevenue, setPbMinRevenue] = useState(500000);
+  const [pbMinSessions, setPbMinSessions] = useState(20);
+  const [pbMinAttendance, setPbMinAttendance] = useState(22);
+  const [pbBonusAmount, setPbBonusAmount] = useState(50000);
+  const [pbIsActive, setPbIsActive] = useState(true);
+
+  const loadPBonusRules = React.useCallback(async () => {
+    try {
+      const rules = await db.performanceBonusRules.toArray();
+      setPBonusRules(rules);
+    } catch (err) {
+      console.error('Error loading performance bonus rules:', err);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    loadPBonusRules();
+  }, [loadPBonusRules]);
+
+  const handleOpenPBonusAdd = () => {
+    setEditingPBonus(null);
+    setPbRuleName('Monthly Top Performer');
+    setPbMinRevenue(500000);
+    setPbMinSessions(20);
+    setPbMinAttendance(22);
+    setPbBonusAmount(50000);
+    setPbIsActive(true);
+    setShowPBonusModal(true);
+  };
+
+  const handleOpenPBonusEdit = (rule: PerformanceBonusRuleRecord) => {
+    setEditingPBonus(rule);
+    setPbRuleName(rule.ruleName);
+    setPbMinRevenue(rule.minRevenueMMK || 0);
+    setPbMinSessions(rule.minSessions || 0);
+    setPbMinAttendance(rule.minAttendanceDays || 0);
+    setPbBonusAmount(rule.bonusAmountMMK || 50000);
+    setPbIsActive(rule.isActive !== false);
+    setShowPBonusModal(true);
+  };
+
+  const handleSavePBonus = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pbRuleName.trim()) return;
+    try {
+      const rule = await db.savePerformanceBonusRule({
+        id: editingPBonus?.id,
+        ruleName: pbRuleName.trim(),
+        minRevenueMMK: Number(pbMinRevenue),
+        minSessions: Number(pbMinSessions),
+        minAttendanceDays: Number(pbMinAttendance),
+        bonusAmountMMK: Number(pbBonusAmount),
+        isActive: pbIsActive,
+      });
+      syncManager.executeMutation({
+        operationType: 'PERFORMANCE_BONUS_RULE_SAVE',
+        payload: rule,
+        offlineMutationFn: () => db.savePerformanceBonusRule(rule),
+      });
+      setShowPBonusModal(false);
+      loadPBonusRules();
+    } catch (err: any) {
+      alert('Error saving performance bonus rule: ' + err.message);
+    }
+  };
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<CommissionRuleRecord | null>(null);
@@ -285,29 +359,131 @@ export const CommissionRulesMasterTab: React.FC<CommissionRulesMasterTabProps> =
           </p>
         </div>
 
+        <div className="flex items-center gap-2">
+          {activeTab === 'commission' ? (
+            <button
+              onClick={handleOpenAdd}
+              className="flex items-center justify-center gap-2 rounded-xl bg-amber-600 px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-amber-700 active:bg-amber-800 transition-colors"
+            >
+              <Plus className="h-4 w-4" />
+              <span>{isMm ? 'ကော်မရှင်စည်းမျဉ်းသစ်' : 'Add Commission Rule'}</span>
+            </button>
+          ) : (
+            <button
+              onClick={handleOpenPBonusAdd}
+              className="flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-indigo-700 active:bg-indigo-800 transition-colors"
+            >
+              <Plus className="h-4 w-4" />
+              <span>{isMm ? 'ဆုကြေးစည်းမျဉ်းသစ်' : 'Add Performance Rule'}</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Subtab Switcher */}
+      <div className="flex items-center gap-2 border-b border-gray-200 pb-2">
         <button
-          onClick={handleOpenAdd}
-          className="flex items-center justify-center gap-2 rounded-xl bg-amber-600 px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-amber-700 active:bg-amber-800 transition-colors"
+          onClick={() => setActiveTab('commission')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            activeTab === 'commission'
+              ? 'bg-amber-600 text-white shadow-xs'
+              : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+          }`}
         >
-          <Plus className="h-4 w-4" />
-          <span>{isMm ? 'ကော်မရှင်စည်းမျဉ်းသစ် သတ်မှတ်ရန်' : 'Add Commission Rule'}</span>
+          <Percent className="h-4 w-4" />
+          <span>{isMm ? 'ကော်မရှင် စည်းမျဉ်းများ' : 'Commission Rules'} ({commissionRules.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('performance_bonus')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            activeTab === 'performance_bonus'
+              ? 'bg-indigo-600 text-white shadow-xs'
+              : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+          }`}
+        >
+          <Coins className="h-4 w-4" />
+          <span>{isMm ? 'စွမ်းဆောင်ရည် ဆုကြေး စည်းမျဉ်းများ' : 'Performance Bonus Rules'} ({pBonusRules.length})</span>
         </button>
       </div>
 
-      {/* Version Safety Info Card */}
-      <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 flex items-start gap-3">
-        <GitBranch className="h-5 w-5 text-amber-700 shrink-0 mt-0.5" />
-        <div className="text-xs text-amber-900">
-          <div className="font-bold">
-            {isMm ? 'သမိုင်းဝင်တွက်ချက်မှု မပျက်စီးစေသော Version Safety စနစ်' : 'Version-Safe Historical Commission Protection'}
+      {/* Active Tab View */}
+      {activeTab === 'performance_bonus' ? (
+        <div className="space-y-4">
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-xs overflow-hidden">
+            <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-indigo-50/50">
+              <h3 className="text-xs font-bold text-indigo-950 uppercase tracking-wider flex items-center gap-2">
+                <Coins className="h-4 w-4 text-indigo-600" />
+                <span>{isMm ? 'စွမ်းဆောင်ရည် ဆုကြေး စည်းမျဉ်းများ စာရင်း' : 'Performance Bonus Rules List'}</span>
+              </h3>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs text-gray-600">
+                <thead className="bg-gray-50 text-[11px] font-bold text-gray-500 uppercase tracking-wider">
+                  <tr>
+                    <th className="px-4 py-3">{isMm ? 'စည်းမျဉ်းအမည်' : 'Rule Name'}</th>
+                    <th className="px-4 py-3">{isMm ? 'အနည်းဆုံး ဝင်ငွေ (MMK)' : 'Min Revenue'}</th>
+                    <th className="px-4 py-3">{isMm ? 'အနည်းဆုံး အလှည့်' : 'Min Sessions'}</th>
+                    <th className="px-4 py-3">{isMm ? 'အနည်းဆုံး ရက်မှန်' : 'Min Attendance'}</th>
+                    <th className="px-4 py-3">{isMm ? 'ဆုကြေးငွေ (MMK)' : 'Bonus Amount'}</th>
+                    <th className="px-4 py-3">{isMm ? 'အခြေအနေ' : 'Status'}</th>
+                    <th className="px-4 py-3 text-right">{isMm ? 'လုပ်ဆောင်ချက်' : 'Actions'}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 font-medium">
+                  {pBonusRules.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
+                        {isMm ? 'ဆုကြေးစည်းမျဉ်း သတ်မှတ်ထားခြင်း မရှိသေးပါ' : 'No performance bonus rules created yet.'}
+                      </td>
+                    </tr>
+                  ) : (
+                    pBonusRules.map((rule) => (
+                      <tr key={rule.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 font-bold text-gray-900">{rule.ruleName}</td>
+                        <td className="px-4 py-3 font-mono text-gray-800">{formatMMK(rule.minRevenueMMK || 0)}</td>
+                        <td className="px-4 py-3 font-mono text-gray-800">{rule.minSessions || 0}</td>
+                        <td className="px-4 py-3 font-mono text-gray-800">{rule.minAttendanceDays || 0} {isMm ? 'ရက်' : 'days'}</td>
+                        <td className="px-4 py-3 font-mono text-indigo-700 font-extrabold">{formatMMK(rule.bonusAmountMMK || 0)}</td>
+                        <td className="px-4 py-3">
+                          <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${rule.isActive !== false ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-600'}`}>
+                            {rule.isActive !== false ? (isMm ? 'အသုံးပြုဆဲ' : 'Active') : (isMm ? 'ပိတ်ထားသည်' : 'Inactive')}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            onClick={() => handleOpenPBonusEdit(rule)}
+                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg"
+                          >
+                            <Edit2 className="h-4 w-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-          <p className="mt-0.5 text-amber-800 leading-relaxed">
-            {isMm
-              ? 'ကော်မရှင်စည်းမျဉ်းတစ်ခုအား ပြင်ဆင်တိုင်း Version နံပါတ် အလိုအလျောက်တိုးသွားမည်ဖြစ်ပြီး၊ ယခင်ပြီးစီးခဲ့ပြီးသော အလှည့်/လစာရှင်းတမ်းမှတ်တမ်းများသည် မူရင်း Version ဖြင့်သာ တိကျစွာတည်ရှိနေပါမည်။'
-              : 'Modifying a commission rule automatically increments its version. Previous service sessions, commission slips, and staff ledger entries retain their historical snapshot and will never alter past payouts.'}
-          </p>
         </div>
-      </div>
+      ) : (
+        <>
+          {/* Version Safety Info Card */}
+          <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 flex items-start gap-3">
+            <GitBranch className="h-5 w-5 text-amber-700 shrink-0 mt-0.5" />
+            <div className="text-xs text-amber-900">
+              <div className="font-bold">
+                {isMm ? 'သမိုင်းဝင်တွက်ချက်မှု မပျက်စီးစေသော Version Safety စနစ်' : 'Version-Safe Historical Commission Protection'}
+              </div>
+              <p className="mt-0.5 text-amber-800 leading-relaxed">
+                {isMm
+                  ? 'ကော်မရှင်စည်းမျဉ်းတစ်ခုအား ပြင်ဆင်တိုင်း Version နံပါတ် အလိုအလျောက်တိုးသွားမည်ဖြစ်ပြီး၊ ယခင်ပြီးစီးခဲ့ပြီးသော အလှည့်/လစာရှင်းတမ်းမှတ်တမ်းများသည် မူရင်း Version ဖြင့်သာ တိကျစွာတည်ရှိနေပါမည်။'
+                  : 'Modifying a commission rule automatically increments its version. Previous service sessions, commission slips, and staff ledger entries retain their historical snapshot and will never alter past payouts.'}
+              </p>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Search & Filters */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-white p-4 rounded-2xl border border-gray-200 shadow-xs">
@@ -776,6 +952,104 @@ export const CommissionRulesMasterTab: React.FC<CommissionRulesMasterTabProps> =
                       ? isMm ? `v${(editingRule.version || 1) + 1} ဖြင့် သိမ်းမည်` : `Save as v${(editingRule.version || 1) + 1}`
                       : isMm ? 'သိမ်းဆည်းမည်' : 'Save Rule'}
                   </span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Performance Bonus Modal */}
+      {showPBonusModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl border border-gray-100">
+            <div className="flex items-center justify-between pb-4 border-b border-gray-100">
+              <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                <Coins className="h-5 w-5 text-indigo-600" />
+                <span>{editingPBonus ? (isMm ? 'ဆုကြေးစည်းမျဉ်း ပြင်ဆင်ရန်' : 'Edit Performance Rule') : (isMm ? 'ဆုကြေးစည်းမျဉ်းသစ် ထည့်ရန်' : 'Add Performance Bonus Rule')}</span>
+              </h3>
+              <button onClick={() => setShowPBonusModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSavePBonus} className="space-y-4 pt-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">{isMm ? 'စည်းမျဉ်းအမည်' : 'Rule Name'}</label>
+                <input
+                  type="text"
+                  required
+                  value={pbRuleName}
+                  onChange={e => setPbRuleName(e.target.value)}
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-900 outline-none focus:border-indigo-500"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-700 mb-1">{isMm ? 'အနည်းဆုံး ဝင်ငွေ (MMK)' : 'Min Revenue'}</label>
+                  <input
+                    type="number"
+                    step="50000"
+                    value={pbMinRevenue}
+                    onChange={e => setPbMinRevenue(Number(e.target.value))}
+                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs font-mono font-bold text-gray-900 outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-700 mb-1">{isMm ? 'အနည်းဆုံး အလှည့်' : 'Min Sessions'}</label>
+                  <input
+                    type="number"
+                    value={pbMinSessions}
+                    onChange={e => setPbMinSessions(Number(e.target.value))}
+                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs font-mono font-bold text-gray-900 outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-700 mb-1">{isMm ? 'အနည်းဆုံး ရက်မှန်' : 'Min Attendance (Days)'}</label>
+                  <input
+                    type="number"
+                    value={pbMinAttendance}
+                    onChange={e => setPbMinAttendance(Number(e.target.value))}
+                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs font-mono font-bold text-gray-900 outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-700 mb-1">{isMm ? 'ဆုကြေးငွေ (MMK)' : 'Bonus Amount (MMK)'}</label>
+                  <input
+                    type="number"
+                    step="5000"
+                    value={pbBonusAmount}
+                    onChange={e => setPbBonusAmount(Number(e.target.value))}
+                    className="w-full rounded-xl border border-indigo-300 bg-indigo-50/50 px-3 py-2 text-xs font-mono font-extrabold text-indigo-900 outline-none focus:border-indigo-600"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="pbIsActive"
+                  checked={pbIsActive}
+                  onChange={e => setPbIsActive(e.target.checked)}
+                  className="h-4 w-4 rounded text-indigo-600 focus:ring-indigo-500 border-gray-300"
+                />
+                <label htmlFor="pbIsActive" className="text-xs font-semibold text-gray-700">
+                  {isMm ? 'အသုံးပြုမည် (Active)' : 'Active for performance calculation'}
+                </label>
+              </div>
+              <div className="flex justify-end gap-3 pt-3 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setShowPBonusModal(false)}
+                  className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                >
+                  {isMm ? 'မလုပ်တော့ပါ' : 'Cancel'}
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-xl bg-indigo-600 px-5 py-2 text-xs font-bold text-white hover:bg-indigo-700 shadow-sm"
+                >
+                  {isMm ? 'သိမ်းဆည်းမည်' : 'Save Rule'}
                 </button>
               </div>
             </form>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Invoice,
   ExpenseRecord,
@@ -86,9 +86,30 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
   const [weightSessions, setWeightSessions] = useState<number>(30);
   const [weightCommission, setWeightCommission] = useState<number>(30);
   const [awardAmountMMK, setAwardAmountMMK] = useState<number>(50000);
+  const [pBonusRules, setPBonusRules] = useState<any[]>([]);
+  const [selectedRuleId, setSelectedRuleId] = useState<string>('');
   const [isCriteriaOpen, setIsCriteriaOpen] = useState<boolean>(false);
   const [awardModalCandidate, setAwardModalCandidate] = useState<any | null>(null);
   const [awardNotification, setAwardNotification] = useState<string | null>(null);
+
+  useEffect(() => {
+    db.performanceBonusRules.toArray().then(rules => {
+      const active = rules.filter(r => r.isActive !== false);
+      setPBonusRules(active);
+      if (active.length > 0) {
+        setSelectedRuleId(active[0].id);
+        setAwardAmountMMK(active[0].bonusAmountMMK || 50000);
+      }
+    }).catch(() => {});
+  }, []);
+
+  const handleRuleChange = (ruleId: string) => {
+    setSelectedRuleId(ruleId);
+    const rule = pBonusRules.find(r => r.id === ruleId);
+    if (rule) {
+      setAwardAmountMMK(rule.bonusAmountMMK || 50000);
+    }
+  };
 
   // Month options for quick picker
   const monthOptions = Array.from({ length: 12 }, (_, i) => {
