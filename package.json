@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js release",
     "lint": "tsc --noEmit",
-    "test": "tsx src/domain/__tests__/financial.test.ts && tsx src/domain/__tests__/frontend_auth_security.test.ts && tsx src/domain/__tests__/server_multi_device.test.ts && tsx src/domain/__tests__/server_realtime_websocket.test.ts && tsx src/domain/__tests__/standalone_runtime.test.ts && tsx scripts/run_phase22_clean_machine_acceptance.ts && tsx scripts/run_phase23_acceptance.ts && tsx scripts/run_step10_targeted_regression.ts",
+    "test": "tsx src/domain/__tests__/phase36_staff_attendance_shifts_consumables.test.ts && tsx src/domain/__tests__/phase35_customer360_notes_rebooking.test.ts && tsx src/domain/__tests__/phase34_membership_package_giftcard.test.ts && tsx src/domain/__tests__/phase33_auth_security.test.ts && tsx src/domain/__tests__/financial.test.ts && tsx src/domain/__tests__/frontend_auth_security.test.ts && tsx src/domain/__tests__/server_multi_device.test.ts && tsx src/domain/__tests__/server_realtime_websocket.test.ts && tsx src/domain/__tests__/standalone_runtime.test.ts && tsx scripts/run_phase22_clean_machine_acceptance.ts && tsx scripts/run_phase23_acceptance.ts && tsx scripts/run_step10_targeted_regression.ts",
     "package": "npm run build && tsx scripts/package_standalone.ts"
   },
   "dependencies": {

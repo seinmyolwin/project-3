@@ -7,7 +7,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { db } from './db/database';
 import { seedDatabaseIfEmpty } from './db/seedData';
-import { hashPin } from './utils/cryptoAuth';
 import {
   Room,
   SessionRecord,
@@ -40,6 +39,9 @@ import { LANConnectionModal } from './components/LANConnectionModal';
 import { GlobalSearchModal } from './components/GlobalSearchModal';
 import { SetupWizardModal } from './components/SetupWizardModal';
 import { PWAInstallModal } from './components/PWAInstallModal';
+import { LoginScreen } from './components/LoginScreen';
+import { authSession } from './services/authSession';
+import { localServerClient } from './services/localServerClient';
 import { syncManager, SyncState } from './services/syncManager';
 import { realtimeClient } from './services/realtimeClient';
 import { RoomsView } from './components/views/RoomsView';
@@ -226,9 +228,16 @@ export default function App() {
       setExpenseCategories(expCatList);
       setCommissionRules(commRuleList);
 
-      // Default user to Cashier or Owner if none selected
-      if (userList.length > 0) {
-        setCurrentUser(prev => prev || userList.find((u: UserAccount) => u.role === 'cashier') || userList[0]);
+      // Validate or restore current session user if active
+      const savedSession = authSession.getLanSession();
+      if (savedSession?.user) {
+        const matchingUser = userList.find(u => u.id === savedSession.user.id);
+        if (matchingUser && matchingUser.isActive) {
+          setCurrentUser(matchingUser);
+        } else if (matchingUser && !matchingUser.isActive) {
+          authSession.clearSession();
+          setCurrentUser(null);
+        }
       }
     } catch (err) {
       console.error('Error loading database tables:', err);
@@ -280,6 +289,15 @@ export default function App() {
     };
   }, [refreshData]);
 
+  const handleLogout = async () => {
+    try {
+      await localServerClient.logout();
+    } catch {
+      authSession.clearSession();
+    }
+    setCurrentUser(null);
+  };
+
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#07090e] text-white">
@@ -294,19 +312,21 @@ export default function App() {
     );
   }
 
-  const fallbackHash = hashPin('0000', 'salt_fallback_cashier');
-  // Active authenticated user fallback
-  const effectiveUser: UserAccount = currentUser || {
-    id: 'usr_cashier',
-    name: 'Daw Khin Khin (ငွေကိုင်)',
-    username: 'daw_khin_khin',
-    role: 'cashier',
-    pinHash: fallbackHash.pinHash,
-    pinSalt: fallbackHash.pinSalt,
-    isActive: true,
-    createdAt: '2026-01-01T00:00:00.000Z',
-  };
+  // Canonical Security Barrier: No anonymous/bypass access
+  if (!currentUser) {
+    return (
+      <LoginScreen
+        lang={lang}
+        onLanguageChange={setLang}
+        onLoginSuccess={user => {
+          setCurrentUser(user);
+          refreshData();
+        }}
+      />
+    );
+  }
 
+  const effectiveUser: UserAccount = currentUser;
   const isMm = lang === 'my';
 
   return (
@@ -317,6 +337,7 @@ export default function App() {
         onSelectTab={handleSelectTab}
         currentUser={currentUser}
         onOpenPINModal={() => setIsPINModalOpen(true)}
+        onLogout={handleLogout}
         lang={lang}
         onToggleLang={() => setLang(l => (l === 'my' ? 'en' : 'my'))}
         settings={settings}
@@ -382,7 +403,7 @@ export default function App() {
             currentUser={effectiveUser}
             lang={lang}
             onRefreshData={refreshData}
-            onNavigateToRoom={(roomId) => {
+            onNavigateToRoom={(_roomId) => {
               setActiveTab('rooms');
             }}
           />
@@ -533,7 +554,7 @@ export default function App() {
         onSelectInvoice={inv => setActiveInvoiceReceipt(inv)}
       />
 
-      {isSetupWizardOpen && (
+      {isSetupWizardOpen && effectiveUser?.role === 'owner' && (
         <SetupWizardModal
           currentUser={effectiveUser}
           lang={lang}
@@ -592,3 +613,4 @@ export default function App() {
     </div>
   );
 }
+

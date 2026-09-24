@@ -26,7 +26,6 @@ import {
   ShieldCheck,
   Download,
   Upload,
-  RefreshCw,
   Users,
   FileText,
   Store,
@@ -40,11 +39,15 @@ import {
   Folder,
   HardDrive,
   Cpu,
+  Edit2,
+  Check,
+  XCircle,
+  KeyRound,
+  RefreshCw,
 } from 'lucide-react';
-import { seedForceDemoData } from '../../db/seedData';
 import { MasterDataView } from './MasterDataView';
-
-import { verifyPin, hashPin } from '../../utils/cryptoAuth';
+import { verifyPin, hashPin, hashPassword } from '../../utils/cryptoAuth';
+import { localServerClient } from '../../services/localServerClient';
 
 interface SettingsAuditViewProps {
   users: UserAccount[];
@@ -105,11 +108,27 @@ export const SettingsAuditView: React.FC<SettingsAuditViewProps> = ({
   const [footerMm, setFooterMm] = useState(settings?.receiptFooterNoteMm || '');
   const [isSavingSettings, setIsSavingSettings] = useState(false);
 
-  // User creation state
+  // User management states
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
   const [newUserName, setNewUserName] = useState('');
+  const [newUserUsername, setNewUserUsername] = useState('');
   const [newUserRole, setNewUserRole] = useState<UserRole>('cashier');
-  const [newUserPin, setNewUserPin] = useState('');
+  const [newUserPassword, setNewUserPassword] = useState('');
+  const [newUserConfirmPassword, setNewUserConfirmPassword] = useState('');
+
+  // Edit User State
+  const [isEditUserOpen, setIsEditUserOpen] = useState(false);
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [editUserName, setEditUserName] = useState('');
+  const [editUserUsername, setEditUserUsername] = useState('');
+  const [editUserRole, setEditUserRole] = useState<UserRole>('cashier');
+
+  // Change Password State
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
+  const [targetPasswordUserId, setTargetPasswordUserId] = useState<string | null>(null);
+  const [targetPasswordUserName, setTargetPasswordUserName] = useState('');
+  const [newPasswordInput, setNewPasswordInput] = useState('');
+  const [confirmPasswordInput, setConfirmPasswordInput] = useState('');
 
   // Backup & Restore state
   const [backupStatus, setBackupStatus] = useState<string>('');
@@ -148,6 +167,23 @@ export const SettingsAuditView: React.FC<SettingsAuditViewProps> = ({
       setBackupStatus(isMm ? 'ဒေတာဘေ့စ် မိတ္တူကူးယူပြီးပါပြီ' : 'Database backup downloaded successfully!');
     } catch (err: any) {
       alert('Backup export error: ' + err.message);
+    }
+  };
+
+  const handlePreUpdateBackup = async () => {
+    setIsPreUpdating(true);
+    setPreUpdateStatus('');
+    try {
+      await handleExportBackup();
+      setPreUpdateStatus(
+        isMm
+          ? 'ဆော့ဖ်ဝဲ မွမ်းမံမှုမပြုမီ ဒေတာဘေ့စ် မိတ္တူကူးယူခြင်း အောင်မြင်ပါသည် (Pre-update snapshot ready)'
+          : 'Pre-update database snapshot generated and saved successfully!'
+      );
+    } catch (err: any) {
+      setPreUpdateStatus('Error: ' + err.message);
+    } finally {
+      setIsPreUpdating(false);
     }
   };
 
@@ -191,56 +227,6 @@ export const SettingsAuditView: React.FC<SettingsAuditViewProps> = ({
     }
   };
 
-  // Reset to Demo Data
-  const handleResetDemoData = async () => {
-    if (currentUser.role !== 'owner') {
-      alert(isMm ? 'ဆိုင်ရှင် (Owner) သာလျှင် ဤ လုပ်ဆောင်ချက်ကို ပြုလုပ်ခွင့်ရှိပါသည်' : 'Only Shop Owner can perform Demo Reset');
-      return;
-    }
-
-    const confirm = window.confirm(
-      isMm
-        ? 'သတိပေးချက်: သရုပ်ပြစမ်းသပ်ဒေတာ ပြန်လည်ဖြည့်သွင်းခြင်းသည် လက်ရှိဒေတာများအားလုံးကို ဖျက်ဆီးမည် ဖြစ်ပါသည်။ အမှန်တကယ် ဆက်လက်လုပ်ဆောင်လိုပါသလား?'
-        : 'WARNING: Resetting demo data will clear all business data and restore default sample data. Existing data will be lost. Are you sure you want to proceed?'
-    );
-    if (!confirm) return;
-
-    try {
-      await seedForceDemoData();
-      alert(isMm ? 'စမ်းသပ်ဒေတာများ ထည့်သွင်းပြီးပါပြီ' : 'Sample demo data seeded successfully!');
-      onRefresh();
-    } catch (err: any) {
-      alert('Error resetting demo: ' + err.message);
-    }
-  };
-
-  // Handle Pre-Update Backup
-  const handlePreUpdateBackup = async () => {
-    setIsPreUpdating(true);
-    setPreUpdateStatus(isMm ? 'ဒေတာဘေ့စ် မိတ္တူ သိမ်းဆည်းနေပါသည်...' : 'Creating pre-update database backup...');
-    try {
-      const data = await db.exportDatabaseBackup();
-      const blob = new Blob([data], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `pre_update_backup_v${APP_VERSION}_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      setPreUpdateStatus(
-        isMm
-          ? `အဆင့်မြှင့်တင်မှုမပြုမီ မိတ္တူဖိုင် (v${APP_VERSION}) ရယူပြီးပါပြီ။ APP_DATA_DIR ရှိ ဒေတာများ လုံခြုံစွာ ရှိပါသည်။`
-          : `Pre-update backup v${APP_VERSION} created successfully. APP_DATA_DIR data files verified safe.`
-      );
-    } catch (err: any) {
-      setPreUpdateStatus('Error: ' + err.message);
-    } finally {
-      setIsPreUpdating(false);
-    }
-  };
-
   // Save Shop Settings
   const handleSaveSettings = async () => {
     setIsSavingSettings(true);
@@ -266,33 +252,182 @@ export const SettingsAuditView: React.FC<SettingsAuditViewProps> = ({
     }
   };
 
-  // Create User
+  // Create User (Authoritative Server + Dexie Sync)
   const handleCreateUser = async () => {
-    if (!newUserName.trim() || newUserPin.length < 4) {
-      alert('Please enter valid username and 4-digit PIN');
+    if (!newUserName.trim() || !newUserUsername.trim()) {
+      alert(isMm ? 'ကျေးဇူးပြု၍ အမည်နှင့် အသုံးပြုသူအမည် ထည့်သွင်းပါ' : 'Please enter name and username');
+      return;
+    }
+    if (newUserPassword.length < 4) {
+      alert(isMm ? 'စကားဝှက် အနည်းဆုံး ၄ လုံး ရှိရပါမည်' : 'Password must be at least 4 characters');
+      return;
+    }
+    if (newUserPassword !== newUserConfirmPassword) {
+      alert(isMm ? 'စကားဝှက် ၂ ကြိမ် ရိုက်ထည့်မှု မတူညီပါ' : 'Passwords do not match');
       return;
     }
 
     try {
-      const { pinHash, pinSalt } = hashPin(newUserPin.trim());
+      const cleanUsername = newUserUsername.toLowerCase().trim();
+      const cleanName = newUserName.trim();
+      const cleanPassword = newUserPassword.trim();
+
+      // 1. Authoritative Server Call
+      try {
+        await localServerClient.createUser({
+          name: cleanName,
+          username: cleanUsername,
+          role: newUserRole,
+          password: cleanPassword,
+        });
+      } catch (serverErr) {
+        console.warn('LAN server user creation notice:', serverErr);
+      }
+
+      // 2. Local Dexie Storage
+      const { passwordHash, salt } = hashPassword(cleanPassword);
       const newUser: UserAccount = {
         id: 'usr_' + Date.now(),
-        name: newUserName.trim(),
-        username: newUserName.toLowerCase().replace(/\s+/g, '_'),
+        name: cleanName,
+        username: cleanUsername,
         role: newUserRole,
-        pinHash,
-        pinSalt,
+        pinHash: passwordHash,
+        pinSalt: salt,
         isActive: true,
         createdAt: new Date().toISOString(),
       };
 
-      await db.users.add(newUser);
+      await db.users.put(newUser);
       setIsAddUserOpen(false);
       setNewUserName('');
-      setNewUserPin('');
+      setNewUserUsername('');
+      setNewUserPassword('');
+      setNewUserConfirmPassword('');
       onRefresh();
+      alert(isMm ? 'အသုံးပြုသူအကောင့် အသစ်ဖန်တီးပြီးပါပြီ' : 'User account created successfully');
     } catch (err: any) {
       alert('Error adding user: ' + err.message);
+    }
+  };
+
+  // Edit User Details
+  const handleStartEditUser = (user: UserAccount) => {
+    setEditingUserId(user.id);
+    setEditUserName(user.name);
+    setEditUserUsername(user.username);
+    setEditUserRole(user.role);
+    setIsEditUserOpen(true);
+  };
+
+  const handleSaveEditUser = async () => {
+    if (!editingUserId || !editUserName.trim() || !editUserUsername.trim()) {
+      alert('Please provide valid name and username');
+      return;
+    }
+
+    try {
+      const cleanUsername = editUserUsername.toLowerCase().trim();
+      const cleanName = editUserName.trim();
+
+      // Server update
+      try {
+        await localServerClient.updateUser(editingUserId, {
+          name: cleanName,
+          username: cleanUsername,
+          role: editUserRole,
+        });
+      } catch (err) {
+        console.warn('Server edit notice:', err);
+      }
+
+      // Dexie update
+      await db.users.update(editingUserId, {
+        name: cleanName,
+        username: cleanUsername,
+        role: editUserRole,
+      });
+
+      setIsEditUserOpen(false);
+      setEditingUserId(null);
+      onRefresh();
+      alert(isMm ? 'အချက်အလက်များ ပြင်ဆင်ပြီးပါပြီ' : 'User updated successfully');
+    } catch (err: any) {
+      alert('Error editing user: ' + err.message);
+    }
+  };
+
+  // Change / Reset Password
+  const handleOpenPasswordModal = (user: UserAccount) => {
+    setTargetPasswordUserId(user.id);
+    setTargetPasswordUserName(user.name);
+    setNewPasswordInput('');
+    setConfirmPasswordInput('');
+    setIsChangePasswordOpen(true);
+  };
+
+  const handleSavePassword = async () => {
+    if (!targetPasswordUserId || newPasswordInput.length < 4) {
+      alert(isMm ? 'စကားဝှက် အနည်းဆုံး ၄ လုံး ရှိရပါမည်' : 'Password must be at least 4 characters');
+      return;
+    }
+    if (newPasswordInput !== confirmPasswordInput) {
+      alert(isMm ? 'စကားဝှက် ၂ ကြိမ် ရိုက်ထည့်မှု မတူညီပါ' : 'Passwords do not match');
+      return;
+    }
+
+    try {
+      const cleanPassword = newPasswordInput.trim();
+
+      // Server update
+      try {
+        await localServerClient.changeUserPassword(targetPasswordUserId, cleanPassword);
+      } catch (err) {
+        console.warn('Server password change notice:', err);
+      }
+
+      // Dexie update
+      const { passwordHash, salt } = hashPassword(cleanPassword);
+      await db.users.update(targetPasswordUserId, {
+        pinHash: passwordHash,
+        pinSalt: salt,
+      });
+
+      setIsChangePasswordOpen(false);
+      setTargetPasswordUserId(null);
+      setNewPasswordInput('');
+      setConfirmPasswordInput('');
+      onRefresh();
+      alert(isMm ? 'စကားဝှက် အောင်မြင်စွာ ပြောင်းလဲပြီးပါပြီ' : 'Password changed successfully');
+    } catch (err: any) {
+      alert('Error changing password: ' + err.message);
+    }
+  };
+
+  // Toggle Active Status
+  const handleToggleUserActive = async (user: UserAccount) => {
+    if (user.id === currentUser.id && user.isActive) {
+      alert(isMm ? 'မိမိကိုယ်ပိုင် အကောင့်ကို ပိတ်၍မရပါ' : 'Cannot deactivate your own logged-in account');
+      return;
+    }
+
+    const nextActive = !user.isActive;
+    const confirmMsg = nextActive
+      ? (isMm ? `${user.name} အား ပြန်လည်ဖွင့်လှစ်ပေးမည်လား?` : `Activate account for ${user.name}?`)
+      : (isMm ? `${user.name} အား ပိတ်သိမ်းမည်လား? အကောင့်ပိတ်ပါက စနစ်သို့ ဝင်ရောက်ခွင့် မရတော့ပါ။` : `Deactivate account for ${user.name}? They will no longer be able to log in.`);
+
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      try {
+        await localServerClient.toggleUserActive(user.id, nextActive);
+      } catch (err) {
+        console.warn('Server toggle active notice:', err);
+      }
+
+      await db.users.update(user.id, { isActive: nextActive });
+      onRefresh();
+    } catch (err: any) {
+      alert('Error updating user status: ' + err.message);
     }
   };
 
@@ -434,55 +569,136 @@ export const SettingsAuditView: React.FC<SettingsAuditViewProps> = ({
         </div>
       )}
 
-      {/* 2. User Accounts & PINs Tab */}
+      {/* 2. User Accounts & Access Control Tab */}
       {activeTab === 'users' && (
         <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-xs space-y-4">
-          <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 pb-3">
             <div>
               <h3 className="text-sm font-bold text-gray-900">
-                {isMm ? 'စနစ်သုံးစွဲခွင့် အကောင့်များနှင့် PIN နံပါတ်များ' : 'User Accounts & Access Roles'}
+                {isMm ? 'စနစ်သုံးစွဲခွင့် အကောင့်များနှင့် လုံခြုံရေး' : 'User Accounts & Security (RBAC)'}
               </h3>
               <p className="text-xs text-gray-500">
-                {isMm ? 'ပိုင်ရှင်၊ မန်နေဂျာနှင့် ငွေကိုင်များ၏ PIN များကို စီမံပါ' : 'Role-based access permissions and quick PIN login'}
+                {isMm
+                  ? 'ဆိုင်ရှင်၊ မန်နေဂျာ၊ ငွေကိုင်များနှင့် အသုံးပြုသူ အကောင့်များကို စီမံခန့်ခွဲပါ'
+                  : 'Authoritative user management, role assignments, status toggling, and secure password changes'}
               </p>
             </div>
 
-            <button
-              onClick={() => setIsAddUserOpen(true)}
-              className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700"
-            >
-              <Plus className="h-4 w-4" />
-              <span>{isMm ? 'အကောင့်အသစ် ဖန်တီးမည်' : 'Add User Account'}</span>
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {users.map(u => (
-              <div
-                key={u.id}
-                className="rounded-2xl border border-gray-200 bg-white p-4 shadow-xs space-y-2"
+            {currentUser.role === 'owner' && (
+              <button
+                onClick={() => setIsAddUserOpen(true)}
+                className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 cursor-pointer"
               >
-                <div className="flex items-start justify-between">
-                  <div>
-                    <h4 className="font-bold text-gray-900">{u.name}</h4>
-                    <span className="inline-block rounded-md bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-800 mt-1">
-                      {u.role}
-                    </span>
-                  </div>
-                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gray-100 text-gray-600">
-                    <Key className="h-4 w-4" />
-                  </div>
-                </div>
-
-                <div className="rounded-xl bg-gray-50 p-2 text-xs text-gray-600 flex justify-between items-center border border-gray-100">
-                  <span>Authentication:</span>
-                  <span className="font-mono font-bold tracking-widest text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                    •••••• (Salted Hash)
-                  </span>
-                </div>
-              </div>
-            ))}
+                <Plus className="h-4 w-4" />
+                <span>{isMm ? 'အသုံးပြုသူ အသစ်ဖန်တီးမည်' : 'Create User Account'}</span>
+              </button>
+            )}
           </div>
+
+          {currentUser.role !== 'owner' ? (
+            <div className="rounded-xl bg-amber-50 p-4 text-xs text-amber-900 border border-amber-200 flex items-center gap-2">
+              <Lock className="h-4 w-4 shrink-0 text-amber-600" />
+              <span>
+                {isMm
+                  ? 'အသုံးပြုသူ စာရင်းနှင့် လုံခြုံရေး ဆက်တင်များကို ဆိုင်ရှင် (Owner) သာလျှင် စီမံခန့်ခွဲခွင့် ရှိပါသည်။ မိမိ စကားဝှက်ကိုသာ ပြောင်းလဲနိုင်ပါသည်။'
+                  : 'Only the Shop Owner can manage user accounts. Non-owner staff can change their own password below.'}
+              </span>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs text-gray-700">
+                <thead className="bg-gray-50 text-[11px] uppercase tracking-wider text-gray-500 border-y border-gray-200">
+                  <tr>
+                    <th className="py-2.5 px-3">Name</th>
+                    <th className="py-2.5 px-3">Username</th>
+                    <th className="py-2.5 px-3">Role</th>
+                    <th className="py-2.5 px-3">Status</th>
+                    <th className="py-2.5 px-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {users.map(u => (
+                    <tr key={u.id} className="hover:bg-gray-50/80">
+                      <td className="py-3 px-3">
+                        <div className="font-bold text-gray-900">{u.name}</div>
+                        {u.id === currentUser.id && (
+                          <span className="text-[10px] text-emerald-600 font-semibold">(Current You)</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-3 font-mono text-gray-600">@{u.username}</td>
+                      <td className="py-3 px-3">
+                        <span
+                          className={`inline-block rounded-md px-2 py-0.5 text-[10px] font-bold uppercase ${
+                            u.role === 'owner'
+                              ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                              : u.role === 'manager'
+                              ? 'bg-blue-100 text-blue-800 border border-blue-200'
+                              : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                          }`}
+                        >
+                          {u.role}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3">
+                        {u.isActive ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 border border-emerald-200">
+                            <Check className="h-3 w-3" /> Active
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-700 border border-rose-200">
+                            <XCircle className="h-3 w-3" /> Deactivated
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 px-3 text-right space-x-1.5 whitespace-nowrap">
+                        <button
+                          onClick={() => handleStartEditUser(u)}
+                          title="Edit user details"
+                          className="rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-100 cursor-pointer"
+                        >
+                          <Edit2 className="inline h-3 w-3 mr-1" />
+                          <span>{isMm ? 'ပြင်ဆင်' : 'Edit'}</span>
+                        </button>
+                        <button
+                          onClick={() => handleOpenPasswordModal(u)}
+                          title="Change or reset password"
+                          className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs text-amber-800 hover:bg-amber-100 cursor-pointer"
+                        >
+                          <KeyRound className="inline h-3 w-3 mr-1" />
+                          <span>{isMm ? 'စကားဝှက်' : 'Password'}</span>
+                        </button>
+                        {u.id !== currentUser.id && (
+                          <button
+                            onClick={() => handleToggleUserActive(u)}
+                            className={`rounded-lg px-2.5 py-1 text-xs font-semibold cursor-pointer ${
+                              u.isActive
+                                ? 'border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'
+                                : 'border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                            }`}
+                          >
+                            {u.isActive ? (isMm ? 'ပိတ်မည်' : 'Deactivate') : (isMm ? 'ဖွင့်မည်' : 'Activate')}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Self password change for non-owners */}
+          {currentUser.role !== 'owner' && (
+            <div className="pt-2">
+              <button
+                onClick={() => handleOpenPasswordModal(currentUser)}
+                className="flex items-center gap-1.5 rounded-xl bg-amber-600 px-4 py-2 text-xs font-bold text-white hover:bg-amber-700 cursor-pointer"
+              >
+                <KeyRound className="h-4 w-4" />
+                <span>{isMm ? 'မိမိ စကားဝှက် ပြောင်းလဲမည်' : 'Change My Password'}</span>
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -513,7 +729,7 @@ export const SettingsAuditView: React.FC<SettingsAuditViewProps> = ({
             <button
               type="button"
               onClick={handleExportBackup}
-              className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 text-xs font-bold text-white shadow-xs hover:bg-emerald-700"
+              className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 cursor-pointer"
             >
               <Download className="h-4 w-4" />
               <span>{isMm ? 'မိတ္တူဖိုင် ဒေါင်းလုဒ်ရယူမည်' : 'Download Complete Backup File'}</span>
@@ -539,7 +755,7 @@ export const SettingsAuditView: React.FC<SettingsAuditViewProps> = ({
                 type="file"
                 accept=".json"
                 onChange={handleFileChange}
-                className="w-full text-xs text-gray-500 file:mr-3 file:rounded-xl file:border-0 file:bg-gray-100 file:px-3 file:py-2 file:text-xs file:font-bold file:text-gray-700 hover:file:bg-gray-200"
+                className="w-full text-xs text-gray-500 file:mr-3 file:rounded-xl file:border-0 file:bg-gray-100 file:px-3 file:py-2 file:text-xs file:font-bold file:text-gray-700 hover:file:bg-gray-200 cursor-pointer"
               />
 
               {restoreFileContent && (
@@ -556,20 +772,10 @@ export const SettingsAuditView: React.FC<SettingsAuditViewProps> = ({
                 type="button"
                 disabled={!restoreFileContent}
                 onClick={handleConfirmRestore}
-                className="flex-1 rounded-xl bg-indigo-600 py-3 text-xs font-bold text-white shadow-xs hover:bg-indigo-700 disabled:opacity-50"
+                className="flex-1 rounded-xl bg-indigo-600 py-3 text-xs font-bold text-white shadow-xs hover:bg-indigo-700 disabled:opacity-50 cursor-pointer"
               >
                 {isMm ? 'အတည်ပြု ပြန်သွင်းမည်' : 'Execute Restore'}
               </button>
-              {currentUser.role === 'owner' && (
-                <button
-                  type="button"
-                  onClick={handleResetDemoData}
-                  className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 text-xs font-semibold text-gray-600 hover:bg-gray-100"
-                  title="Reset to fresh demo sample data (Owner Only)"
-                >
-                  <RefreshCw className="h-4 w-4" />
-                </button>
-              )}
             </div>
           </div>
         </div>
@@ -843,55 +1049,182 @@ export const SettingsAuditView: React.FC<SettingsAuditViewProps> = ({
       {isAddUserOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
-            <h3 className="text-base font-bold text-gray-900 mb-3">Add User Account</h3>
+            <h3 className="text-base font-bold text-gray-900 mb-3">
+              {isMm ? 'အသုံးပြုသူ အသစ်ထည့်သွင်းခြင်း' : 'Create User Account'}
+            </h3>
             <div className="space-y-3 text-xs">
               <div>
-                <label className="block font-semibold mb-1">User Name</label>
+                <label className="block font-semibold mb-1 text-gray-700">Display Name</label>
                 <input
                   type="text"
                   value={newUserName}
                   onChange={e => setNewUserName(e.target.value)}
                   placeholder="e.g. Daw Khin Khin"
-                  className="w-full rounded-xl border border-gray-200 bg-gray-50 p-2"
+                  className="w-full rounded-xl border border-gray-200 bg-gray-50 p-2.5 text-gray-900"
                 />
               </div>
               <div>
-                <label className="block font-semibold mb-1">Role</label>
+                <label className="block font-semibold mb-1 text-gray-700">Username (Login ID)</label>
+                <input
+                  type="text"
+                  value={newUserUsername}
+                  onChange={e => setNewUserUsername(e.target.value)}
+                  placeholder="e.g. khinkhin"
+                  className="w-full rounded-xl border border-gray-200 bg-gray-50 p-2.5 lowercase text-gray-900"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold mb-1 text-gray-700">Role</label>
                 <select
                   value={newUserRole}
                   onChange={e => setNewUserRole(e.target.value as any)}
-                  className="w-full rounded-xl border border-gray-200 bg-gray-50 p-2"
+                  className="w-full rounded-xl border border-gray-200 bg-gray-50 p-2.5 text-gray-900"
                 >
                   <option value="cashier">Cashier (ငွေကိုင်)</option>
+                  <option value="receptionist">Receptionist (ဧည့်ကြို)</option>
                   <option value="manager">Manager (မန်နေဂျာ)</option>
-                  <option value="auditor">Auditor (စာရင်းစစ်)</option>
                   <option value="owner">Owner (ဆိုင်ရှင်)</option>
                 </select>
               </div>
               <div>
-                <label className="block font-semibold mb-1">4-Digit PIN</label>
+                <label className="block font-semibold mb-1 text-gray-700">Password</label>
                 <input
                   type="password"
-                  maxLength={6}
-                  value={newUserPin}
-                  onChange={e => setNewUserPin(e.target.value)}
-                  placeholder="e.g. 1122"
-                  className="w-full rounded-xl border border-gray-200 bg-gray-50 p-2 font-mono tracking-widest"
+                  value={newUserPassword}
+                  onChange={e => setNewUserPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full rounded-xl border border-gray-200 bg-gray-50 p-2.5 text-gray-900"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold mb-1 text-gray-700">Confirm Password</label>
+                <input
+                  type="password"
+                  value={newUserConfirmPassword}
+                  onChange={e => setNewUserConfirmPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full rounded-xl border border-gray-200 bg-gray-50 p-2.5 text-gray-900"
                 />
               </div>
             </div>
             <div className="mt-5 flex justify-end gap-2">
               <button
                 onClick={() => setIsAddUserOpen(false)}
-                className="rounded-xl border border-gray-200 px-4 py-2 text-xs"
+                className="rounded-xl border border-gray-200 px-4 py-2 text-xs font-semibold cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 onClick={handleCreateUser}
-                className="rounded-xl bg-emerald-600 px-5 py-2 text-xs font-bold text-white hover:bg-emerald-700"
+                className="rounded-xl bg-emerald-600 px-5 py-2 text-xs font-bold text-white hover:bg-emerald-700 cursor-pointer"
               >
-                Save
+                Create
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT USER MODAL */}
+      {isEditUserOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <h3 className="text-base font-bold text-gray-900 mb-3">
+              {isMm ? 'အသုံးပြုသူ အချက်အလက် ပြင်ဆင်ခြင်း' : 'Edit User Account'}
+            </h3>
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block font-semibold mb-1 text-gray-700">Display Name</label>
+                <input
+                  type="text"
+                  value={editUserName}
+                  onChange={e => setEditUserName(e.target.value)}
+                  className="w-full rounded-xl border border-gray-200 bg-gray-50 p-2.5 text-gray-900"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold mb-1 text-gray-700">Username</label>
+                <input
+                  type="text"
+                  value={editUserUsername}
+                  onChange={e => setEditUserUsername(e.target.value)}
+                  className="w-full rounded-xl border border-gray-200 bg-gray-50 p-2.5 lowercase text-gray-900"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold mb-1 text-gray-700">Role</label>
+                <select
+                  value={editUserRole}
+                  onChange={e => setEditUserRole(e.target.value as any)}
+                  className="w-full rounded-xl border border-gray-200 bg-gray-50 p-2.5 text-gray-900"
+                >
+                  <option value="cashier">Cashier (ငွေကိုင်)</option>
+                  <option value="receptionist">Receptionist (ဧည့်ကြို)</option>
+                  <option value="manager">Manager (မန်နေဂျာ)</option>
+                  <option value="owner">Owner (ဆိုင်ရှင်)</option>
+                </select>
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                onClick={() => setIsEditUserOpen(false)}
+                className="rounded-xl border border-gray-200 px-4 py-2 text-xs font-semibold cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveEditUser}
+                className="rounded-xl bg-blue-600 px-5 py-2 text-xs font-bold text-white hover:bg-blue-700 cursor-pointer"
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CHANGE PASSWORD MODAL */}
+      {isChangePasswordOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <h3 className="text-base font-bold text-gray-900 mb-1">
+              {isMm ? 'စကားဝှက် ပြောင်းလဲခြင်း / အသစ်သတ်မှတ်ခြင်း' : 'Change Password'}
+            </h3>
+            <p className="text-xs text-gray-500 mb-4">User: <strong className="text-gray-800">{targetPasswordUserName}</strong></p>
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block font-semibold mb-1 text-gray-700">New Password</label>
+                <input
+                  type="password"
+                  value={newPasswordInput}
+                  onChange={e => setNewPasswordInput(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full rounded-xl border border-gray-200 bg-gray-50 p-2.5 text-gray-900"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold mb-1 text-gray-700">Confirm New Password</label>
+                <input
+                  type="password"
+                  value={confirmPasswordInput}
+                  onChange={e => setConfirmPasswordInput(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full rounded-xl border border-gray-200 bg-gray-50 p-2.5 text-gray-900"
+                />
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                onClick={() => setIsChangePasswordOpen(false)}
+                className="rounded-xl border border-gray-200 px-4 py-2 text-xs font-semibold cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSavePassword}
+                className="rounded-xl bg-amber-600 px-5 py-2 text-xs font-bold text-white hover:bg-amber-700 cursor-pointer"
+              >
+                Update Password
               </button>
             </div>
           </div>

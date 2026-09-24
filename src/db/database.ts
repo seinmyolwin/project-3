@@ -73,6 +73,13 @@ import {
   StaffAttendanceRecord,
   ServiceConsumableItem,
   StockMovementRecord,
+  ShiftHandoverRecord,
+  SupplierRecord,
+  PurchaseOrderRecord,
+  PurchaseOrderItem,
+  StockAdjustmentRecord,
+  PerformanceBonusRuleRecord,
+  CustomerLoyaltyEntry,
 } from '../types';
 import {
   calculateSessionPricing,
@@ -148,6 +155,12 @@ export class MyanmarBusinessDB extends Dexie {
   staffAttendance!: Table<StaffAttendanceRecord, string>;
   serviceConsumables!: Table<ServiceConsumableItem, string>;
   stockMovements!: Table<StockMovementRecord, string>;
+  shiftHandovers!: Table<ShiftHandoverRecord, string>;
+  suppliers!: Table<SupplierRecord, string>;
+  purchaseOrders!: Table<PurchaseOrderRecord, string>;
+  stockAdjustments!: Table<StockAdjustmentRecord, string>;
+  performanceBonusRules!: Table<PerformanceBonusRuleRecord, string>;
+  customerLoyaltyLedger!: Table<CustomerLoyaltyEntry, string>;
 
   constructor() {
     super('MyanmarBusinessERP_DB');
@@ -265,6 +278,20 @@ export class MyanmarBusinessDB extends Dexie {
     // Schema Version 8 (Phase 29.1: Stock Movements & Reversals)
     this.version(8).stores({
       stockMovements: 'id, productId, serviceId, sessionId, invoiceId, customerId, staffId, type, date, createdAt',
+    });
+
+    // Schema Version 9 (Phase 36: Shift Handovers & Reconciliation)
+    this.version(9).stores({
+      shiftHandovers: 'id, shiftCode, staffId, status, branchId, businessId, openedAt',
+    });
+
+    // Schema Version 10 (Phase 35-37: Suppliers, Purchase Orders, Stock Adjustments, Performance Bonus Rules & Customer Loyalty Ledger)
+    this.version(10).stores({
+      suppliers: 'id, name, isActive, businessId, branchId, createdAt',
+      purchaseOrders: 'id, poNumber, supplierId, status, paymentStatus, orderDate, businessId, branchId, createdAt',
+      stockAdjustments: 'id, productId, adjustedBy, createdAt, businessId, branchId',
+      performanceBonusRules: 'id, ruleName, isActive, businessId, branchId, createdAt',
+      customerLoyaltyLedger: 'id, customerId, type, date, createdAt',
     });
   }
 
@@ -3322,6 +3349,11 @@ export class MyanmarBusinessDB extends Dexie {
         this.auditLogs.clear(),
         this.backupMetadata.clear(),
         this.settings.clear(),
+        this.suppliers?.clear(),
+        this.purchaseOrders?.clear(),
+        this.stockAdjustments?.clear(),
+        this.performanceBonusRules?.clear(),
+        this.customerLoyaltyLedger?.clear(),
       ]);
 
       // Bulk put restored data (safely handling duplicate keys)
@@ -3776,6 +3808,208 @@ export class MyanmarBusinessDB extends Dexie {
       });
 
       return tipRecord;
+    });
+  }
+
+  /**
+   * ATOMIC STOCK ADJUSTMENT:
+   */
+  async recordStockAdjustmentTransaction(params: {
+    productId: string;
+    adjustQty: number;
+    reason: string;
+    adjustedBy: string;
+    businessId?: string;
+    branchId?: string;
+  }): Promise<StockAdjustmentRecord> {
+    return this.transaction('rw', [this.products, this.stockMovements, this.stockAdjustments, this.auditLogs], async () => {
+      const now = new Date().toISOString();
+      const prd = await this.products.get(params.productId);
+      if (!prd) throw new Error('Product not found');
+
+      const beforeQty = prd.stockQty || 0;
+      const afterQty = Math.max(0, beforeQty + params.adjustQty);
+
+      await this.products.update(params.productId, {
+        stockQty: afterQty,
+      });
+
+      const adjId = `adj_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      const adjRecord: StockAdjustmentRecord = {
+        id: adjId,
+        businessId: params.businessId || 'default',
+        branchId: params.branchId || 'main',
+        productId: prd.id,
+        productName: prd.name,
+        beforeQty,
+        afterQty,
+        adjustQty: params.adjustQty,
+        reason: params.reason,
+        adjustedBy: params.adjustedBy,
+        createdAt: now,
+      };
+
+      await this.stockAdjustments.add(adjRecord);
+
+      await this.stockMovements.add({
+        id: `stkmov_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        productId: prd.id,
+        productName: prd.name,
+        type: params.adjustQty >= 0 ? 'adjustment_in' : 'adjustment_out',
+        quantityChange: params.adjustQty,
+        previousStock: beforeQty,
+        newStock: afterQty,
+        unit: prd.unit,
+        notes: `Stock Adjustment: ${params.reason}`,
+        date: now.split('T')[0],
+        createdAt: now,
+        createdBy: params.adjustedBy,
+      });
+
+      return adjRecord;
+    });
+  }
+
+  /**
+   * ATOMIC PURCHASE ORDER TRANSACTION:
+   */
+  async recordPurchaseOrderTransaction(params: {
+    poNumber?: string;
+    supplierId: string;
+    supplierName: string;
+    items: PurchaseOrderItem[];
+    totalAmountMMK: number;
+    paidAmountMMK: number;
+    paymentStatus: 'unpaid' | 'partial' | 'paid';
+    paymentMethod?: string;
+    createdBy: string;
+    notes?: string;
+    businessId?: string;
+    branchId?: string;
+  }): Promise<PurchaseOrderRecord> {
+    return this.transaction('rw', [this.purchaseOrders, this.products, this.stockMovements, this.cashTransactions], async () => {
+      const now = new Date().toISOString();
+      const poId = `po_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      const poCode = params.poNumber || `PO-${Date.now()}`;
+
+      for (const item of params.items) {
+        const prd = await this.products.get(item.productId);
+        if (prd) {
+          const before = prd.stockQty || 0;
+          const after = before + item.quantity;
+          await this.products.update(prd.id, {
+            stockQty: after,
+            costPriceMMK: item.costPriceMMK || prd.costPriceMMK,
+          });
+
+          await this.stockMovements.add({
+            id: `stkmov_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            productId: prd.id,
+            productName: prd.name,
+            type: 'purchase',
+            quantityChange: item.quantity,
+            previousStock: before,
+            newStock: after,
+            unit: prd.unit,
+            notes: `Purchase Order ${poCode} from ${params.supplierName}`,
+            date: now.split('T')[0],
+            createdAt: now,
+            createdBy: params.createdBy,
+          });
+        }
+      }
+
+      const poRecord: PurchaseOrderRecord = {
+        id: poId,
+        businessId: params.businessId || 'default',
+        branchId: params.branchId || 'main',
+        poNumber: poCode,
+        supplierId: params.supplierId,
+        supplierName: params.supplierName,
+        items: params.items,
+        totalAmountMMK: params.totalAmountMMK,
+        paidAmountMMK: params.paidAmountMMK,
+        paymentStatus: params.paymentStatus,
+        paymentMethod: params.paymentMethod,
+        orderDate: now.split('T')[0],
+        status: 'received',
+        notes: params.notes,
+        createdBy: params.createdBy,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      await this.purchaseOrders.add(poRecord);
+
+      if (params.paidAmountMMK > 0 && params.paymentMethod === 'cash') {
+        await this.cashTransactions.add({
+          id: `ctx_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          transactionCode: `CTX-${Date.now()}`,
+          branchId: params.branchId || 'main',
+          type: 'outflow',
+          category: 'expense_cash',
+          amountMMK: params.paidAmountMMK,
+          referenceType: 'manual',
+          referenceId: poId,
+          notes: `Purchase Order Payment: ${poCode} to ${params.supplierName}`,
+          transactionTime: now,
+          performedBy: params.createdBy,
+          createdAt: now,
+        });
+      }
+
+      return poRecord;
+    });
+  }
+
+  /**
+   * ATOMIC LOYALTY POINTS TRANSACTION:
+   */
+  async recordLoyaltyPointsTransaction(params: {
+    customerId: string;
+    customerName?: string;
+    points: number;
+    type: 'earn' | 'redeem' | 'adjust';
+    referenceType?: 'sale' | 'manual' | 'reversal';
+    referenceId?: string;
+    notes?: string;
+    performedBy: string;
+  }): Promise<CustomerLoyaltyEntry> {
+    return this.transaction('rw', [this.customers, this.customerLoyaltyLedger], async () => {
+      const now = new Date().toISOString();
+      const cust = await this.customers.get(params.customerId);
+      if (!cust) throw new Error('Customer not found');
+
+      const currentPoints = cust.loyaltyPoints || 0;
+      const newBalance = Math.max(0, currentPoints + params.points);
+
+      if (params.points < 0 && Math.abs(params.points) > currentPoints) {
+        throw new Error(`Insufficient loyalty points balance (${currentPoints} points available)`);
+      }
+
+      await this.customers.update(params.customerId, {
+        loyaltyPoints: newBalance,
+        updatedAt: now,
+      });
+
+      const entryId = `loy_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      const entry: CustomerLoyaltyEntry = {
+        id: entryId,
+        customerId: cust.id,
+        customerName: cust.name,
+        points: params.points,
+        balanceAfter: newBalance,
+        type: params.type,
+        referenceType: params.referenceType,
+        referenceId: params.referenceId,
+        notes: params.notes,
+        date: now.split('T')[0],
+        createdAt: now,
+      };
+
+      await this.customerLoyaltyLedger.add(entry);
+
+      return entry;
     });
   }
 

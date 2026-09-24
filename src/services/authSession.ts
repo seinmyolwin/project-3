@@ -105,6 +105,25 @@ export class AuthSessionManager {
   }
 
   /**
+   * Helper alias for getSession()
+   */
+  public getLanSession(): AuthSessionData | null {
+    return this.getSession();
+  }
+
+  /**
+   * Helper alias for saving LAN session
+   */
+  public saveLanSession(token: string, user: UserAccount, ttlMs = 24 * 60 * 60 * 1000): void {
+    const expiresAt = new Date(Date.now() + ttlMs).toISOString();
+    this.setLanSession({
+      token,
+      user,
+      expiresAt,
+    });
+  }
+
+  /**
    * Save active Offline Local session
    */
   public setOfflineSession(user: UserAccount, deviceId?: string): void {
@@ -212,14 +231,21 @@ export class AuthSessionManager {
     return session ? session.user : null;
   }
 
+  public getIsServerConnected(): boolean {
+    return this.getSession() !== null || this.getToken() !== null;
+  }
+
   /**
    * Clear authenticated session (logout)
    */
   public clearSession(): void {
+    this.memorySession = null;
     try {
-      sessionStorage.removeItem(SESSION_STORAGE_KEY);
-    } catch (err) {
-      console.error('[AuthSession] Error clearing session');
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.removeItem(SESSION_STORAGE_KEY);
+      }
+    } catch {
+      // Ignore storage access errors in headless/node environments
     }
   }
 }

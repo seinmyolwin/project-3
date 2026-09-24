@@ -51,6 +51,17 @@ export function createApiRouter(storage: PersistentSQLiteStorage = serverStorage
         return res.status(401).json({ error: 'TOKEN_EXPIRED', message: 'Session expired' });
       }
 
+      // Check user active status in persistent database
+      const freshUser = storage.getUserById(session.user.id);
+      if (!freshUser || !freshUser.isActive) {
+        activeSessions.delete(token);
+        return res.status(401).json({ error: 'USER_DEACTIVATED', message: 'This user account is deactivated or removed' });
+      }
+
+      // Sync latest role & profile
+      session.user.role = freshUser.role;
+      session.user.name = freshUser.name;
+
       // Check device revocation
       const device = storage.getDevice(session.deviceId);
       if (device && device.status === 'REVOKED') {
@@ -81,8 +92,78 @@ export function createApiRouter(storage: PersistentSQLiteStorage = serverStorage
   });
 
   // ==========================================
-  // 2. AUTHENTICATION
+  // 2. AUTHENTICATION & FIRST-RUN SETUP
   // ==========================================
+  router.get('/auth/setup-status', (_req: Request, res: Response) => {
+    const count = storage.countUsers();
+    res.json({
+      isSetupRequired: count === 0,
+      userCount: count,
+    });
+  });
+
+  router.post('/auth/setup-owner', (req: Request, res: Response) => {
+    const count = storage.countUsers();
+    if (count > 0) {
+      return res.status(400).json({ error: 'SETUP_ALREADY_COMPLETED', message: 'Owner account is already configured' });
+    }
+
+    const { name, username, password } = req.body;
+    if (!name || !username || !password || password.length < 4) {
+      return res.status(400).json({ error: 'INVALID_INPUT', message: 'Name, username, and password (min 4 chars) are required' });
+    }
+
+    const owner = storage.createUser({
+      name,
+      username,
+      role: 'owner',
+      password,
+    });
+
+    res.json({
+      success: true,
+      message: 'Owner account created successfully',
+      user: {
+        id: owner.id,
+        name: owner.name,
+        username: owner.username,
+        role: owner.role,
+      },
+    });
+  });
+
+  router.post('/setup-wizard', requireAuth(), async (req: Request, res: Response) => {
+    const user = (req as any).user;
+    if (!user || user.role !== 'owner') {
+      return res.status(403).json({
+        error: 'FORBIDDEN',
+        message: 'Only Shop Owner (owner role) can execute Setup Wizard',
+      });
+    }
+
+    try {
+      const payload = req.body || {};
+      const result = await storage.replaceSetupWizardData({
+        ...payload,
+        businessId: user.businessId || 'default',
+        branchId: user.branchId || 'main',
+        userId: user.id,
+        userName: user.name,
+      });
+
+      res.json({
+        success: true,
+        message: 'Master data setup successfully executed on server SQLite',
+        backupFile: result.backupFile,
+      });
+    } catch (err: any) {
+      res.status(500).json({
+        error: 'SETUP_FAILED',
+        message: err.message || 'Failed to replace setup data',
+      });
+    }
+  });
+
   router.post('/auth/pin-login', (req: Request, res: Response) => {
     const { usernameOrId, username, userId, pin, deviceId } = req.body;
     const accountLookup = (usernameOrId || username || userId || '').toString();
@@ -183,6 +264,141 @@ export function createApiRouter(storage: PersistentSQLiteStorage = serverStorage
       deviceId: (req as any).deviceId,
     });
   });
+
+  // ==========================================
+  // USER MANAGEMENT (OWNER ONLY RBAC)
+  // ==========================================
+  router.get('/users', requireAuth(['owner']), (_req: Request, res: Response) => {
+    const users = storage.getUsers();
+    res.json({
+      success: true,
+      users: users.map(u => ({
+        id: u.id,
+        name: u.name,
+        username: u.username,
+        role: u.role,
+        isActive: u.isActive,
+        createdAt: u.createdAt,
+      })),
+    });
+  });
+
+  router.post('/users', requireAuth(['owner']), (req: Request, res: Response) => {
+    const { name, username, role, password, pin } = req.body;
+    if (!name || !username) {
+      return res.status(400).json({ error: 'INVALID_INPUT', message: 'Name and username are required' });
+    }
+
+    const existing = storage.getUserByUsername(username);
+    if (existing) {
+      return res.status(400).json({ error: 'USERNAME_EXISTS', message: 'Username is already in use' });
+    }
+
+    const validRoles: UserRole[] = ['owner', 'manager', 'cashier', 'receptionist'];
+    const assignedRole = validRoles.includes(role) ? role : 'cashier';
+
+    const created = storage.createUser({
+      name,
+      username,
+      role: assignedRole,
+      password: password || pin || '123456',
+    });
+
+    res.json({
+      success: true,
+      message: 'User created successfully',
+      user: {
+        id: created.id,
+        name: created.name,
+        username: created.username,
+        role: created.role,
+        isActive: created.isActive,
+        createdAt: created.createdAt,
+      },
+    });
+  });
+
+  router.put('/users/:id', requireAuth(['owner']), (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { name, username, role, isActive } = req.body;
+
+    const user = storage.getUserById(id);
+    if (!user) {
+      return res.status(404).json({ error: 'USER_NOT_FOUND', message: 'User not found' });
+    }
+
+    if (username && username.toLowerCase().trim() !== user.username.toLowerCase()) {
+      const existing = storage.getUserByUsername(username);
+      if (existing && existing.id !== id) {
+        return res.status(400).json({ error: 'USERNAME_EXISTS', message: 'Username is already taken' });
+      }
+    }
+
+    storage.updateUser(id, { name, username, role, isActive });
+    const updated = storage.getUserById(id);
+
+    res.json({
+      success: true,
+      message: 'User updated successfully',
+      user: updated ? {
+        id: updated.id,
+        name: updated.name,
+        username: updated.username,
+        role: updated.role,
+        isActive: updated.isActive,
+        createdAt: updated.createdAt,
+      } : null,
+    });
+  });
+
+  router.post('/users/:id/change-password', requireAuth(), (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { newPassword } = req.body;
+    const currentUser = (req as any).user;
+
+    // Authorization: Owner can change any user password; normal user can only change own password
+    if (currentUser.role !== 'owner' && currentUser.id !== id) {
+      return res.status(403).json({ error: 'FORBIDDEN', message: 'You can only change your own password' });
+    }
+
+    if (!newPassword || newPassword.trim().length < 4) {
+      return res.status(400).json({ error: 'INVALID_PASSWORD', message: 'Password must be at least 4 characters' });
+    }
+
+    const success = storage.updateUserPassword(id, newPassword.trim());
+    if (!success) {
+      return res.status(404).json({ error: 'USER_NOT_FOUND', message: 'User not found' });
+    }
+
+    res.json({ success: true, message: 'Password updated successfully' });
+  });
+
+  router.post('/users/:id/toggle-active', requireAuth(['owner']), (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { isActive } = req.body;
+    const currentUser = (req as any).user;
+
+    if (currentUser.id === id && !isActive) {
+      return res.status(400).json({ error: 'CANNOT_DEACTIVATE_SELF', message: 'Owner cannot deactivate their own active account' });
+    }
+
+    const success = storage.setUserActive(id, Boolean(isActive));
+    if (!success) {
+      return res.status(404).json({ error: 'USER_NOT_FOUND', message: 'User not found' });
+    }
+
+    // Invalidate sessions if deactivated
+    if (!isActive) {
+      for (const [tok, sess] of activeSessions.entries()) {
+        if (sess.user.id === id) {
+          activeSessions.delete(tok);
+        }
+      }
+    }
+
+    res.json({ success: true, message: `User ${isActive ? 'activated' : 'deactivated'} successfully` });
+  });
+
 
   // ==========================================
   // 3. DEVICE PAIRING & REGISTRATION
@@ -738,6 +954,21 @@ export function createApiRouter(storage: PersistentSQLiteStorage = serverStorage
           break;
         }
 
+        case 'MEMBERSHIP_CANCEL': {
+          if (user.role !== 'owner' && user.role !== 'manager') {
+            return res.status(403).json({ error: 'FORBIDDEN_ROLE', message: 'Only managers and owners can cancel memberships' });
+          }
+          operationResult = await storage.executeMembershipCancel({
+            membershipId: entityId || payload.membershipId,
+            businessId,
+            branchId,
+            reason: payload.reason,
+            userId: user.id,
+            userName: user.name,
+          });
+          break;
+        }
+
         case 'SERVICE_PACKAGE_CREATE': {
           if (user.role !== 'owner' && user.role !== 'manager') {
             return res.status(403).json({ error: 'FORBIDDEN_ROLE', message: 'Only managers and owners can create service packages' });
@@ -810,6 +1041,21 @@ export function createApiRouter(storage: PersistentSQLiteStorage = serverStorage
           break;
         }
 
+        case 'PACKAGE_CANCEL': {
+          if (user.role !== 'owner' && user.role !== 'manager') {
+            return res.status(403).json({ error: 'FORBIDDEN_ROLE', message: 'Only managers and owners can cancel packages' });
+          }
+          operationResult = await storage.executePackageCancel({
+            customerPackageId: entityId || payload.customerPackageId,
+            businessId,
+            branchId,
+            reason: payload.reason,
+            userId: user.id,
+            userName: user.name,
+          });
+          break;
+        }
+
         case 'GIFT_CARD_ISSUE': {
           operationResult = await storage.executeGiftCardIssue({
             giftCardId: entityId || payload.giftCardId || `gc_${Date.now()}`,
@@ -837,6 +1083,21 @@ export function createApiRouter(storage: PersistentSQLiteStorage = serverStorage
             sessionId: payload.sessionId,
             invoiceId: payload.invoiceId,
             notes: payload.notes,
+            userId: user.id,
+            userName: user.name,
+          });
+          break;
+        }
+
+        case 'GIFT_CARD_VOID': {
+          if (user.role !== 'owner' && user.role !== 'manager') {
+            return res.status(403).json({ error: 'FORBIDDEN_ROLE', message: 'Only managers and owners can void gift cards' });
+          }
+          operationResult = await storage.executeGiftCardVoid({
+            giftCardIdOrNumber: payload.giftCardIdOrNumber || payload.cardNumber || entityId,
+            businessId,
+            branchId,
+            reason: payload.reason,
             userId: user.id,
             userName: user.name,
           });
@@ -937,6 +1198,131 @@ export function createApiRouter(storage: PersistentSQLiteStorage = serverStorage
             businessId,
             branchId,
             preferences: payload.preferences,
+            userId: user.id,
+            userName: user.name,
+          });
+          break;
+        }
+
+        // ==========================================
+        // PHASE 36: STAFF ATTENDANCE, SHIFTS, CONSUMABLES & PAYROLL
+        // ==========================================
+
+        case 'STAFF_CLOCK_IN': {
+          operationResult = await storage.executeStaffClockIn({
+            attendanceId: entityId || payload.attendanceId,
+            businessId,
+            branchId,
+            staffId: payload.staffId,
+            staffName: payload.staffName,
+            date: payload.date,
+            checkInTime: payload.checkInTime,
+            status: payload.status,
+            notes: payload.notes,
+            deviceId: deviceId || callerDeviceId,
+            userId: user.id,
+            userName: user.name,
+          });
+          break;
+        }
+
+        case 'STAFF_CLOCK_OUT': {
+          operationResult = await storage.executeStaffClockOut({
+            attendanceId: entityId || payload.attendanceId,
+            businessId,
+            branchId,
+            checkOutTime: payload.checkOutTime,
+            notes: payload.notes,
+            userId: user.id,
+            userName: user.name,
+          });
+          break;
+        }
+
+        case 'SHIFT_OPEN': {
+          operationResult = await storage.executeShiftOpen({
+            shiftId: entityId || payload.shiftId,
+            businessId,
+            branchId,
+            shiftCode: payload.shiftCode,
+            staffId: payload.staffId || user.id,
+            staffName: payload.staffName || user.name,
+            openingFloatMMK: Number(payload.openingFloatMMK) || 0,
+            notes: payload.notes,
+            userId: user.id,
+            userName: user.name,
+          });
+          break;
+        }
+
+        case 'SHIFT_CLOSE': {
+          operationResult = await storage.executeShiftClose({
+            shiftId: entityId || payload.shiftId,
+            businessId,
+            branchId,
+            actualCashMMK: Number(payload.actualCashMMK) || 0,
+            notes: payload.notes,
+            handedOverToId: payload.handedOverToId,
+            handedOverToName: payload.handedOverToName,
+            userId: user.id,
+            userName: user.name,
+          });
+          break;
+        }
+
+        case 'SERVICE_CONSUMABLE_LINK': {
+          if (user.role !== 'owner' && user.role !== 'manager') {
+            return res.status(403).json({ error: 'FORBIDDEN_ROLE', message: 'Only managers and owners can configure service consumables' });
+          }
+          operationResult = await storage.executeServiceConsumableLink({
+            id: entityId || payload.id,
+            businessId,
+            branchId,
+            serviceId: payload.serviceId,
+            serviceName: payload.serviceName,
+            productId: payload.productId,
+            productName: payload.productName,
+            quantity: Number(payload.quantity) || 1,
+            unit: payload.unit,
+            userId: user.id,
+            userName: user.name,
+          });
+          break;
+        }
+
+        case 'SERVICE_CONSUMABLES_DEDUCT': {
+          operationResult = await storage.executeServiceConsumablesDeduct({
+            serviceId: entityId || payload.serviceId,
+            businessId,
+            branchId,
+            multiplier: Number(payload.multiplier) || 1,
+            sessionId: payload.sessionId,
+            invoiceId: payload.invoiceId,
+            customerId: payload.customerId,
+            customerName: payload.customerName,
+            staffId: payload.staffId,
+            staffName: payload.staffName,
+            userId: user.id,
+            userName: user.name,
+          });
+          break;
+        }
+
+        case 'STAFF_SETTLEMENT_CREATE': {
+          if (user.role !== 'owner' && user.role !== 'manager') {
+            return res.status(403).json({ error: 'FORBIDDEN_ROLE', message: 'Only managers and owners can create staff payroll settlements' });
+          }
+          operationResult = await storage.executeStaffSettlementCreate({
+            settlementId: entityId || payload.settlementId,
+            businessId,
+            branchId,
+            staffId: payload.staffId,
+            staffName: payload.staffName,
+            baseSalaryMMK: Number(payload.baseSalaryMMK) || 0,
+            bonusMMK: Number(payload.bonusMMK) || 0,
+            deductionsMMK: Number(payload.deductionsMMK) || 0,
+            notes: payload.notes,
+            payImmediately: Boolean(payload.payImmediately),
             userId: user.id,
             userName: user.name,
           });
@@ -1272,6 +1658,42 @@ export function createApiRouter(storage: PersistentSQLiteStorage = serverStorage
   });
 
   // ==========================================
+  // PHASE 36 QUERY ENDPOINTS
+  // ==========================================
+
+  router.get('/staff-attendance', requireAuth(), (req: Request, res: Response) => {
+    const user = (req as any).user as ServerUserEntity;
+    const branchId = (req.query.branchId as string) || user.branchId;
+    const date = req.query.date as string | undefined;
+    const staffId = req.query.staffId as string | undefined;
+    const attendance = storage.getStaffAttendance(user.businessId, branchId, date, staffId);
+    res.json({ success: true, count: attendance.length, attendance });
+  });
+
+  router.get('/shift-handovers', requireAuth(), (req: Request, res: Response) => {
+    const user = (req as any).user as ServerUserEntity;
+    const branchId = (req.query.branchId as string) || user.branchId;
+    const status = req.query.status as string | undefined;
+    const shifts = storage.getShiftHandovers(user.businessId, branchId, status);
+    res.json({ success: true, count: shifts.length, shifts });
+  });
+
+  router.get('/service-consumables', requireAuth(), (req: Request, res: Response) => {
+    const user = (req as any).user as ServerUserEntity;
+    const serviceId = req.query.serviceId as string | undefined;
+    const consumables = storage.getServiceConsumables(user.businessId, serviceId);
+    res.json({ success: true, count: consumables.length, consumables });
+  });
+
+  router.get('/stock-movements', requireAuth(['owner', 'manager']), (req: Request, res: Response) => {
+    const user = (req as any).user as ServerUserEntity;
+    const branchId = (req.query.branchId as string) || (user.role === 'owner' ? undefined : user.branchId);
+    const productId = req.query.productId as string | undefined;
+    const movements = storage.getStockMovements(user.businessId, branchId, productId);
+    res.json({ success: true, count: movements.length, movements });
+  });
+
+  // ==========================================
   // 6. AUDIT LOGS QUERY
   // ==========================================
   router.get('/audit/logs', requireAuth(['owner', 'manager']), (req: Request, res: Response) => {
@@ -1367,6 +1789,81 @@ export function createApiRouter(storage: PersistentSQLiteStorage = serverStorage
     } catch (err: any) {
       logger.error('UpdateSystem', 'Pre-update backup failed', { error: err.message });
       res.status(500).json({ error: 'PRE_UPDATE_BACKUP_FAILED', message: err.message });
+    }
+  });
+
+  // ==========================================
+  // PHASE 35: SUPPLIERS & PURCHASING ROUTES
+  // ==========================================
+  router.get('/suppliers', requireAuth(), (req: Request, res: Response) => {
+    try {
+      const suppliers = storage.getSuppliers();
+      res.json({ success: true, suppliers });
+    } catch (err: any) {
+      res.status(500).json({ error: 'SUPPLIERS_FETCH_FAILED', message: err.message });
+    }
+  });
+
+  router.post('/suppliers', requireAuth(['owner', 'manager']), (req: Request, res: Response) => {
+    try {
+      const supplier = storage.saveSupplier(req.body);
+      res.json({ success: true, supplier });
+    } catch (err: any) {
+      res.status(500).json({ error: 'SUPPLIER_SAVE_FAILED', message: err.message });
+    }
+  });
+
+  router.get('/purchase-orders', requireAuth(), (req: Request, res: Response) => {
+    try {
+      const purchaseOrders = storage.getPurchaseOrders();
+      res.json({ success: true, purchaseOrders });
+    } catch (err: any) {
+      res.status(500).json({ error: 'PO_FETCH_FAILED', message: err.message });
+    }
+  });
+
+  router.post('/purchase-orders', requireAuth(['owner', 'manager']), async (req: Request, res: Response) => {
+    try {
+      const po = await storage.recordPurchaseOrder(req.body);
+      res.json({ success: true, purchaseOrder: po });
+    } catch (err: any) {
+      res.status(500).json({ error: 'PO_CREATE_FAILED', message: err.message });
+    }
+  });
+
+  router.get('/stock-adjustments', requireAuth(), (req: Request, res: Response) => {
+    try {
+      const adjustments = storage.getStockAdjustments();
+      res.json({ success: true, adjustments });
+    } catch (err: any) {
+      res.status(500).json({ error: 'STOCK_ADJUSTMENT_FETCH_FAILED', message: err.message });
+    }
+  });
+
+  router.post('/stock-adjustments', requireAuth(['owner', 'manager']), async (req: Request, res: Response) => {
+    try {
+      const adj = await storage.recordStockAdjustment(req.body);
+      res.json({ success: true, adjustment: adj });
+    } catch (err: any) {
+      res.status(500).json({ error: 'STOCK_ADJUSTMENT_FAILED', message: err.message });
+    }
+  });
+
+  router.get('/customers/:customerId/loyalty', requireAuth(), (req: Request, res: Response) => {
+    try {
+      const entries = storage.getCustomerLoyaltyEntries(req.params.customerId);
+      res.json({ success: true, entries });
+    } catch (err: any) {
+      res.status(500).json({ error: 'LOYALTY_FETCH_FAILED', message: err.message });
+    }
+  });
+
+  router.post('/customers/:customerId/loyalty', requireAuth(['owner', 'manager']), async (req: Request, res: Response) => {
+    try {
+      const entry = await storage.recordLoyaltyPoints({ customerId: req.params.customerId, ...req.body });
+      res.json({ success: true, entry });
+    } catch (err: any) {
+      res.status(500).json({ error: 'LOYALTY_RECORD_FAILED', message: err.message });
     }
   });
 

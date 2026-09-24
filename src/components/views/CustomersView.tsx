@@ -18,6 +18,7 @@ import {
   Room,
 } from '../../types';
 import { db } from '../../db/database';
+import { syncManager } from '../../services/syncManager';
 import { formatMMK, deriveCustomerLedgerBalances, calculateCustomerAgingReport } from '../../domain/financial';
 import { Language } from '../../utils/translations';
 import { CustomerRebookModal } from '../customers/CustomerRebookModal';
@@ -338,6 +339,44 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
     }
   };
 
+  // Phase 38: Customer Loyalty Points Adjustment
+  const [isLoyaltyModalOpen, setIsLoyaltyModalOpen] = useState(false);
+  const [loyaltyPointsChange, setLoyaltyPointsChange] = useState<number>(100);
+  const [loyaltyNotes, setLoyaltyNotes] = useState<string>('Manual Loyalty Points Award/Redeem');
+
+  const handleAdjustLoyalty = async () => {
+    if (!selectedCustomer || loyaltyPointsChange === 0) return;
+    try {
+      await syncManager.executeMutation({
+        operationType: 'LOYALTY_POINTS_RECORD',
+        entityType: 'CUSTOMER',
+        entityId: selectedCustomer.id,
+        payload: {
+          customerId: selectedCustomer.id,
+          customerName: selectedCustomer.name,
+          points: loyaltyPointsChange,
+          notes: loyaltyNotes,
+        },
+        offlineMutationFn: async () => {
+          return db.recordLoyaltyPointsTransaction({
+            customerId: selectedCustomer.id,
+            points: loyaltyPointsChange,
+            type: loyaltyPointsChange > 0 ? 'earn' : 'redeem',
+            notes: loyaltyNotes,
+            performedBy: currentUser.name,
+          });
+        },
+      });
+      setIsLoyaltyModalOpen(false);
+      setLoyaltyPointsChange(100);
+      setLoyaltyNotes('');
+      onRefresh();
+      loadCustomerData();
+    } catch (err: any) {
+      alert('Loyalty points adjustment failed: ' + err.message);
+    }
+  };
+
   // Copy phone helper
   const handleCopyPhone = (phone: string) => {
     if (!phone) return;
@@ -581,11 +620,19 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                   </button>
 
                   <button
-                    onClick={() => handleOpenAddNote()}
+                    onClick={() => setIsNoteModalOpen(true)}
                     className="inline-flex items-center gap-1.5 rounded-xl bg-purple-600 px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-purple-700"
                   >
                     <Plus className="h-3.5 w-3.5" />
                     <span>{isMm ? 'မှတ်စုရေးမည်' : '+ Note'}</span>
+                  </button>
+
+                  <button
+                    onClick={() => setIsLoyaltyModalOpen(true)}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-amber-500 px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-amber-600"
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    <span>{isMm ? 'Loyalty Points' : 'Loyalty Pts'}</span>
                   </button>
                 </div>
               </div>
@@ -1371,6 +1418,71 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
                   className="flex-1 rounded-xl bg-rose-600 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-rose-700 disabled:opacity-50"
                 >
                   {isMm ? 'ပြန်ဖျက်ခြင်း အတည်ပြုမည်' : 'Confirm Reversal'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Loyalty Points Modal */}
+      {isLoyaltyModalOpen && selectedCustomer && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl space-y-4">
+            <div className="flex items-center justify-between border-b pb-3">
+              <h3 className="font-bold text-gray-900 text-sm flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-amber-500" />
+                <span>{isMm ? 'Loyalty Points ပေးအပ်/သုံးစွဲရန်' : 'Loyalty Points Management'}</span>
+              </h3>
+              <button onClick={() => setIsLoyaltyModalOpen(false)}><X className="h-5 w-5 text-gray-500" /></button>
+            </div>
+
+            <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-900 flex justify-between items-center">
+              <div>
+                <div className="font-bold">{selectedCustomer.name}</div>
+                <div className="text-[11px] text-amber-700">Current Balance</div>
+              </div>
+              <div className="text-xl font-black font-mono text-amber-700">{selectedCustomer.loyaltyPoints || 0} pts</div>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="font-bold text-gray-700 block mb-1">
+                  {isMm ? 'Point ပမာဏ (+ တိုး / - လျှော့)' : 'Points Change (+ Award / - Redeem)'}
+                </label>
+                <input
+                  type="number"
+                  value={loyaltyPointsChange}
+                  onChange={e => setLoyaltyPointsChange(Number(e.target.value))}
+                  className="w-full border p-2.5 rounded-xl font-bold font-mono text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-gray-700 block mb-1">{isMm ? 'အကြောင်းပြချက်' : 'Reason / Notes'}</label>
+                <input
+                  type="text"
+                  value={loyaltyNotes}
+                  onChange={e => setLoyaltyNotes(e.target.value)}
+                  className="w-full border p-2.5 rounded-xl"
+                  placeholder="e.g. VIP Promotion Bonus"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsLoyaltyModalOpen(false)}
+                  className="flex-1 py-2.5 border rounded-xl font-bold text-gray-700 hover:bg-gray-50"
+                >
+                  {isMm ? 'မလုပ်တော့ပါ' : 'Cancel'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAdjustLoyalty}
+                  className="flex-1 py-2.5 bg-amber-500 text-white font-bold rounded-xl hover:bg-amber-600 shadow-sm"
+                >
+                  {isMm ? 'မှတ်တမ်းတင်မည်' : 'Record Points'}
                 </button>
               </div>
             </div>

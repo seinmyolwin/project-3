@@ -119,6 +119,10 @@ export class LocalServerClient {
     return this.request<HealthResponse>('/api/health');
   }
 
+  public async checkHealth(): Promise<HealthResponse> {
+    return this.getHealth();
+  }
+
   /**
    * Unified LAN PIN Login (/api/auth/pin-login)
    */
@@ -200,6 +204,70 @@ export class LocalServerClient {
    */
   public async getMe() {
     return this.request<{ user: any; deviceId: string }>('/api/auth/me');
+  }
+
+  /**
+   * Setup Status (/api/auth/setup-status)
+   */
+  public async getSetupStatus() {
+    return this.request<{ isSetupRequired: boolean; userCount: number }>('/api/auth/setup-status');
+  }
+
+  /**
+   * First Run Owner Setup (/api/auth/setup-owner)
+   */
+  public async setupOwner(data: { name: string; username: string; password: string }) {
+    return this.request<{ success: boolean; message: string; user: any }>('/api/auth/setup-owner', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  /**
+   * Get Users (/api/users) - Owner Only
+   */
+  public async getUsers() {
+    return this.request<{ success: boolean; users: any[] }>('/api/users');
+  }
+
+  /**
+   * Create User (/api/users) - Owner Only
+   */
+  public async createUser(data: { name: string; username: string; role: string; password?: string; pin?: string }) {
+    return this.request<{ success: boolean; message: string; user: any }>('/api/users', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  /**
+   * Update User (/api/users/:id) - Owner Only
+   */
+  public async updateUser(id: string, updates: { name?: string; username?: string; role?: string; isActive?: boolean }) {
+    return this.request<{ success: boolean; message: string; user: any }>(`/api/users/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+  }
+
+  /**
+   * Change Password (/api/users/:id/change-password) - Owner or Self
+   */
+  public async changeUserPassword(id: string, newPassword: string) {
+    return this.request<{ success: boolean; message: string }>(`/api/users/${id}/change-password`, {
+      method: 'POST',
+      body: JSON.stringify({ newPassword }),
+    });
+  }
+
+  /**
+   * Toggle User Active Status (/api/users/:id/toggle-active) - Owner Only
+   */
+  public async toggleUserActive(id: string, isActive: boolean) {
+    return this.request<{ success: boolean; message: string }>(`/api/users/${id}/toggle-active`, {
+      method: 'POST',
+      body: JSON.stringify({ isActive }),
+    });
   }
 
   /**
@@ -397,6 +465,93 @@ export class LocalServerClient {
       sessionId: params.sessionId,
       receivedBy: params.recordedBy || 'Cashier',
       notes: params.notes,
+    });
+  }
+
+  // ==========================================
+  // PHASE 36 CLIENT METHODS
+  // ==========================================
+
+  public async getStaffAttendance(date?: string, staffId?: string) {
+    const params = new URLSearchParams();
+    if (date) params.append('date', date);
+    if (staffId) params.append('staffId', staffId);
+    return this.request<{ success: boolean; count: number; attendance: any[] }>(`/api/staff-attendance?${params.toString()}`);
+  }
+
+  public async getShiftHandovers(status?: string) {
+    const params = new URLSearchParams();
+    if (status) params.append('status', status);
+    return this.request<{ success: boolean; count: number; shifts: any[] }>(`/api/shift-handovers?${params.toString()}`);
+  }
+
+  public async getServiceConsumables(serviceId?: string) {
+    const params = new URLSearchParams();
+    if (serviceId) params.append('serviceId', serviceId);
+    return this.request<{ success: boolean; count: number; consumables: any[] }>(`/api/service-consumables?${params.toString()}`);
+  }
+
+  public async getStockMovements(productId?: string) {
+    const params = new URLSearchParams();
+    if (productId) params.append('productId', productId);
+    return this.request<{ success: boolean; count: number; movements: any[] }>(`/api/stock-movements?${params.toString()}`);
+  }
+
+  public async executeSetupWizard(payload: any) {
+    return this.request<{
+      success: boolean;
+      message: string;
+      backupFile?: string;
+    }>('/api/setup-wizard', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  // ==========================================
+  // PHASE 35-37 CLIENT METHODS
+  // ==========================================
+  public async getSuppliers() {
+    return this.request<{ success: boolean; suppliers: any[] }>('/api/suppliers');
+  }
+
+  public async saveSupplier(supplier: any) {
+    return this.request<{ success: boolean; supplier: any }>('/api/suppliers', {
+      method: 'POST',
+      body: JSON.stringify(supplier),
+    });
+  }
+
+  public async getPurchaseOrders() {
+    return this.request<{ success: boolean; purchaseOrders: any[] }>('/api/purchase-orders');
+  }
+
+  public async createPurchaseOrder(po: any) {
+    return this.request<{ success: boolean; purchaseOrder: any }>('/api/purchase-orders', {
+      method: 'POST',
+      body: JSON.stringify(po),
+    });
+  }
+
+  public async getStockAdjustments() {
+    return this.request<{ success: boolean; adjustments: any[] }>('/api/stock-adjustments');
+  }
+
+  public async recordStockAdjustment(adj: any) {
+    return this.request<{ success: boolean; adjustment: any }>('/api/stock-adjustments', {
+      method: 'POST',
+      body: JSON.stringify(adj),
+    });
+  }
+
+  public async getCustomerLoyalty(customerId: string) {
+    return this.request<{ success: boolean; entries: any[] }>(`/api/customers/${customerId}/loyalty`);
+  }
+
+  public async recordCustomerLoyalty(customerId: string, payload: any) {
+    return this.request<{ success: boolean; entry: any }>(`/api/customers/${customerId}/loyalty`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   }
 }

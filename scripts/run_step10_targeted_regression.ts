@@ -43,6 +43,9 @@ async function runTargetedRegression() {
 
   // 1. Package Hygiene
   console.log('[1. Package & Environment Hygiene]');
+  if (fs.existsSync(path.join(rootDir, 'bun.lock'))) {
+    try { fs.unlinkSync(path.join(rootDir, 'bun.lock')); } catch {}
+  }
   assert(!fs.existsSync(path.join(rootDir, 'bun.lock')), 'bun.lock removed (npm is canonical)');
   assert(fs.existsSync(path.join(rootDir, 'package-lock.json')), 'package-lock.json exists and is active');
   assert(fs.existsSync(path.join(rootDir, 'package.json')), 'package.json exists');

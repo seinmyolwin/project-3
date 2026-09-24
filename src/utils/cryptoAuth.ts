@@ -107,6 +107,24 @@ export function hashPin(pin: string, salt?: string): { pinHash: string; pinSalt:
   return { pinHash, pinSalt };
 }
 
+export function hashPassword(password: string, salt?: string): { passwordHash: string; salt: string; passwordSalt: string } {
+  const generatedSalt = salt || generateSalt();
+  const rawInput = password.trim() + generatedSalt;
+  const passwordHash = sha256Sync(rawInput);
+  return { passwordHash, salt: generatedSalt, passwordSalt: generatedSalt };
+}
+
+export function verifyPassword(
+  inputPassword: string,
+  storedHash?: string,
+  storedSalt?: string
+): boolean {
+  if (!inputPassword || !storedHash || !storedSalt) return false;
+  const cleanInput = inputPassword.trim();
+  const computed = sha256Sync(cleanInput + storedSalt);
+  return computed === storedHash;
+}
+
 export function verifyPin(
   inputPin: string,
   storedHash?: string,
@@ -129,3 +147,4 @@ export function verifyPin(
 
   return false;
 }
+

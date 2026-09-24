@@ -17,6 +17,8 @@ export interface UserAccount {
   pin?: string; // Legacy plaintext PIN (deprecated, removed after migration)
   pinHash?: string; // Salted SHA-256 hash at rest
   pinSalt?: string; // Unique cryptographic salt
+  passwordHash?: string; // Salted SHA-256 hash for primary username/password login
+  passwordSalt?: string; // Unique cryptographic salt for password
   role: UserRole;
   isActive: boolean;
   createdAt: string;
@@ -472,6 +474,7 @@ export interface Customer {
   creditAllowed?: boolean;
   creditLimitMMK: number;
   currentBalanceMMK: number; // Positive = owes money (debt)
+  loyaltyPoints?: number;
   status?: 'active' | 'inactive';
   isActive?: boolean;
   createdAt: string;
@@ -1514,7 +1517,7 @@ export interface StockMovementRecord {
   customerName?: string;
   staffId?: string;
   staffName?: string;
-  type: 'consumption' | 'reversal' | 'adjustment_in' | 'adjustment_out' | 'sale' | 'restock';
+  type: 'consumption' | 'reversal' | 'adjustment_in' | 'adjustment_out' | 'sale' | 'restock' | 'purchase';
   quantityChange: number;
   previousStock: number;
   newStock: number;
@@ -1523,6 +1526,112 @@ export interface StockMovementRecord {
   date: string;
   createdAt: string;
   createdBy: string;
+}
+
+export interface SupplierRecord {
+  id: string;
+  businessId: string;
+  branchId: string;
+  name: string;
+  phone: string;
+  email?: string;
+  address?: string;
+  contactPerson?: string;
+  notes?: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PurchaseOrderItem {
+  productId: string;
+  productName: string;
+  unit?: string;
+  quantity: number;
+  costPriceMMK: number;
+  totalCostMMK: number;
+}
+
+export interface PurchaseOrderRecord {
+  id: string;
+  businessId: string;
+  branchId: string;
+  poNumber: string;
+  supplierId: string;
+  supplierName: string;
+  items: PurchaseOrderItem[];
+  totalAmountMMK: number;
+  paidAmountMMK: number;
+  paymentStatus: 'unpaid' | 'partial' | 'paid';
+  paymentMethod?: string;
+  orderDate: string;
+  status: 'draft' | 'ordered' | 'received' | 'cancelled';
+  notes?: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StockAdjustmentRecord {
+  id: string;
+  businessId: string;
+  branchId: string;
+  productId: string;
+  productName: string;
+  beforeQty: number;
+  afterQty: number;
+  adjustQty: number;
+  reason: string;
+  adjustedBy: string;
+  createdAt: string;
+}
+
+export interface PerformanceBonusRuleRecord {
+  id: string;
+  businessId: string;
+  branchId: string;
+  ruleName: string;
+  minRevenueMMK: number;
+  minSessions: number;
+  minAttendanceDays: number;
+  bonusAmountMMK: number;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface CustomerLoyaltyEntry {
+  id: string;
+  customerId: string;
+  customerName: string;
+  points: number;
+  balanceAfter: number;
+  type: 'earn' | 'redeem' | 'adjust';
+  referenceType?: 'sale' | 'manual' | 'reversal';
+  referenceId?: string;
+  notes?: string;
+  date: string;
+  createdAt: string;
+}
+
+export interface ShiftHandoverRecord {
+  id: string;
+  businessId: string;
+  branchId: string;
+  shiftCode: string;
+  staffId: string;
+  staffName: string;
+  openedAt: string;
+  closedAt?: string;
+  openingFloatMMK: number;
+  expectedCashMMK?: number;
+  actualCashMMK?: number;
+  discrepancyMMK?: number;
+  notes?: string;
+  status: 'open' | 'closed';
+  handedOverToId?: string;
+  handedOverToName?: string;
+  createdAt: string;
+  updatedAt?: string;
 }
 
 export * from './multiDevice';

@@ -1,8 +1,10 @@
-import React, { useState, useMemo } from 'react';
-import { ProductItem, ProductCategory, UserAccount } from '../../../types';
+import React, { useState, useMemo, useEffect } from 'react';
+import { ProductItem, ProductCategory, UserAccount, SupplierRecord, PurchaseOrderRecord } from '../../../types';
 import { db } from '../../../db/database';
 import { Language } from '../../../utils/translations';
 import { formatMMK } from '../../../domain/financial';
+import { syncManager } from '../../../services/syncManager';
+import { localServerClient } from '../../../services/localServerClient';
 import {
   ShoppingBag,
   Search,
@@ -17,6 +19,10 @@ import {
   Tag,
   DollarSign,
   TrendingUp,
+  Truck,
+  FileText,
+  Sliders,
+  AlertTriangle,
 } from 'lucide-react';
 import { ConfirmDeactivateModal } from './ConfirmDeactivateModal';
 
@@ -45,6 +51,7 @@ export const ProductsMasterTab: React.FC<ProductsMasterTabProps> = ({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ProductItem | null>(null);
 
+  // Form states for Product
   const [formName, setFormName] = useState('');
   const [formNameMm, setFormNameMm] = useState('');
   const [formSKU, setFormSKU] = useState('');
@@ -57,10 +64,44 @@ export const ProductsMasterTab: React.FC<ProductsMasterTabProps> = ({
   const [formIsActive, setFormIsActive] = useState(true);
   const [formError, setFormError] = useState('');
 
+  // Phase 35: Suppliers, PO & Stock Adjustments Modals
+  const [showSupplierModal, setShowSupplierModal] = useState(false);
+  const [suppliers, setSuppliers] = useState<SupplierRecord[]>([]);
+  const [newSupName, setNewSupName] = useState('');
+  const [newSupPhone, setNewSupPhone] = useState('');
+  const [newSupContact, setNewSupContact] = useState('');
+  const [newSupAddress, setNewSupAddress] = useState('');
+
+  const [showPOModal, setShowPOModal] = useState(false);
+  const [poSupplierId, setPOSupplierId] = useState('');
+  const [poItems, setPOItems] = useState<{ productId: string; productName: string; quantity: number; costPriceMMK: number; totalCostMMK: number }[]>([]);
+  const [poSelProduct, POSelProduct] = useState('');
+  const [poQty, setPOQty] = useState(10);
+  const [poCost, setPOCost] = useState(3000);
+
+  const [showAdjModal, setShowAdjModal] = useState(false);
+  const [adjProductId, setAdjProductId] = useState('');
+  const [adjQty, setAdjQty] = useState(0);
+  const [adjReason, setAdjReason] = useState('Stock Count Audit');
+
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
     item: ProductItem | null;
   }>({ isOpen: false, item: null });
+
+  // Load suppliers
+  const loadSuppliers = async () => {
+    try {
+      const list = await db.suppliers.toArray();
+      setSuppliers(list);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  useEffect(() => {
+    loadSuppliers();
+  }, []);
 
   const filteredProducts = useMemo(() => {
     return products.filter((p) => {
@@ -81,6 +122,8 @@ export const ProductsMasterTab: React.FC<ProductsMasterTabProps> = ({
           ? true
           : stockFilter === 'tracked'
           ? p.trackStock === true
+          : stockFilter === 'low'
+          ? p.trackStock === true && (p.stockQty || 0) <= 5
           : p.trackStock === false;
 
       const matchActive =
@@ -93,6 +136,136 @@ export const ProductsMasterTab: React.FC<ProductsMasterTabProps> = ({
       return matchSearch && matchCategory && matchStock && matchActive;
     });
   }, [products, searchTerm, categoryFilter, stockFilter, activeFilter]);
+
+  const lowStockCount = useMemo(() => {
+    return products.filter(p => p.trackStock && (p.stockQty || 0) <= 5).length;
+  }, [products]);
+
+  // Create Supplier
+  const handleSaveSupplier = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSupName.trim() || !newSupPhone.trim()) return;
+
+    const sup: SupplierRecord = {
+      id: `sup_${Date.now()}`,
+      businessId: 'default',
+      branchId: 'main',
+      name: newSupName.trim(),
+      phone: newSupPhone.trim(),
+      contactPerson: newSupContact.trim() || undefined,
+      address: newSupAddress.trim() || undefined,
+      isActive: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    try {
+      await syncManager.executeMutation({
+        operationType: 'SUPPLIER_SAVE',
+        entityType: 'SUPPLIER',
+        entityId: sup.id,
+        payload: sup,
+        offlineMutationFn: async () => {
+          await db.suppliers.put(sup);
+          return sup;
+        },
+      });
+      setNewSupName('');
+      setNewSupPhone('');
+      setNewSupContact('');
+      setNewSupAddress('');
+      setShowSupplierModal(false);
+      loadSuppliers();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Add Item to PO
+  const handleAddPOItem = () => {
+    const prd = products.find(p => p.id === poSelProduct);
+    if (!prd || poQty <= 0) return;
+    const cost = poCost || prd.costPriceMMK || 0;
+    setPOItems(prev => [...prev, {
+      productId: prd.id,
+      productName: prd.name,
+      quantity: poQty,
+      costPriceMMK: cost,
+      totalCostMMK: poQty * cost,
+    }]);
+  };
+
+  // Submit Purchase Order
+  const handleSubmitPO = async () => {
+    const sup = suppliers.find(s => s.id === poSupplierId);
+    if (!sup || poItems.length === 0) return;
+
+    const totalCost = poItems.reduce((acc, i) => acc + (i.quantity * i.costPriceMMK), 0);
+    const poPayload = {
+      supplierId: sup.id,
+      supplierName: sup.name,
+      items: poItems,
+      totalAmountMMK: totalCost,
+      paidAmountMMK: totalCost,
+      paymentStatus: 'paid' as const,
+      paymentMethod: 'cash',
+      createdBy: currentUser.name,
+    };
+
+    try {
+      await syncManager.executeMutation({
+        operationType: 'PURCHASE_ORDER_CREATE',
+        entityType: 'PURCHASE_ORDER',
+        entityId: `po_${Date.now()}`,
+        payload: poPayload,
+        offlineMutationFn: async () => {
+          return db.recordPurchaseOrderTransaction(poPayload);
+        },
+      });
+
+      setShowPOModal(false);
+      setPOItems([]);
+      setPOSupplierId('');
+      onRefresh();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Submit Stock Adjustment
+  const handleSubmitAdjustment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adjProductId || adjQty === 0) return;
+
+    try {
+      await syncManager.executeMutation({
+        operationType: 'STOCK_ADJUSTMENT',
+        entityType: 'STOCK_ADJUSTMENT',
+        entityId: `adj_${Date.now()}`,
+        payload: {
+          productId: adjProductId,
+          adjustQty: adjQty,
+          reason: adjReason,
+          adjustedBy: currentUser.name,
+        },
+        offlineMutationFn: async () => {
+          return db.recordStockAdjustmentTransaction({
+            productId: adjProductId,
+            adjustQty: adjQty,
+            reason: adjReason,
+            adjustedBy: currentUser.name,
+          });
+        },
+      });
+
+      setShowAdjModal(false);
+      setAdjProductId('');
+      setAdjQty(0);
+      onRefresh();
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const handleOpenAdd = () => {
     setEditingProduct(null);
@@ -212,14 +385,59 @@ export const ProductsMasterTab: React.FC<ProductsMasterTabProps> = ({
           </p>
         </div>
 
-        <button
-          onClick={handleOpenAdd}
-          className="flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-blue-700 active:bg-blue-800 transition-colors"
-        >
-          <Plus className="h-4 w-4" />
-          <span>{isMm ? 'ကုန်ပစ္စည်းအသစ် ထည့်သွင်းရန်' : 'Add New Product'}</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setShowSupplierModal(true)}
+            className="flex items-center gap-1.5 rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100"
+          >
+            <Truck className="h-4 w-4 text-emerald-600" />
+            <span>{isMm ? 'ဒိုင်/ကုန်သည်' : 'Suppliers'}</span>
+          </button>
+
+          <button
+            onClick={() => setShowPOModal(true)}
+            className="flex items-center gap-1.5 rounded-xl border border-blue-300 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100"
+          >
+            <FileText className="h-4 w-4 text-blue-600" />
+            <span>{isMm ? 'ပစ္စည်းဝယ်ယူမှု (PO)' : 'Purchase Order'}</span>
+          </button>
+
+          <button
+            onClick={() => setShowAdjModal(true)}
+            className="flex items-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700 hover:bg-amber-100"
+          >
+            <Sliders className="h-4 w-4 text-amber-600" />
+            <span>{isMm ? 'စတော့ပြင်ဆင်ရန်' : 'Stock Adjustment'}</span>
+          </button>
+
+          <button
+            onClick={handleOpenAdd}
+            className="flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-blue-700 active:bg-blue-800 transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            <span>{isMm ? 'ကုန်ပစ္စည်းအသစ် ထည့်သွင်းရန်' : 'Add New Product'}</span>
+          </button>
+        </div>
       </div>
+
+      {lowStockCount > 0 && (
+        <div className="flex items-center justify-between p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs font-medium">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+            <span>
+              {isMm
+                ? `သတိပေးချက်: ကုန်ပစ္စည်း ${lowStockCount} ခုသည် စတော့လက်ကျန် နည်းနေပါသည် (၅ ခု သို့မဟုတ် အောက်)`
+                : `Low Stock Alert: ${lowStockCount} item(s) are running low on stock (<= 5 units remaining).`}
+            </span>
+          </div>
+          <button
+            onClick={() => setStockFilter('low')}
+            className="px-2.5 py-1 bg-amber-600 text-white font-bold rounded-lg hover:bg-amber-700"
+          >
+            {isMm ? 'ကြည့်ရှုမည်' : 'View Low Stock'}
+          </button>
+        </div>
+      )}
 
       {/* Search & Filters */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-white p-4 rounded-2xl border border-gray-200 shadow-xs">
@@ -648,6 +866,237 @@ export const ProductsMasterTab: React.FC<ProductsMasterTabProps> = ({
           currentStatus={confirmModal.item.isActive !== false}
           lang={lang}
         />
+      )}
+
+      {/* Supplier Modal */}
+      {showSupplierModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl space-y-4">
+            <div className="flex items-center justify-between border-b pb-3">
+              <h3 className="font-bold text-gray-900 text-sm flex items-center gap-2">
+                <Truck className="h-5 w-5 text-emerald-600" />
+                <span>{isMm ? 'ဒိုင်/ကုန်သည် စာရင်း' : 'Suppliers Management'}</span>
+              </h3>
+              <button onClick={() => setShowSupplierModal(false)}><X className="h-5 w-5 text-gray-500" /></button>
+            </div>
+
+            <form onSubmit={handleSaveSupplier} className="space-y-3 bg-slate-50 p-3 rounded-xl border">
+              <div className="text-xs font-bold text-gray-700">{isMm ? 'ကုန်သည်အသစ် ထည့်ရန်' : 'Add New Supplier'}</div>
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="text"
+                  required
+                  placeholder={isMm ? 'ဒိုင်အမည် *' : 'Supplier Name *'}
+                  value={newSupName}
+                  onChange={e => setNewSupName(e.target.value)}
+                  className="rounded-lg border p-2 text-xs bg-white"
+                />
+                <input
+                  type="text"
+                  required
+                  placeholder={isMm ? 'ဖုန်းနံပါတ် *' : 'Phone *'}
+                  value={newSupPhone}
+                  onChange={e => setNewSupPhone(e.target.value)}
+                  className="rounded-lg border p-2 text-xs bg-white"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="text"
+                  placeholder={isMm ? 'ဆက်သွယ်ရန်သူ' : 'Contact Person'}
+                  value={newSupContact}
+                  onChange={e => setNewSupContact(e.target.value)}
+                  className="rounded-lg border p-2 text-xs bg-white"
+                />
+                <input
+                  type="text"
+                  placeholder={isMm ? 'လိပ်စာ' : 'Address'}
+                  value={newSupAddress}
+                  onChange={e => setNewSupAddress(e.target.value)}
+                  className="rounded-lg border p-2 text-xs bg-white"
+                />
+              </div>
+              <button type="submit" className="w-full py-2 bg-emerald-600 text-white rounded-lg text-xs font-bold hover:bg-emerald-700">
+                {isMm ? 'ကုန်သည် သိမ်းဆည်းမည်' : 'Save Supplier'}
+              </button>
+            </form>
+
+            <div className="max-h-48 overflow-y-auto divide-y text-xs">
+              {suppliers.map(s => (
+                <div key={s.id} className="py-2 flex justify-between items-center">
+                  <div>
+                    <div className="font-bold text-gray-900">{s.name}</div>
+                    <div className="text-[11px] text-gray-500">{s.phone} {s.contactPerson ? `• ${s.contactPerson}` : ''}</div>
+                  </div>
+                  <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-100 text-emerald-800 font-bold">Active</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PO Modal */}
+      {showPOModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-xl space-y-4">
+            <div className="flex items-center justify-between border-b pb-3">
+              <h3 className="font-bold text-gray-900 text-sm flex items-center gap-2">
+                <FileText className="h-5 w-5 text-blue-600" />
+                <span>{isMm ? 'ပစ္စည်းဝယ်ယူမှု စာရင်းသွင်းရန် (Purchase Order)' : 'Create Purchase Order'}</span>
+              </h3>
+              <button onClick={() => setShowPOModal(false)}><X className="h-5 w-5 text-gray-500" /></button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="font-bold text-gray-700 block mb-1">{isMm ? 'ဒိုင်/ကုန်သည် ရွေးပါ' : 'Select Supplier'}</label>
+                <select
+                  value={poSupplierId}
+                  onChange={e => setPOSupplierId(e.target.value)}
+                  className="w-full border p-2 rounded-lg bg-white"
+                >
+                  <option value="">{isMm ? '-- ကုန်သည် ရွေးပါ --' : '-- Select Supplier --'}</option>
+                  {suppliers.map(s => (
+                    <option key={s.id} value={s.id}>{s.name} ({s.phone})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="border p-3 rounded-xl bg-slate-50 space-y-2">
+                <div className="font-bold text-gray-800">{isMm ? 'ဝယ်ယူမည့် ပစ္စည်း ထည့်ပါ' : 'Add Items'}</div>
+                <div className="grid grid-cols-3 gap-2">
+                  <select
+                    value={poSelProduct}
+                    onChange={e => {
+                      POSelProduct(e.target.value);
+                      const prd = products.find(p => p.id === e.target.value);
+                      if (prd) setPOCost(prd.costPriceMMK || 0);
+                    }}
+                    className="border p-2 rounded-lg bg-white col-span-3 sm:col-span-1"
+                  >
+                    <option value="">{isMm ? '-- ပစ္စည်း ရွေးပါ --' : '-- Select Product --'}</option>
+                    {products.map(p => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder="Qty"
+                    value={poQty}
+                    onChange={e => setPOQty(Number(e.target.value))}
+                    className="border p-2 rounded-lg bg-white"
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="Unit Cost"
+                    value={poCost}
+                    onChange={e => setPOCost(Number(e.target.value))}
+                    className="border p-2 rounded-lg bg-white"
+                  />
+                </div>
+                <button
+                  onClick={handleAddPOItem}
+                  type="button"
+                  className="w-full py-1.5 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700"
+                >
+                  + {isMm ? 'စာရင်းထဲထည့်မည်' : 'Add Item'}
+                </button>
+              </div>
+
+              {poItems.length > 0 && (
+                <div className="space-y-1 max-h-36 overflow-y-auto divide-y">
+                  {poItems.map((item, idx) => (
+                    <div key={idx} className="py-1.5 flex justify-between items-center text-xs">
+                      <div>
+                        <div className="font-bold">{item.productName}</div>
+                        <div className="text-[11px] text-gray-500">{item.quantity} units @ {formatMMK(item.costPriceMMK)}</div>
+                      </div>
+                      <div className="font-bold text-blue-700">{formatMMK(item.quantity * item.costPriceMMK)}</div>
+                    </div>
+                  ))}
+                  <div className="pt-2 flex justify-between font-bold text-sm text-gray-900 border-t">
+                    <span>Total Cost:</span>
+                    <span>{formatMMK(poItems.reduce((a, b) => a + (b.quantity * b.costPriceMMK), 0))}</span>
+                  </div>
+                </div>
+              )}
+
+              <button
+                onClick={handleSubmitPO}
+                disabled={!poSupplierId || poItems.length === 0}
+                className="w-full py-2.5 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {isMm ? 'ဝယ်ယူမှု အတည်ပြုပြီး စတော့တိုးမည်' : 'Submit PO & Update Stock'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Stock Adjustment Modal */}
+      {showAdjModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl space-y-4">
+            <div className="flex items-center justify-between border-b pb-3">
+              <h3 className="font-bold text-gray-900 text-sm flex items-center gap-2">
+                <Sliders className="h-5 w-5 text-amber-600" />
+                <span>{isMm ? 'စတော့ ပမာဏ ပြင်ဆင်ရန်' : 'Adjust Inventory Stock'}</span>
+              </h3>
+              <button onClick={() => setShowAdjModal(false)}><X className="h-5 w-5 text-gray-500" /></button>
+            </div>
+
+            <form onSubmit={handleSubmitAdjustment} className="space-y-3 text-xs">
+              <div>
+                <label className="font-bold text-gray-700 block mb-1">{isMm ? 'ကုန်ပစ္စည်း ရွေးပါ' : 'Select Product'}</label>
+                <select
+                  required
+                  value={adjProductId}
+                  onChange={e => setAdjProductId(e.target.value)}
+                  className="w-full border p-2 rounded-lg bg-white"
+                >
+                  <option value="">{isMm ? '-- ကုန်ပစ္စည်း ရွေးပါ --' : '-- Select Product --'}</option>
+                  {products.map(p => (
+                    <option key={p.id} value={p.id}>{p.name} (Cur: {p.stockQty || 0})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="font-bold text-gray-700 block mb-1">
+                  {isMm ? 'တိုး/လျှော့ ပမာဏ (ဥပမာ +5 သို့မဟုတ် -3)' : 'Adjust Quantity (+ or -)'}
+                </label>
+                <input
+                  type="number"
+                  required
+                  value={adjQty}
+                  onChange={e => setAdjQty(Number(e.target.value))}
+                  className="w-full border p-2 rounded-lg bg-white font-bold text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-gray-700 block mb-1">{isMm ? 'အကြောင်းပြချက်' : 'Reason'}</label>
+                <input
+                  type="text"
+                  required
+                  value={adjReason}
+                  onChange={e => setAdjReason(e.target.value)}
+                  className="w-full border p-2 rounded-lg bg-white"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-2.5 bg-amber-600 text-white font-bold rounded-xl hover:bg-amber-700"
+              >
+                {isMm ? 'စတော့ ပြင်ဆင်မှု သိမ်းမည်' : 'Save Stock Adjustment'}
+              </button>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -3,6 +3,8 @@ import { UserAccount, Room, StaffMember, ServiceItem, ProductItem, ShopSettings 
 import { hashPin } from '../utils/cryptoAuth';
 import { Language } from '../utils/translations';
 import { db } from '../db/database';
+import { localServerClient } from '../services/localServerClient';
+import { authSession } from '../services/authSession';
 import { 
   DoorOpen, 
   Users, 
@@ -359,7 +361,39 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
         details: 'Configured live Master Data and launched production environment.',
       };
 
-      // 9. ATOMIC TRANSACTION: Only clear tables inside transaction AFTER all validation passes
+      // Create backup snapshot record before replacement
+      await db.backupMetadata.put({
+        id: `backup_${Date.now()}_setup`,
+        backupCode: `BK-SETUP-${Date.now()}`,
+        timestamp: now,
+        schemaVersion: 9,
+        appVersion: '1.0.0',
+        tableRecordCounts: {},
+        totalRecords: 0,
+        dataChecksum: 'checksum_setup',
+        fileSizeBytes: 1024,
+        exportedBy: ownerUser.name,
+      });
+
+      // LAN Mode: Execute setup on server SQLite
+      if (authSession.getIsServerConnected()) {
+        await localServerClient.executeSetupWizard({
+          settings: newSettings,
+          ownerUser,
+          staff: parsedStaff,
+          rooms: parsedRooms,
+          tables: parsedTables,
+          serviceCategories: parsedServiceCats,
+          services: parsedServices,
+          productCategories: parsedProdCats,
+          products: parsedProducts,
+          paymentMethods: parsedPaymentMethods,
+          expenseCategories: defaultExpenseCats,
+          commissionRules: defaultCommRules,
+        });
+      }
+
+      // Sync/Replace Dexie atomically inside transaction
       await db.transaction('rw', [
         db.settings,
         db.users,

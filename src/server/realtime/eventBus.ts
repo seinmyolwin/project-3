@@ -158,6 +158,20 @@ export class LocalRealtimeEventBus {
       return { success: false, code: 'DEVICE_REVOKED', message: 'Device is revoked from shop network' };
     }
 
+    // Verify user active status in persistent SQLite DB
+    const freshUser = this.storage.getUserById(session.user.id);
+    if (freshUser) {
+      if (!freshUser.isActive) {
+        activeSessions.delete(token);
+        return { success: false, code: 'USER_DEACTIVATED', message: 'User account is deactivated or removed' };
+      }
+      session.user.role = freshUser.role;
+      session.user.name = freshUser.name;
+    } else if (session.user && (session.user as any).isActive === false) {
+      activeSessions.delete(token);
+      return { success: false, code: 'USER_DEACTIVATED', message: 'User account is deactivated or removed' };
+    }
+
     const connectionId = 'conn_' + crypto.randomBytes(8).toString('hex');
     const user = session.user;
 

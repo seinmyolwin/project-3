@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   Database,
   Lock,
+  LogOut,
   Globe,
   Radio,
   Search,
@@ -43,6 +44,7 @@ interface NavbarProps {
   onSelectTab: (tab: ActiveTab) => void;
   currentUser: UserAccount | null;
   onOpenPINModal: () => void;
+  onLogout?: () => void;
   lang: Language;
   onToggleLang: () => void;
   settings: ShopSettings | null;
@@ -59,6 +61,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onSelectTab,
   currentUser,
   onOpenPINModal,
+  onLogout,
   lang,
   onToggleLang,
   settings,
@@ -201,6 +204,17 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
             <Lock className="h-3 w-3 text-purple-400" />
           </button>
+
+          {/* Explicit Logout Button */}
+          {onLogout && (
+            <button
+              onClick={onLogout}
+              title={isMm ? 'အကောင့်မှထွက်မည်' : 'Logout'}
+              className="flex items-center gap-1 rounded-lg border border-rose-500/30 bg-rose-950/30 px-2 py-1.5 text-xs text-rose-300 hover:bg-rose-900/50 hover:text-white transition-all cursor-pointer"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
       </div>
 

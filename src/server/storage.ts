@@ -757,6 +757,188 @@ export class PersistentSQLiteStorage {
       } catch {}
       this.db.run(`INSERT INTO schema_migrations (version, applied_at) VALUES (7, datetime('now'));`);
     }
+
+    if (currentVersion < 8) {
+      this.db.run(`
+        -- Staff Attendance Table
+        CREATE TABLE IF NOT EXISTS staff_attendance (
+          id TEXT PRIMARY KEY,
+          business_id TEXT NOT NULL,
+          branch_id TEXT NOT NULL,
+          staff_id TEXT NOT NULL,
+          staff_name TEXT NOT NULL,
+          date TEXT NOT NULL,
+          check_in_time TEXT,
+          check_out_time TEXT,
+          status TEXT NOT NULL,
+          device_id TEXT,
+          user_id TEXT NOT NULL,
+          user_name TEXT NOT NULL,
+          notes TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_staff_att_date ON staff_attendance (business_id, branch_id, date);
+        CREATE INDEX IF NOT EXISTS idx_staff_att_staff ON staff_attendance (business_id, staff_id);
+
+        -- Shift Handovers Table
+        CREATE TABLE IF NOT EXISTS shift_handovers (
+          id TEXT PRIMARY KEY,
+          business_id TEXT NOT NULL,
+          branch_id TEXT NOT NULL,
+          shift_code TEXT NOT NULL,
+          staff_id TEXT NOT NULL,
+          staff_name TEXT NOT NULL,
+          opened_at TEXT NOT NULL,
+          closed_at TEXT,
+          opening_float_mmk INTEGER NOT NULL,
+          expected_cash_mmk INTEGER,
+          actual_cash_mmk INTEGER,
+          discrepancy_mmk INTEGER,
+          notes TEXT,
+          status TEXT NOT NULL,
+          handed_over_to_id TEXT,
+          handed_over_to_name TEXT,
+          created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_shift_handovers_br ON shift_handovers (business_id, branch_id);
+
+        -- Service Consumables (Recipe / Bill of Materials)
+        CREATE TABLE IF NOT EXISTS service_consumables (
+          id TEXT PRIMARY KEY,
+          business_id TEXT NOT NULL,
+          branch_id TEXT NOT NULL,
+          service_id TEXT NOT NULL,
+          service_name TEXT NOT NULL,
+          product_id TEXT NOT NULL,
+          product_name TEXT NOT NULL,
+          quantity REAL NOT NULL,
+          unit TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_srv_consumables_srv ON service_consumables (service_id);
+
+        -- Stock Movements (Tracking inventory consumption and adjustments)
+        CREATE TABLE IF NOT EXISTS stock_movements (
+          id TEXT PRIMARY KEY,
+          business_id TEXT NOT NULL,
+          branch_id TEXT NOT NULL,
+          product_id TEXT NOT NULL,
+          product_name TEXT NOT NULL,
+          service_id TEXT,
+          session_id TEXT,
+          invoice_id TEXT,
+          customer_id TEXT,
+          customer_name TEXT,
+          staff_id TEXT,
+          staff_name TEXT,
+          type TEXT NOT NULL,
+          quantity_change REAL NOT NULL,
+          previous_stock REAL NOT NULL,
+          new_stock REAL NOT NULL,
+          unit TEXT,
+          notes TEXT,
+          date TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          created_by TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_stock_movements_prod ON stock_movements (business_id, product_id);
+
+        INSERT INTO schema_migrations (version, applied_at) VALUES (8, datetime('now'));
+      `);
+    }
+
+    if (currentVersion < 10) {
+      this.db.run(`
+        -- Suppliers
+        CREATE TABLE IF NOT EXISTS suppliers (
+          id TEXT PRIMARY KEY,
+          business_id TEXT NOT NULL,
+          branch_id TEXT NOT NULL,
+          name TEXT NOT NULL,
+          phone TEXT NOT NULL,
+          email TEXT,
+          address TEXT,
+          contact_person TEXT,
+          notes TEXT,
+          is_active INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_suppliers_biz ON suppliers (business_id);
+
+        -- Purchase Orders
+        CREATE TABLE IF NOT EXISTS purchase_orders (
+          id TEXT PRIMARY KEY,
+          business_id TEXT NOT NULL,
+          branch_id TEXT NOT NULL,
+          po_number TEXT NOT NULL,
+          supplier_id TEXT NOT NULL,
+          supplier_name TEXT NOT NULL,
+          items_json TEXT NOT NULL,
+          total_amount_mmk INTEGER NOT NULL DEFAULT 0,
+          paid_amount_mmk INTEGER NOT NULL DEFAULT 0,
+          payment_status TEXT NOT NULL DEFAULT 'unpaid',
+          payment_method TEXT,
+          order_date TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'received',
+          notes TEXT,
+          created_by TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_po_biz ON purchase_orders (business_id);
+
+        -- Stock Adjustments
+        CREATE TABLE IF NOT EXISTS stock_adjustments (
+          id TEXT PRIMARY KEY,
+          business_id TEXT NOT NULL,
+          branch_id TEXT NOT NULL,
+          product_id TEXT NOT NULL,
+          product_name TEXT NOT NULL,
+          before_qty REAL NOT NULL,
+          after_qty REAL NOT NULL,
+          adjust_qty REAL NOT NULL,
+          reason TEXT NOT NULL,
+          adjusted_by TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_stock_adj_prod ON stock_adjustments (product_id);
+
+        -- Performance Bonus Rules
+        CREATE TABLE IF NOT EXISTS performance_bonus_rules (
+          id TEXT PRIMARY KEY,
+          business_id TEXT NOT NULL,
+          branch_id TEXT NOT NULL,
+          rule_name TEXT NOT NULL,
+          min_revenue_mmk INTEGER NOT NULL DEFAULT 0,
+          min_sessions INTEGER NOT NULL DEFAULT 0,
+          min_attendance_days INTEGER NOT NULL DEFAULT 0,
+          bonus_amount_mmk INTEGER NOT NULL DEFAULT 0,
+          is_active INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL
+        );
+
+        -- Customer Loyalty Ledger
+        CREATE TABLE IF NOT EXISTS customer_loyalty_ledger (
+          id TEXT PRIMARY KEY,
+          customer_id TEXT NOT NULL,
+          customer_name TEXT NOT NULL,
+          points INTEGER NOT NULL,
+          balance_after INTEGER NOT NULL,
+          type TEXT NOT NULL,
+          reference_type TEXT,
+          reference_id TEXT,
+          notes TEXT,
+          date TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_loyalty_cust ON customer_loyalty_ledger (customer_id);
+
+        INSERT INTO schema_migrations (version, applied_at) VALUES (10, datetime('now'));
+      `);
+    }
   }
 
   /**
@@ -1156,6 +1338,190 @@ export class PersistentSQLiteStorage {
       isActive: row.is_active === 1,
       createdAt: row.created_at as string,
     };
+  }
+
+  public getUserById(userId: string): ServerUserEntity | null {
+    if (!this.db || !userId) return null;
+    const stmt = this.db.prepare(`SELECT * FROM users WHERE id = ?`);
+    stmt.bind([userId.trim()]);
+    if (!stmt.step()) {
+      stmt.free();
+      return null;
+    }
+    const row = stmt.getAsObject();
+    stmt.free();
+    return {
+      id: row.id as string,
+      businessId: row.business_id as string,
+      branchId: row.branch_id as string,
+      username: row.username as string,
+      name: row.name as string,
+      role: row.role as any,
+      isActive: row.is_active === 1,
+      createdAt: row.created_at as string,
+    };
+  }
+
+  public getUserByUsername(username: string): ServerUserEntity | null {
+    if (!this.db || !username) return null;
+    const stmt = this.db.prepare(`SELECT * FROM users WHERE LOWER(username) = ?`);
+    stmt.bind([username.toLowerCase().trim()]);
+    if (!stmt.step()) {
+      stmt.free();
+      return null;
+    }
+    const row = stmt.getAsObject();
+    stmt.free();
+    return {
+      id: row.id as string,
+      businessId: row.business_id as string,
+      branchId: row.branch_id as string,
+      username: row.username as string,
+      name: row.name as string,
+      role: row.role as any,
+      isActive: row.is_active === 1,
+      createdAt: row.created_at as string,
+    };
+  }
+
+  public getUsers(businessId?: string): ServerUserEntity[] {
+    if (!this.db) return [];
+    let sql = `SELECT id, business_id, branch_id, username, name, role, is_active, created_at FROM users`;
+    const params: any[] = [];
+    if (businessId) {
+      sql += ` WHERE business_id = ?`;
+      params.push(businessId);
+    }
+    sql += ` ORDER BY created_at ASC`;
+    const stmt = this.db.prepare(sql);
+    stmt.bind(params);
+    const users: ServerUserEntity[] = [];
+    while (stmt.step()) {
+      const row = stmt.getAsObject();
+      users.push({
+        id: row.id as string,
+        businessId: row.business_id as string,
+        branchId: row.branch_id as string,
+        username: row.username as string,
+        name: row.name as string,
+        role: row.role as any,
+        isActive: row.is_active === 1,
+        createdAt: row.created_at as string,
+      });
+    }
+    stmt.free();
+    return users;
+  }
+
+  public countUsers(): number {
+    if (!this.db) return 0;
+    const stmt = this.db.prepare(`SELECT COUNT(*) as cnt FROM users`);
+    if (stmt.step()) {
+      const row = stmt.getAsObject();
+      stmt.free();
+      return Number(row.cnt) || 0;
+    }
+    stmt.free();
+    return 0;
+  }
+
+  public createUser(userData: {
+    id?: string;
+    businessId?: string;
+    branchId?: string;
+    username: string;
+    name: string;
+    role: any;
+    password?: string;
+    pin?: string;
+  }): ServerUserEntity {
+    if (!this.db) throw new Error('DB not initialized');
+    const now = new Date().toISOString();
+    const id = userData.id || 'usr_' + Date.now() + '_' + crypto.randomBytes(3).toString('hex');
+    const businessId = userData.businessId || 'BIZ_SHOP_001';
+    const branchId = userData.branchId || 'BR_MAIN';
+    const username = userData.username.toLowerCase().trim();
+    const name = userData.name.trim();
+    const role = userData.role || 'cashier';
+
+    const rawSecret = userData.password || userData.pin || '123456';
+    const salt = crypto.randomBytes(16).toString('hex');
+    const passwordHash = crypto.createHash('sha256').update(rawSecret.trim() + salt).digest('hex');
+
+    this.db.run(
+      `INSERT INTO users (id, business_id, branch_id, username, name, role, password_hash, salt, is_active, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+      [id, businessId, branchId, username, name, role, passwordHash, salt, now]
+    );
+    this.flushToDisk();
+
+    return {
+      id,
+      businessId,
+      branchId,
+      username,
+      name,
+      role,
+      isActive: true,
+      createdAt: now,
+    };
+  }
+
+  public updateUser(
+    id: string,
+    updates: {
+      name?: string;
+      username?: string;
+      role?: any;
+      isActive?: boolean;
+    }
+  ): boolean {
+    if (!this.db || !id) return false;
+    const existing = this.getUserById(id);
+    if (!existing) return false;
+
+    const fields: string[] = [];
+    const values: any[] = [];
+
+    if (updates.name !== undefined) {
+      fields.push('name = ?');
+      values.push(updates.name.trim());
+    }
+    if (updates.username !== undefined) {
+      fields.push('username = ?');
+      values.push(updates.username.toLowerCase().trim());
+    }
+    if (updates.role !== undefined) {
+      fields.push('role = ?');
+      values.push(updates.role);
+    }
+    if (updates.isActive !== undefined) {
+      fields.push('is_active = ?');
+      values.push(updates.isActive ? 1 : 0);
+    }
+
+    if (fields.length === 0) return true;
+
+    values.push(id);
+    this.db.run(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`, values);
+    this.flushToDisk();
+    return true;
+  }
+
+  public updateUserPassword(id: string, newPassword: string): boolean {
+    if (!this.db || !id || !newPassword) return false;
+    const salt = crypto.randomBytes(16).toString('hex');
+    const passwordHash = crypto.createHash('sha256').update(newPassword.trim() + salt).digest('hex');
+    this.db.run(`UPDATE users SET password_hash = ?, salt = ? WHERE id = ?`, [passwordHash, salt, id]);
+    this.flushToDisk();
+    return true;
+  }
+
+  public setUserActive(id: string, isActive: boolean): boolean {
+    if (!this.db || !id) return false;
+    this.db.run(`UPDATE users SET is_active = ? WHERE id = ?`, [isActive ? 1 : 0, id]);
+    this.flushToDisk();
+    return true;
   }
 
   // ==========================================
@@ -3382,7 +3748,7 @@ export class PersistentSQLiteStorage {
         actorUserId: params.userId,
       });
 
-      return { planId: params.planId, name: params.name, durationDays: params.durationDays, priceMMK: params.priceMMK };
+      return { planId: params.planId, name: params.name, durationDays: params.durationDays, priceMMK: params.priceMMK, discountPercent: params.discountPercent };
     });
   }
 
@@ -3836,7 +4202,7 @@ export class PersistentSQLiteStorage {
         UPDATE customer_packages SET
           remaining_qty = ?, used_qty = ?, status = ?, updated_at = ?
         WHERE id = ? AND business_id = ?
-      `, [newRemaining, newUsed, newStatus, params.customerPackageId, params.businessId]);
+      `, [newRemaining, newUsed, newStatus, now, params.customerPackageId, params.businessId]);
 
       // 3. Record redemption record
       const redemptionId = `pred_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
@@ -4218,6 +4584,141 @@ export class PersistentSQLiteStorage {
     });
   }
 
+  public async executePackageCancel(params: {
+    customerPackageId: string;
+    businessId: string;
+    branchId: string;
+    reason?: string;
+    userId: string;
+    userName: string;
+  }): Promise<any> {
+    return this.transaction(async () => {
+      if (!this.db) throw new Error('DB error');
+      const now = new Date().toISOString();
+
+      const stmt = this.db.prepare(`SELECT * FROM customer_packages WHERE id = ? AND business_id = ?`);
+      stmt.bind([params.customerPackageId, params.businessId]);
+      if (!stmt.step()) {
+        stmt.free();
+        throw new Error(`Customer package ${params.customerPackageId} not found`);
+      }
+      const pkg = stmt.getAsObject();
+      stmt.free();
+
+      this.db.run(`
+        UPDATE customer_packages SET status = 'cancelled', updated_at = ? WHERE id = ? AND business_id = ?
+      `, [now, params.customerPackageId, params.businessId]);
+
+      this.recordOutboxEvent({
+        businessId: params.businessId,
+        branchId: params.branchId,
+        eventType: 'PACKAGE_CANCELLED',
+        entityType: 'CUSTOMER_PACKAGE',
+        entityId: params.customerPackageId,
+        payload: {
+          customerPackageId: params.customerPackageId,
+          packageName: pkg.package_name,
+          customerId: pkg.customer_id,
+          reason: params.reason,
+          status: 'cancelled',
+        },
+        actorUserId: params.userId,
+      });
+
+      return { customerPackageId: params.customerPackageId, status: 'cancelled' };
+    });
+  }
+
+  public async executeMembershipCancel(params: {
+    membershipId: string;
+    businessId: string;
+    branchId: string;
+    reason?: string;
+    userId: string;
+    userName: string;
+  }): Promise<any> {
+    return this.transaction(async () => {
+      if (!this.db) throw new Error('DB error');
+      const now = new Date().toISOString();
+
+      const stmt = this.db.prepare(`SELECT * FROM customer_memberships WHERE id = ? AND business_id = ?`);
+      stmt.bind([params.membershipId, params.businessId]);
+      if (!stmt.step()) {
+        stmt.free();
+        throw new Error(`Customer membership ${params.membershipId} not found`);
+      }
+      const mem = stmt.getAsObject();
+      stmt.free();
+
+      this.db.run(`
+        UPDATE customer_memberships SET status = 'cancelled', updated_at = ? WHERE id = ? AND business_id = ?
+      `, [now, params.membershipId, params.businessId]);
+
+      this.recordOutboxEvent({
+        businessId: params.businessId,
+        branchId: params.branchId,
+        eventType: 'MEMBERSHIP_CANCELLED',
+        entityType: 'CUSTOMER_MEMBERSHIP',
+        entityId: params.membershipId,
+        payload: {
+          membershipId: params.membershipId,
+          planName: mem.plan_name,
+          customerId: mem.customer_id,
+          reason: params.reason,
+          status: 'cancelled',
+        },
+        actorUserId: params.userId,
+      });
+
+      return { membershipId: params.membershipId, status: 'cancelled' };
+    });
+  }
+
+  public async executeGiftCardVoid(params: {
+    giftCardIdOrNumber: string;
+    businessId: string;
+    branchId: string;
+    reason?: string;
+    userId: string;
+    userName: string;
+  }): Promise<any> {
+    return this.transaction(async () => {
+      if (!this.db) throw new Error('DB error');
+      const now = new Date().toISOString();
+
+      const stmt = this.db.prepare(`SELECT * FROM gift_cards WHERE (id = ? OR card_number = ?) AND business_id = ?`);
+      stmt.bind([params.giftCardIdOrNumber, params.giftCardIdOrNumber, params.businessId]);
+      if (!stmt.step()) {
+        stmt.free();
+        throw new Error(`Gift card ${params.giftCardIdOrNumber} not found`);
+      }
+      const card = stmt.getAsObject();
+      stmt.free();
+
+      this.db.run(`
+        UPDATE gift_cards SET status = 'cancelled', updated_at = ? WHERE id = ? AND business_id = ?
+      `, [now, card.id, params.businessId]);
+
+      this.recordOutboxEvent({
+        businessId: params.businessId,
+        branchId: params.branchId,
+        eventType: 'GIFT_CARD_VOIDED',
+        entityType: 'GIFT_CARD',
+        entityId: String(card.id),
+        payload: {
+          giftCardId: card.id,
+          cardNumber: card.card_number,
+          customerId: card.customer_id,
+          reason: params.reason,
+          status: 'cancelled',
+        },
+        actorUserId: params.userId,
+      });
+
+      return { giftCardId: card.id, cardNumber: card.card_number, status: 'cancelled' };
+    });
+  }
+
   /**
    * ATOMIC MIXED PAYMENT:
    * Supports splitting invoice payment across multiple methods:
@@ -4381,9 +4882,9 @@ export class PersistentSQLiteStorage {
       const primaryMethod = params.payments.length === 1 ? params.payments[0].method : 'mixed';
       this.db.run(`
         UPDATE invoices SET
-          paid_mmk = ?, payment_status = ?, payment_method = ?, updated_at = ?
+          paid_mmk = ?, payment_status = ?, payment_method = ?
         WHERE id = ? AND business_id = ?
-      `, [newPaidMMK, newStatus, primaryMethod, now, params.invoiceId, params.businessId]);
+      `, [newPaidMMK, newStatus, primaryMethod, params.invoiceId, params.businessId]);
 
       // 4. Outbox Events
       this.recordOutboxEvent({
@@ -4422,6 +4923,8 @@ export class PersistentSQLiteStorage {
         invoiceId: params.invoiceId,
         totalMMK,
         paidMMK: newPaidMMK,
+        totalPaidMMK: totalPaidNow,
+        status: newStatus,
         paymentStatus: newStatus,
         paymentsProcessed: params.payments.length,
       };
@@ -4572,8 +5075,8 @@ export class PersistentSQLiteStorage {
     bkgStmt.free();
 
     // Sessions
-    const sessStmt = this.db.prepare(`SELECT * FROM sessions WHERE customer_id = ? AND business_id = ? ORDER BY start_time DESC LIMIT 50`);
-    sessStmt.bind([customerId, businessId]);
+    const sessStmt = this.db.prepare(`SELECT * FROM sessions WHERE (customer_name = ? OR customer_name = ?) AND business_id = ? ORDER BY start_time DESC LIMIT 50`);
+    sessStmt.bind([customer.name, (customer as any).phone || customer.name, businessId]);
     const sessions: any[] = [];
     while (sessStmt.step()) sessions.push(sessStmt.getAsObject());
     sessStmt.free();
@@ -4787,9 +5290,8 @@ export class PersistentSQLiteStorage {
       const now = new Date().toISOString();
       const prefsStr = JSON.stringify(params.preferences);
 
-      this.db.run(`UPDATE customers SET preferences = ?, updated_at = ? WHERE id = ? AND business_id = ?`, [
+      this.db.run(`UPDATE customers SET preferences = ? WHERE id = ? AND business_id = ?`, [
         prefsStr,
-        now,
         params.customerId,
         params.businessId,
       ]);
@@ -4805,6 +5307,997 @@ export class PersistentSQLiteStorage {
       });
 
       return { customerId: params.customerId, success: true };
+    });
+  }
+
+  // ==========================================
+  // PHASE 36: STAFF ATTENDANCE, SHIFTS, CONSUMABLES & PAYROLL
+  // ==========================================
+
+  public async executeStaffClockIn(params: {
+    attendanceId?: string;
+    businessId: string;
+    branchId: string;
+    staffId: string;
+    staffName: string;
+    date?: string;
+    checkInTime?: string;
+    status?: string;
+    notes?: string;
+    deviceId?: string;
+    userId: string;
+    userName: string;
+  }): Promise<any> {
+    return this.transaction(async () => {
+      if (!this.db) throw new Error('DB error');
+      const now = new Date().toISOString();
+      const today = params.date || now.split('T')[0];
+      const checkInTime = params.checkInTime || now;
+      const status = params.status || 'checked_in';
+      const attId = params.attendanceId || `att_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
+      this.db.run(`
+        INSERT INTO staff_attendance (
+          id, business_id, branch_id, staff_id, staff_name, date, check_in_time, status, device_id, user_id, user_name, notes, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        attId,
+        params.businessId,
+        params.branchId,
+        params.staffId,
+        params.staffName,
+        today,
+        checkInTime,
+        status,
+        params.deviceId || null,
+        params.userId,
+        params.userName,
+        params.notes || null,
+        now,
+        now,
+      ]);
+
+      this.recordOutboxEvent({
+        businessId: params.businessId,
+        branchId: params.branchId,
+        eventType: 'STAFF_CLOCK_IN',
+        entityType: 'STAFF_ATTENDANCE',
+        entityId: attId,
+        payload: {
+          attendanceId: attId,
+          staffId: params.staffId,
+          staffName: params.staffName,
+          date: today,
+          checkInTime,
+          status,
+        },
+        actorUserId: params.userId,
+      });
+
+      return { attendanceId: attId, staffId: params.staffId, date: today, checkInTime, status };
+    });
+  }
+
+  public async executeStaffClockOut(params: {
+    attendanceId: string;
+    businessId: string;
+    branchId: string;
+    checkOutTime?: string;
+    notes?: string;
+    userId: string;
+    userName: string;
+  }): Promise<any> {
+    return this.transaction(async () => {
+      if (!this.db) throw new Error('DB error');
+      const now = new Date().toISOString();
+      const checkOutTime = params.checkOutTime || now;
+
+      const stmt = this.db.prepare(`SELECT * FROM staff_attendance WHERE id = ? AND business_id = ?`);
+      stmt.bind([params.attendanceId, params.businessId]);
+      if (!stmt.step()) {
+        stmt.free();
+        throw new Error(`Attendance record ${params.attendanceId} not found`);
+      }
+      const existing = stmt.getAsObject();
+      stmt.free();
+
+      this.db.run(`
+        UPDATE staff_attendance SET
+          check_out_time = ?,
+          status = 'checked_out',
+          notes = COALESCE(?, notes),
+          updated_at = ?
+        WHERE id = ? AND business_id = ?
+      `, [checkOutTime, params.notes || null, now, params.attendanceId, params.businessId]);
+
+      this.recordOutboxEvent({
+        businessId: params.businessId,
+        branchId: params.branchId,
+        eventType: 'STAFF_CLOCK_OUT',
+        entityType: 'STAFF_ATTENDANCE',
+        entityId: params.attendanceId,
+        payload: {
+          attendanceId: params.attendanceId,
+          staffId: existing.staff_id,
+          checkOutTime,
+          status: 'checked_out',
+        },
+        actorUserId: params.userId,
+      });
+
+      return { attendanceId: params.attendanceId, checkOutTime, status: 'checked_out' };
+    });
+  }
+
+  public async executeShiftOpen(params: {
+    shiftId?: string;
+    businessId: string;
+    branchId: string;
+    shiftCode?: string;
+    staffId: string;
+    staffName: string;
+    openingFloatMMK: number;
+    notes?: string;
+    userId: string;
+    userName: string;
+  }): Promise<any> {
+    return this.transaction(async () => {
+      if (!this.db) throw new Error('DB error');
+      const now = new Date().toISOString();
+      const shiftId = params.shiftId || `shf_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const shiftCode = params.shiftCode || `SHF-${Date.now().toString().slice(-6)}`;
+
+      this.db.run(`
+        INSERT INTO shift_handovers (
+          id, business_id, branch_id, shift_code, staff_id, staff_name, opened_at, opening_float_mmk, notes, status, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?)
+      `, [
+        shiftId,
+        params.businessId,
+        params.branchId,
+        shiftCode,
+        params.staffId,
+        params.staffName,
+        now,
+        params.openingFloatMMK,
+        params.notes || null,
+        now,
+      ]);
+
+      if (params.openingFloatMMK > 0) {
+        const cashTxId = `ctx_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        this.db.run(`
+          INSERT INTO cash_transactions (
+            id, business_id, branch_id, type, category, amount_mmk, reference_type, reference_id, notes, transaction_time, created_by
+          ) VALUES (?, ?, ?, 'cash_in', 'shift_opening_float', ?, 'shift', ?, ?, ?, ?)
+        `, [
+          cashTxId,
+          params.businessId,
+          params.branchId,
+          params.openingFloatMMK,
+          shiftId,
+          `Shift opening float for ${params.staffName}`,
+          now,
+          params.userName,
+        ]);
+      }
+
+      this.recordOutboxEvent({
+        businessId: params.businessId,
+        branchId: params.branchId,
+        eventType: 'SHIFT_OPENED',
+        entityType: 'SHIFT_HANDOVER',
+        entityId: shiftId,
+        payload: {
+          shiftId,
+          shiftCode,
+          staffId: params.staffId,
+          staffName: params.staffName,
+          openingFloatMMK: params.openingFloatMMK,
+          openedAt: now,
+          status: 'open',
+        },
+        actorUserId: params.userId,
+      });
+
+      return { shiftId, shiftCode, staffId: params.staffId, openingFloatMMK: params.openingFloatMMK, status: 'open' };
+    });
+  }
+
+  public async executeShiftClose(params: {
+    shiftId: string;
+    businessId: string;
+    branchId: string;
+    actualCashMMK: number;
+    notes?: string;
+    handedOverToId?: string;
+    handedOverToName?: string;
+    userId: string;
+    userName: string;
+  }): Promise<any> {
+    return this.transaction(async () => {
+      if (!this.db) throw new Error('DB error');
+      const now = new Date().toISOString();
+
+      const stmt = this.db.prepare(`SELECT * FROM shift_handovers WHERE id = ? AND business_id = ?`);
+      stmt.bind([params.shiftId, params.businessId]);
+      if (!stmt.step()) {
+        stmt.free();
+        throw new Error(`Shift ${params.shiftId} not found`);
+      }
+      const shift = stmt.getAsObject();
+      stmt.free();
+
+      if (shift.status === 'closed') {
+        return shift;
+      }
+
+      const openedAt = String(shift.opened_at);
+      const openingFloat = Number(shift.opening_float_mmk || 0);
+
+      // Sum all cash transactions since openedAt
+      const cashTxStmt = this.db.prepare(`
+        SELECT type, SUM(amount_mmk) as total FROM cash_transactions
+        WHERE business_id = ? AND branch_id = ? AND datetime(REPLACE(transaction_time, 'T', ' ')) >= datetime(REPLACE(?, 'T', ' '))
+        GROUP BY type
+      `);
+      cashTxStmt.bind([params.businessId, params.branchId, openedAt]);
+      let cashIn = 0;
+      let cashOut = 0;
+      while (cashTxStmt.step()) {
+        const row = cashTxStmt.getAsObject();
+        if (row.type === 'cash_in') cashIn = Number(row.total || 0);
+        if (row.type === 'cash_out') cashOut = Number(row.total || 0);
+      }
+      cashTxStmt.free();
+
+      const expectedCash = (cashIn - cashOut) > 0 ? (cashIn - cashOut) : openingFloat;
+      const discrepancy = params.actualCashMMK - expectedCash;
+
+      this.db.run(`
+        UPDATE shift_handovers SET
+          closed_at = ?,
+          expected_cash_mmk = ?,
+          actual_cash_mmk = ?,
+          discrepancy_mmk = ?,
+          notes = COALESCE(?, notes),
+          status = 'closed',
+          handed_over_to_id = ?,
+          handed_over_to_name = ?
+        WHERE id = ? AND business_id = ?
+      `, [
+        now,
+        expectedCash,
+        params.actualCashMMK,
+        discrepancy,
+        params.notes || null,
+        params.handedOverToId || null,
+        params.handedOverToName || null,
+        params.shiftId,
+        params.businessId,
+      ]);
+
+      this.recordOutboxEvent({
+        businessId: params.businessId,
+        branchId: params.branchId,
+        eventType: 'SHIFT_CLOSED',
+        entityType: 'SHIFT_HANDOVER',
+        entityId: params.shiftId,
+        payload: {
+          shiftId: params.shiftId,
+          closedAt: now,
+          expectedCashMMK: expectedCash,
+          actualCashMMK: params.actualCashMMK,
+          discrepancyMMK: discrepancy,
+          handedOverToName: params.handedOverToName,
+          status: 'closed',
+        },
+        actorUserId: params.userId,
+      });
+
+      return {
+        shiftId: params.shiftId,
+        expectedCashMMK: expectedCash,
+        actualCashMMK: params.actualCashMMK,
+        discrepancyMMK: discrepancy,
+        status: 'closed',
+      };
+    });
+  }
+
+  public async executeServiceConsumableLink(params: {
+    id?: string;
+    businessId: string;
+    branchId: string;
+    serviceId: string;
+    serviceName: string;
+    productId: string;
+    productName: string;
+    quantity: number;
+    unit?: string;
+    userId: string;
+    userName: string;
+  }): Promise<any> {
+    return this.transaction(async () => {
+      if (!this.db) throw new Error('DB error');
+      const now = new Date().toISOString();
+      const linkId = params.id || `scon_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
+      this.db.run(`
+        INSERT INTO service_consumables (
+          id, business_id, branch_id, service_id, service_name, product_id, product_name, quantity, unit, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        linkId,
+        params.businessId,
+        params.branchId,
+        params.serviceId,
+        params.serviceName,
+        params.productId,
+        params.productName,
+        params.quantity,
+        params.unit || null,
+        now,
+        now,
+      ]);
+
+      return { id: linkId, serviceId: params.serviceId, productId: params.productId, quantity: params.quantity };
+    });
+  }
+
+  public async executeServiceConsumablesDeduct(params: {
+    serviceId: string;
+    businessId: string;
+    branchId: string;
+    multiplier?: number;
+    sessionId?: string;
+    invoiceId?: string;
+    customerId?: string;
+    customerName?: string;
+    staffId?: string;
+    staffName?: string;
+    userId: string;
+    userName: string;
+  }): Promise<any> {
+    return this.transaction(async () => {
+      if (!this.db) throw new Error('DB error');
+      const now = new Date().toISOString();
+      const today = now.split('T')[0];
+      const multiplier = params.multiplier || 1;
+
+      const stmt = this.db.prepare(`SELECT * FROM service_consumables WHERE service_id = ? AND business_id = ?`);
+      stmt.bind([params.serviceId, params.businessId]);
+      const recipeItems: any[] = [];
+      while (stmt.step()) recipeItems.push(stmt.getAsObject());
+      stmt.free();
+
+      const deductedItems: any[] = [];
+
+      for (const item of recipeItems) {
+        const qtyToDeduct = Number(item.quantity) * multiplier;
+
+        const pStmt = this.db.prepare(`SELECT * FROM products WHERE id = ? AND business_id = ?`);
+        pStmt.bind([item.product_id, params.businessId]);
+        if (pStmt.step()) {
+          const product = pStmt.getAsObject();
+          pStmt.free();
+
+          const prevStock = Number(product.stock_qty !== undefined ? product.stock_qty : (product.stock_quantity || 0));
+          const newStock = Math.max(0, prevStock - qtyToDeduct);
+
+          this.db.run(`UPDATE products SET stock_qty = ?, updated_at = ? WHERE id = ? AND business_id = ?`, [
+            newStock,
+            now,
+            item.product_id,
+            params.businessId,
+          ]);
+
+          const movementId = `mov_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+          this.db.run(`
+            INSERT INTO stock_movements (
+              id, business_id, branch_id, product_id, product_name, service_id, session_id, invoice_id,
+              customer_id, customer_name, staff_id, staff_name, type, quantity_change, previous_stock,
+              new_stock, unit, notes, date, created_at, created_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'consumption', ?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            movementId,
+            params.businessId,
+            params.branchId,
+            item.product_id,
+            item.product_name,
+            params.serviceId,
+            params.sessionId || null,
+            params.invoiceId || null,
+            params.customerId || null,
+            params.customerName || null,
+            params.staffId || null,
+            params.staffName || null,
+            qtyToDeduct,
+            prevStock,
+            newStock,
+            item.unit || null,
+            `Recipe consumption for service ${item.service_name}`,
+            today,
+            now,
+            params.userName,
+          ]);
+
+          deductedItems.push({
+            productId: item.product_id,
+            productName: item.product_name,
+            quantityDeducted: qtyToDeduct,
+            previousStock: prevStock,
+            newStock,
+          });
+        } else {
+          pStmt.free();
+        }
+      }
+
+      this.recordOutboxEvent({
+        businessId: params.businessId,
+        branchId: params.branchId,
+        eventType: 'SERVICE_CONSUMABLES_DEDUCTED',
+        entityType: 'SERVICE_CONSUMABLES',
+        entityId: params.serviceId,
+        payload: {
+          serviceId: params.serviceId,
+          deductedItems,
+          sessionId: params.sessionId,
+          invoiceId: params.invoiceId,
+        },
+        actorUserId: params.userId,
+      });
+
+      return { serviceId: params.serviceId, deductedItems };
+    });
+  }
+
+  public async executeStaffSettlementCreate(params: {
+    settlementId?: string;
+    businessId: string;
+    branchId: string;
+    staffId: string;
+    staffName: string;
+    baseSalaryMMK?: number;
+    bonusMMK?: number;
+    deductionsMMK?: number;
+    notes?: string;
+    payImmediately?: boolean;
+    userId: string;
+    userName: string;
+  }): Promise<any> {
+    return this.transaction(async () => {
+      if (!this.db) throw new Error('DB error');
+      const now = new Date().toISOString();
+      const settlementId = params.settlementId || `stl_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const settlementCode = `STL-${Date.now().toString().slice(-6)}`;
+
+      const ldgStmt = this.db.prepare(`
+        SELECT * FROM staff_ledger 
+        WHERE staff_id = ? AND business_id = ? AND is_settled = 0
+      `);
+      ldgStmt.bind([params.staffId, params.businessId]);
+      let commissionTotal = 0;
+      let advanceTotal = 0;
+      const ledgerIdsToSettle: string[] = [];
+
+      while (ldgStmt.step()) {
+        const row = ldgStmt.getAsObject();
+        ledgerIdsToSettle.push(String(row.id));
+        if (row.type === 'commission' || row.type === 'bonus') {
+          commissionTotal += Number(row.amount_mmk || 0);
+        } else if (row.type === 'advance' || row.type === 'deduction') {
+          advanceTotal += Number(row.amount_mmk || 0);
+        }
+      }
+      ldgStmt.free();
+
+      const baseSalary = params.baseSalaryMMK || 0;
+      const extraBonus = params.bonusMMK || 0;
+      const extraDeductions = (params.deductionsMMK || 0) + advanceTotal;
+      const totalEarnings = commissionTotal + baseSalary + extraBonus;
+      const netPayout = Math.max(0, totalEarnings - extraDeductions);
+
+      this.db.run(`
+        INSERT INTO staff_settlements (
+          id, business_id, branch_id, staff_id, settlement_code, total_earnings_mmk, total_deductions_mmk, net_payout_mmk, paid_at, status, created_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'paid', ?)
+      `, [
+        settlementId,
+        params.businessId,
+        params.branchId,
+        params.staffId,
+        settlementCode,
+        totalEarnings,
+        extraDeductions,
+        netPayout,
+        now,
+        params.userName,
+      ]);
+
+      for (const id of ledgerIdsToSettle) {
+        this.db.run(`UPDATE staff_ledger SET is_settled = 1, settlement_id = ? WHERE id = ?`, [settlementId, id]);
+      }
+
+      if (params.payImmediately && netPayout > 0) {
+        const cashTxId = `ctx_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        this.db.run(`
+          INSERT INTO cash_transactions (
+            id, business_id, branch_id, type, category, amount_mmk, reference_type, reference_id, notes, transaction_time, created_by
+          ) VALUES (?, ?, ?, 'cash_out', 'staff_settlement_payout', ?, 'settlement', ?, ?, ?, ?)
+        `, [
+          cashTxId,
+          params.businessId,
+          params.branchId,
+          netPayout,
+          settlementId,
+          `Payroll payout for ${params.staffName} (${settlementCode})`,
+          now,
+          params.userName,
+        ]);
+      }
+
+      this.recordOutboxEvent({
+        businessId: params.businessId,
+        branchId: params.branchId,
+        eventType: 'STAFF_SETTLEMENT_CREATED',
+        entityType: 'STAFF_SETTLEMENT',
+        entityId: settlementId,
+        payload: {
+          settlementId,
+          settlementCode,
+          staffId: params.staffId,
+          staffName: params.staffName,
+          totalEarnings,
+          totalDeductions: extraDeductions,
+          netPayout,
+          paidAt: now,
+        },
+        actorUserId: params.userId,
+      });
+
+      return {
+        settlementId,
+        settlementCode,
+        staffId: params.staffId,
+        totalEarnings,
+        totalDeductions: extraDeductions,
+        netPayout,
+        settledLedgerCount: ledgerIdsToSettle.length,
+      };
+    });
+  }
+
+  // Query methods for Phase 36
+  public getStaffAttendance(businessId: string, branchId: string, date?: string, staffId?: string): any[] {
+    if (!this.db) return [];
+    let query = `SELECT * FROM staff_attendance WHERE business_id = ?`;
+    const bindArgs: any[] = [businessId];
+    if (date) {
+      query += ` AND date = ?`;
+      bindArgs.push(date);
+    }
+    if (staffId) {
+      query += ` AND staff_id = ?`;
+      bindArgs.push(staffId);
+    }
+    query += ` ORDER BY date DESC, created_at DESC`;
+    const stmt = this.db.prepare(query);
+    stmt.bind(bindArgs);
+    const results: any[] = [];
+    while (stmt.step()) results.push(stmt.getAsObject());
+    stmt.free();
+    return results;
+  }
+
+  public getShiftHandovers(businessId: string, branchId: string, status?: string): any[] {
+    if (!this.db) return [];
+    let query = `SELECT * FROM shift_handovers WHERE business_id = ? AND branch_id = ?`;
+    const bindArgs: any[] = [businessId, branchId];
+    if (status) {
+      query += ` AND status = ?`;
+      bindArgs.push(status);
+    }
+    query += ` ORDER BY opened_at DESC`;
+    const stmt = this.db.prepare(query);
+    stmt.bind(bindArgs);
+    const results: any[] = [];
+    while (stmt.step()) results.push(stmt.getAsObject());
+    stmt.free();
+    return results;
+  }
+
+  public getServiceConsumables(businessId: string, serviceId?: string): any[] {
+    if (!this.db) return [];
+    let query = `SELECT * FROM service_consumables WHERE business_id = ?`;
+    const bindArgs: any[] = [businessId];
+    if (serviceId) {
+      query += ` AND service_id = ?`;
+      bindArgs.push(serviceId);
+    }
+    query += ` ORDER BY service_name ASC, product_name ASC`;
+    const stmt = this.db.prepare(query);
+    stmt.bind(bindArgs);
+    const results: any[] = [];
+    while (stmt.step()) results.push(stmt.getAsObject());
+    stmt.free();
+    return results;
+  }
+
+  public getStockMovements(businessId: string, branchId?: string, productId?: string): any[] {
+    if (!this.db) return [];
+    let query = `SELECT * FROM stock_movements WHERE business_id = ?`;
+    const bindArgs: any[] = [businessId];
+    if (branchId) {
+      query += ` AND branch_id = ?`;
+      bindArgs.push(branchId);
+    }
+    if (productId) {
+      query += ` AND product_id = ?`;
+      bindArgs.push(productId);
+    }
+    query += ` ORDER BY created_at DESC`;
+    const stmt = this.db.prepare(query);
+    stmt.bind(bindArgs);
+    const results: any[] = [];
+    while (stmt.step()) results.push(stmt.getAsObject());
+    stmt.free();
+    return results;
+  }
+
+  public getRooms(businessId: string = 'default'): any[] {
+    if (!this.db) return [];
+    const stmt = this.db.prepare(`SELECT * FROM rooms WHERE business_id = ? ORDER BY name ASC`);
+    stmt.bind([businessId]);
+    const results: any[] = [];
+    while (stmt.step()) results.push(stmt.getAsObject());
+    stmt.free();
+    return results;
+  }
+
+  public replaceSetupWizardData(payload: {
+    businessId?: string;
+    branchId?: string;
+    userId?: string;
+    userName?: string;
+    settings?: any;
+    ownerUser?: any;
+    staff?: any[];
+    rooms?: any[];
+    tables?: any[];
+    serviceCategories?: any[];
+    services?: any[];
+    productCategories?: any[];
+    products?: any[];
+    paymentMethods?: any[];
+    expenseCategories?: any[];
+    commissionRules?: any[];
+  }): Promise<{ backupFile?: string }> {
+    if (!this.db) throw new Error('Database uninitialized');
+    const db = this.db;
+
+    // Automatically trigger a backup snapshot before destructive replacement
+    const backupResult = this.createDefaultBackup();
+
+    return this.transaction(() => {
+      const now = new Date().toISOString();
+      const bizId = payload.businessId || 'BIZ_SHOP_001';
+      const branchId = payload.branchId || 'BR_MAIN';
+
+      // 1. Business Profile
+      if (payload.settings) {
+        const s = payload.settings;
+        db.run(`
+          UPDATE businesses 
+          SET name = ?, phone = ?, address = ?, updated_at = ? 
+          WHERE id = ?
+        `, [
+          s.shopName || 'Shwe Thiri Lounge',
+          s.phone || '',
+          s.address || '',
+          now,
+          bizId,
+        ]);
+      }
+
+      // 2. Owner User
+      if (payload.ownerUser) {
+        const u = payload.ownerUser;
+        db.run(`
+          INSERT OR REPLACE INTO users (id, business_id, branch_id, username, name, role, password_hash, salt, is_active, created_at)
+          VALUES (?, ?, ?, ?, ?, 'owner', ?, ?, 1, ?)
+        `, [u.id, bizId, branchId, u.username, u.name, u.pinHash || '', u.pinSalt || '', u.createdAt || now]);
+      }
+
+      // 3. Staff
+      if (payload.staff && Array.isArray(payload.staff)) {
+        db.run(`DELETE FROM staff WHERE business_id = ? OR branch_id = ?`, [bizId, branchId]);
+        for (const st of payload.staff) {
+          db.run(`
+            INSERT INTO staff (id, business_id, branch_id, name, role, phone, base_salary_mmk, commission_rate, is_active, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+          `, [st.id, bizId, branchId, st.name, st.role || 'Therapist', st.phone || '', st.baseSalaryMMK || 0, st.commissionRate || 0, now]);
+        }
+      }
+
+      // 4. Rooms
+      if (payload.rooms && Array.isArray(payload.rooms)) {
+        db.run(`DELETE FROM rooms WHERE business_id = ? OR branch_id = ?`, [bizId, branchId]);
+        for (const rm of payload.rooms) {
+          db.run(`
+            INSERT INTO rooms (id, business_id, branch_id, name, status, hourly_rate_mmk, surcharge_mmk, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+          `, [rm.id, bizId, branchId, rm.name, rm.status || 'available', rm.hourlyRateMMK || 0, now]);
+        }
+      }
+
+      // 5. Products
+      if (payload.products && Array.isArray(payload.products)) {
+        db.run(`DELETE FROM products WHERE business_id = ?`, [bizId]);
+        for (const prd of payload.products) {
+          db.run(`
+            INSERT INTO products (id, business_id, name, sku, price_mmk, cost_mmk, stock_qty, category, is_active, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+          `, [prd.id, bizId, prd.name, prd.sku || prd.id, prd.sellingPriceMMK || 0, prd.costPriceMMK || 0, prd.stockQuantity || 0, prd.category || 'General', now]);
+        }
+      }
+
+      // Broadcast event
+      this.recordOutboxEvent({
+        businessId: bizId,
+        branchId: branchId,
+        eventType: 'SETUP_WIZARD_COMPLETED',
+        entityType: 'SYSTEM',
+        entityId: 'settings_main',
+        payload: {
+          timestamp: now,
+          shopName: payload.settings?.shopName,
+        },
+        actorUserId: payload.userId || 'owner',
+      });
+
+      return { backupFile: backupResult.fileName };
+    });
+  }
+
+  // Suppliers
+  public getSuppliers(businessId: string = 'BIZ_SHOP_001'): any[] {
+    if (!this.db) return [];
+    const stmt = this.db.prepare(`SELECT * FROM suppliers WHERE business_id = ? ORDER BY name ASC`);
+    stmt.bind([businessId]);
+    const res: any[] = [];
+    while (stmt.step()) res.push(stmt.getAsObject());
+    stmt.free();
+    return res;
+  }
+
+  public saveSupplier(supplier: any): any {
+    if (!this.db) throw new Error('Database uninitialized');
+    const now = new Date().toISOString();
+    this.db.run(`
+      INSERT OR REPLACE INTO suppliers (id, business_id, branch_id, name, phone, email, address, contact_person, notes, is_active, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      supplier.id || `sup_${Date.now()}`,
+      supplier.businessId || 'BIZ_SHOP_001',
+      supplier.branchId || 'BR_MAIN',
+      supplier.name,
+      supplier.phone || '',
+      supplier.email || '',
+      supplier.address || '',
+      supplier.contactPerson || '',
+      supplier.notes || '',
+      supplier.isActive !== false ? 1 : 0,
+      supplier.createdAt || now,
+      now,
+    ]);
+    return supplier;
+  }
+
+  // Purchase Orders
+  public getPurchaseOrders(businessId: string = 'BIZ_SHOP_001'): any[] {
+    if (!this.db) return [];
+    const stmt = this.db.prepare(`SELECT * FROM purchase_orders WHERE business_id = ? ORDER BY created_at DESC`);
+    stmt.bind([businessId]);
+    const res: any[] = [];
+    while (stmt.step()) {
+      const obj: any = stmt.getAsObject();
+      if (obj.items_json) {
+        try { obj.items = JSON.parse(obj.items_json as string); } catch { obj.items = []; }
+      }
+      res.push(obj);
+    }
+    stmt.free();
+    return res;
+  }
+
+  public recordPurchaseOrder(po: any): Promise<any> {
+    return this.transaction(() => {
+      if (!this.db) throw new Error('Database uninitialized');
+      const now = new Date().toISOString();
+      const poId = po.id || `po_${Date.now()}`;
+      const itemsJson = JSON.stringify(po.items || []);
+
+      this.db.run(`
+        INSERT INTO purchase_orders (id, business_id, branch_id, po_number, supplier_id, supplier_name, items_json, total_amount_mmk, paid_amount_mmk, payment_status, payment_method, order_date, status, notes, created_by, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        poId,
+        po.businessId || 'BIZ_SHOP_001',
+        po.branchId || 'BR_MAIN',
+        po.poNumber || `PO-${Date.now()}`,
+        po.supplierId,
+        po.supplierName,
+        itemsJson,
+        po.totalAmountMMK || 0,
+        po.paidAmountMMK || 0,
+        po.paymentStatus || 'paid',
+        po.paymentMethod || 'cash',
+        now.split('T')[0],
+        po.status || 'received',
+        po.notes || '',
+        po.createdBy || 'owner',
+        now,
+        now,
+      ]);
+
+      if (Array.isArray(po.items)) {
+        for (const item of po.items) {
+          const prdStmt = this.db.prepare(`SELECT stock_qty, cost_mmk FROM products WHERE id = ?`);
+          prdStmt.bind([item.productId]);
+          if (prdStmt.step()) {
+            const pObj = prdStmt.getAsObject();
+            const prev = (pObj.stock_qty as number) || 0;
+            const after = prev + (item.quantity || 0);
+            this.db.run(`UPDATE products SET stock_qty = ?, cost_mmk = ?, updated_at = ? WHERE id = ?`, [after, item.costPriceMMK || pObj.cost_mmk, now, item.productId]);
+
+            this.db.run(`
+              INSERT INTO stock_movements (id, business_id, branch_id, product_id, product_name, type, quantity_change, previous_stock, new_stock, notes, date, created_at, created_by)
+              VALUES (?, ?, ?, ?, ?, 'purchase', ?, ?, ?, ?, ?, ?, ?)
+            `, [
+              `stkmov_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+              po.businessId || 'BIZ_SHOP_001',
+              po.branchId || 'BR_MAIN',
+              item.productId,
+              item.productName,
+              item.quantity || 0,
+              prev,
+              after,
+              `PO: ${po.poNumber} from ${po.supplierName}`,
+              now.split('T')[0],
+              now,
+              po.createdBy || 'owner',
+            ]);
+          }
+          prdStmt.free();
+        }
+      }
+
+      return { id: poId, ...po };
+    });
+  }
+
+  // Stock Adjustments
+  public getStockAdjustments(businessId: string = 'BIZ_SHOP_001'): any[] {
+    if (!this.db) return [];
+    const stmt = this.db.prepare(`SELECT * FROM stock_adjustments WHERE business_id = ? ORDER BY created_at DESC`);
+    stmt.bind([businessId]);
+    const res: any[] = [];
+    while (stmt.step()) res.push(stmt.getAsObject());
+    stmt.free();
+    return res;
+  }
+
+  public recordStockAdjustment(adj: any): Promise<any> {
+    return this.transaction(() => {
+      if (!this.db) throw new Error('Database uninitialized');
+      const now = new Date().toISOString();
+      const adjId = adj.id || `adj_${Date.now()}`;
+
+      const prdStmt = this.db.prepare(`SELECT name, stock_qty FROM products WHERE id = ?`);
+      prdStmt.bind([adj.productId]);
+      let prevStock = 0;
+      let prdName = adj.productName || 'Product';
+      if (prdStmt.step()) {
+        const pObj = prdStmt.getAsObject();
+        prevStock = (pObj.stock_qty as number) || 0;
+        prdName = (pObj.name as string) || prdName;
+      }
+      prdStmt.free();
+
+      const newStock = Math.max(0, prevStock + adj.adjustQty);
+      this.db.run(`UPDATE products SET stock_qty = ?, updated_at = ? WHERE id = ?`, [newStock, now, adj.productId]);
+
+      this.db.run(`
+        INSERT INTO stock_adjustments (id, business_id, branch_id, product_id, product_name, before_qty, after_qty, adjust_qty, reason, adjusted_by, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        adjId,
+        adj.businessId || 'BIZ_SHOP_001',
+        adj.branchId || 'BR_MAIN',
+        adj.productId,
+        prdName,
+        prevStock,
+        newStock,
+        adj.adjustQty,
+        adj.reason || 'Manual Adjustment',
+        adj.adjustedBy || 'owner',
+        now,
+      ]);
+
+      this.db.run(`
+        INSERT INTO stock_movements (id, business_id, branch_id, product_id, product_name, type, quantity_change, previous_stock, new_stock, notes, date, created_at, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        `stkmov_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        adj.businessId || 'BIZ_SHOP_001',
+        adj.branchId || 'BR_MAIN',
+        adj.productId,
+        prdName,
+        adj.adjustQty >= 0 ? 'adjustment_in' : 'adjustment_out',
+        adj.adjustQty,
+        prevStock,
+        newStock,
+        `Adjustment: ${adj.reason}`,
+        now.split('T')[0],
+        now,
+        adj.adjustedBy || 'owner',
+      ]);
+
+      return { id: adjId, ...adj, beforeQty: prevStock, afterQty: newStock };
+    });
+  }
+
+  // Customer Loyalty Ledger
+  public getCustomerLoyaltyEntries(customerId: string): any[] {
+    if (!this.db) return [];
+    const stmt = this.db.prepare(`SELECT * FROM customer_loyalty_ledger WHERE customer_id = ? ORDER BY created_at DESC`);
+    stmt.bind([customerId]);
+    const res: any[] = [];
+    while (stmt.step()) res.push(stmt.getAsObject());
+    stmt.free();
+    return res;
+  }
+
+  public recordLoyaltyPoints(params: any): Promise<any> {
+    return this.transaction(() => {
+      if (!this.db) throw new Error('Database uninitialized');
+      const now = new Date().toISOString();
+
+      const custStmt = this.db.prepare(`SELECT name, loyalty_points FROM customers WHERE id = ?`);
+      custStmt.bind([params.customerId]);
+      let currentPts = 0;
+      let custName = params.customerName || 'Customer';
+      if (custStmt.step()) {
+        const cObj = custStmt.getAsObject();
+        currentPts = (cObj.loyalty_points as number) || 0;
+        custName = (cObj.name as string) || custName;
+      }
+      custStmt.free();
+
+      const newBal = Math.max(0, currentPts + (params.points || 0));
+      this.db.run(`UPDATE customers SET loyalty_points = ? WHERE id = ?`, [newBal, params.customerId]);
+
+      const entryId = `loy_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      this.db.run(`
+        INSERT INTO customer_loyalty_ledger (id, customer_id, customer_name, points, balance_after, type, reference_type, reference_id, notes, date, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        entryId,
+        params.customerId,
+        custName,
+        params.points,
+        newBal,
+        params.type || 'earn',
+        params.referenceType || 'manual',
+        params.referenceId || '',
+        params.notes || '',
+        now.split('T')[0],
+        now,
+      ]);
+
+      return { id: entryId, balanceAfter: newBal };
     });
   }
 

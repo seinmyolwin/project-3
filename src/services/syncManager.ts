@@ -907,6 +907,70 @@ export class SyncManager {
           break;
         }
 
+        // ==========================================
+        // PHASE 36: REALTIME EVENT HANDLERS
+        // ==========================================
+
+        case 'STAFF_CLOCK_IN':
+        case 'STAFF_CLOCK_OUT': {
+          if (payload.attendanceId) {
+            await db.staffAttendance.put({
+              id: payload.attendanceId,
+              businessId: event.businessId || payload.businessId || 'default',
+              branchId: event.branchId || payload.branchId || 'main',
+              staffId: payload.staffId,
+              staffName: payload.staffName,
+              userId: payload.userId || payload.staffId || 'system',
+              userName: payload.userName || payload.staffName || 'Staff',
+              date: payload.date || new Date().toISOString().split('T')[0],
+              checkInTime: payload.checkInTime,
+              checkOutTime: payload.checkOutTime,
+              status: payload.status || 'checked_in',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            });
+          }
+          break;
+        }
+
+        case 'SHIFT_OPENED':
+        case 'SHIFT_CLOSED': {
+          if (payload.shiftId) {
+            await db.shiftHandovers.put({
+              id: payload.shiftId,
+              businessId: event.businessId || payload.businessId || 'default',
+              branchId: event.branchId || payload.branchId || 'main',
+              shiftCode: payload.shiftCode,
+              staffId: payload.staffId,
+              staffName: payload.staffName,
+              openedAt: payload.openedAt,
+              closedAt: payload.closedAt,
+              openingFloatMMK: payload.openingFloatMMK || 0,
+              expectedCashMMK: payload.expectedCashMMK || 0,
+              actualCashMMK: payload.actualCashMMK || 0,
+              discrepancyMMK: payload.discrepancyMMK || 0,
+              status: payload.status || 'open',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            });
+          }
+          break;
+        }
+
+        case 'SERVICE_CONSUMABLES_DEDUCTED': {
+          if (payload.deductedItems && Array.isArray(payload.deductedItems)) {
+            for (const item of payload.deductedItems) {
+              const product = await db.products.get(item.productId);
+              if (product) {
+                await db.products.update(item.productId, {
+                  stockQty: item.newStock,
+                });
+              }
+            }
+          }
+          break;
+        }
+
         default:
           break;
       }

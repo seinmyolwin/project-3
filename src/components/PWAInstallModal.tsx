@@ -24,10 +24,8 @@ export const PWAInstallModal: React.FC<PWAInstallModalProps> = ({
   const [installing, setInstalling] = useState(false);
   const [installSuccess, setInstallSuccess] = useState(false);
 
-  // Auto show if not installed, not dismissed in this session, or manually opened
-  const shouldShow =
-    isOpenManual ||
-    (!isInstalled && !dismissed && (isInstallable || isIOS || isMobileOrTablet));
+  // Manual-only trigger via Navbar "App / Install" action
+  const shouldShow = Boolean(isOpenManual);
 
   if (!shouldShow || isInstalled) {
     return null;
