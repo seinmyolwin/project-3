@@ -94,6 +94,12 @@ export class LocalServerClient {
       const data = await response.json();
 
       if (!response.ok) {
+        if (response.status === 401) {
+          authSession.clearSession();
+          if (typeof window !== 'undefined') {
+            window.location.reload();
+          }
+        }
         const error = new Error(data.message || data.error || `HTTP ${response.status}`);
         (error as any).status = response.status;
         (error as any).code = data.error;

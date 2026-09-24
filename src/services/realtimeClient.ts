@@ -133,6 +133,10 @@ export class RealtimeClient {
       if (msg.type === 'AUTH_ERROR') {
         console.error('[RealtimeClient] Auth error:', msg.message);
         this.disconnect();
+        authSession.clearSession();
+        if (typeof window !== 'undefined') {
+          window.location.reload();
+        }
         return;
       }
 

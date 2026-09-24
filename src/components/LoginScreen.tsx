@@ -20,6 +20,7 @@ import { localServerClient } from '../services/localServerClient';
 import { authSession } from '../services/authSession';
 import { verifyPassword, verifyPin } from '../utils/cryptoAuth';
 import { FirstRunSetupModal } from './FirstRunSetupModal';
+import logoImg from '../assets/images/shwe_thiri_logo_1790061980846.jpg';
 
 interface LoginScreenProps {
   lang: Language;
@@ -213,8 +214,20 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       <div className="relative w-full max-w-md rounded-3xl border border-slate-800/80 bg-slate-900/90 p-8 shadow-2xl backdrop-blur-xl">
         {/* Brand Header */}
         <div className="text-center mb-8">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-tr from-amber-500 to-amber-300 text-slate-950 shadow-lg shadow-amber-500/20 ring-4 ring-amber-400/10">
-            <Building2 className="h-8 w-8" />
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#07090e] border border-amber-500/40 shadow-lg shadow-amber-500/10 overflow-hidden ring-4 ring-amber-400/10">
+            <img
+              src={logoImg}
+              onError={(e) => {
+                const target = e.target as HTMLImageElement;
+                if (target.src.includes('shwe_thiri_logo')) {
+                  target.src = '/logo.jpg';
+                } else if (target.src.includes('/logo.jpg')) {
+                  target.src = '/logo_app.jpg';
+                }
+              }}
+              alt="Shwe Thiri Logo"
+              className="h-full w-full object-cover"
+            />
           </div>
           <h1 className="text-2xl font-black tracking-tight text-white">
             {isMm ? 'ရွှေသီရိ အကြောပြင်၊ စပါ & KTV' : 'Shwe Thiri Spa & KTV'}

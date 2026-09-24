@@ -52,6 +52,7 @@ interface NavbarProps {
   onOpenSearchModal: () => void;
   onOpenSetupWizard: () => void;
   onOpenPWAModal?: () => void;
+  onOpenUserGuide: () => void;
   syncState?: SyncState;
   syncMessage?: string;
 }
@@ -69,6 +70,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenSearchModal,
   onOpenSetupWizard,
   onOpenPWAModal,
+  onOpenUserGuide,
   syncState = 'LOCAL_ONLY',
   syncMessage = '',
 }) => {
@@ -190,6 +192,17 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span className="hidden lg:inline">App</span>
             </button>
           )}
+
+          {/* User Guide Manual */}
+          <button
+            onClick={onOpenUserGuide}
+            className="flex items-center gap-1 rounded-lg border border-amber-500/30 bg-amber-950/20 px-2 py-1 text-[10px] sm:text-[11px] font-bold text-amber-300 hover:bg-amber-900/40 transition-all cursor-pointer"
+            title={isMm ? 'အသုံးပြုသူလမ်းညွှန်ဖတ်ရန်' : 'Read User Manual'}
+            aria-label="User Manual"
+          >
+            <BookOpen className="h-3.5 w-3.5 text-amber-400" />
+            <span>{isMm ? 'လမ်းညွှန်' : 'Guide'}</span>
+          </button>
 
           {/* Language Toggle */}
           <button

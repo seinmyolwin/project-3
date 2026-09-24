@@ -22,6 +22,7 @@ import {
 } from '../../types';
 import { db } from '../../db/database';
 import { Language } from '../../utils/translations';
+import { triggerFileSave } from '../../utils/fileNaming';
 import {
   ShieldCheck,
   Download,
@@ -44,6 +45,7 @@ import {
   XCircle,
   KeyRound,
   RefreshCw,
+  BookOpen,
 } from 'lucide-react';
 import { MasterDataView } from './MasterDataView';
 import { verifyPin, hashPin, hashPassword } from '../../utils/cryptoAuth';
@@ -68,6 +70,7 @@ interface SettingsAuditViewProps {
   paymentMethods?: PaymentMethodRecord[];
   expenseCategories?: ExpenseCategoryRecord[];
   commissionRules?: CommissionRuleRecord[];
+  onOpenUserGuide: () => void;
 }
 
 export const SettingsAuditView: React.FC<SettingsAuditViewProps> = ({
@@ -89,6 +92,7 @@ export const SettingsAuditView: React.FC<SettingsAuditViewProps> = ({
   paymentMethods = [],
   expenseCategories = [],
   commissionRules = [],
+  onOpenUserGuide,
 }) => {
   const isMm = lang === 'my';
 
@@ -155,15 +159,12 @@ export const SettingsAuditView: React.FC<SettingsAuditViewProps> = ({
   const handleExportBackup = async () => {
     try {
       const data = await db.exportDatabaseBackup();
-      const blob = new Blob([data], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `shwe_thiri_backup_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      await triggerFileSave(data, {
+        categoryName: 'Backup',
+        fileExtension: 'json',
+        mimeType: 'application/json',
+        shopName: settings?.shopName || 'Shwe_Thiri_Spa_And_KTV'
+      });
       setBackupStatus(isMm ? 'ဒေတာဘေ့စ် မိတ္တူကူးယူပြီးပါပြီ' : 'Database backup downloaded successfully!');
     } catch (err: any) {
       alert('Backup export error: ' + err.message);
@@ -441,15 +442,25 @@ export const SettingsAuditView: React.FC<SettingsAuditViewProps> = ({
     <div className="space-y-6">
       {/* Top Banner */}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-gray-200/80 bg-white p-4 shadow-xs">
-        <div>
-          <h2 className="text-lg font-bold text-gray-900">
-            {isMm ? 'စနစ်၊ စာရင်းစစ်မှတ်တမ်းနှင့် မိတ္တူ' : 'System Administration & Security'}
-          </h2>
-          <p className="text-xs text-gray-500">
-            {isMm
-              ? 'စာရင်းစစ်မှတ်တမ်း၊ အသုံးပြုသူများ၊ ဒေတာဘေ့စ် မိတ္တူကူး/ပြန်သွင်းခြင်း'
-              : 'Audit trail, roles & PINs, 100% offline JSON backup/restore, and shop profile'}
-          </p>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between w-full border-b border-gray-100 pb-3 mb-1 gap-3">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">
+              {isMm ? 'စနစ်၊ စာရင်းစစ်မှတ်တမ်းနှင့် မိတ္တူ' : 'System Administration & Security'}
+            </h2>
+            <p className="text-xs text-gray-500">
+              {isMm
+                ? 'စာရင်းစစ်မှတ်တမ်း၊ အသုံးပြုသူများ၊ ဒေတာဘေ့စ် မိတ္တူကူး/ပြန်သွင်းခြင်း'
+                : 'Audit trail, roles & PINs, 100% offline JSON backup/restore, and shop profile'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onOpenUserGuide}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 text-xs font-bold shadow-xs transition-all cursor-pointer"
+          >
+            <BookOpen className="h-4 w-4" />
+            <span>{isMm ? 'အသုံးပြုသူလမ်းညွှန် ဖတ်ရန်' : 'Read User Manual'}</span>
+          </button>
         </div>
 
         <div className="flex flex-wrap gap-1.5">

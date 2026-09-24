@@ -58,6 +58,7 @@ import { ReportsView } from './components/views/ReportsView';
 import { DashboardView } from './components/views/DashboardView';
 import { BookingRecord } from './types';
 import { AlertTriangle } from 'lucide-react';
+import { UserGuideModal } from './components/UserGuideModal';
 
 export default function App() {
   // Application State
@@ -144,6 +145,7 @@ export default function App() {
   const [isSearchModalOpen, setIsSearchModalOpen] = useState<boolean>(false);
   const [isSetupWizardOpen, setIsSetupWizardOpen] = useState<boolean>(false);
   const [isPWAModalOpen, setIsPWAModalOpen] = useState<boolean>(false);
+  const [isUserGuideOpen, setIsUserGuideOpen] = useState<boolean>(false);
   const [activeInvoiceReceipt, setActiveInvoiceReceipt] = useState<Invoice | null>(null);
 
   // Sync Transport State
@@ -351,6 +353,7 @@ export default function App() {
           setIsSetupWizardOpen(true);
         }}
         onOpenPWAModal={() => setIsPWAModalOpen(true)}
+        onOpenUserGuide={() => setIsUserGuideOpen(true)}
         syncState={syncState}
         syncMessage={syncMessage}
       />
@@ -515,6 +518,7 @@ export default function App() {
             paymentMethods={paymentMethods}
             expenseCategories={expenseCategories}
             commissionRules={commissionRules}
+            onOpenUserGuide={() => setIsUserGuideOpen(true)}
           />
         )}
       </main>
@@ -574,6 +578,12 @@ export default function App() {
         lang={lang}
         isOpenManual={isPWAModalOpen}
         onCloseManual={() => setIsPWAModalOpen(false)}
+      />
+
+      <UserGuideModal
+        isOpen={isUserGuideOpen}
+        onClose={() => setIsUserGuideOpen(false)}
+        lang={lang}
       />
 
       {showExitConfirm && (
