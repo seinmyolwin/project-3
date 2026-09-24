@@ -53,8 +53,17 @@ export class LocalRealtimeEventBus {
     if (this.wss) return;
 
     this.wss = new WebSocketServer({
-      server,
-      path: '/ws',
+      noServer: true,
+    });
+
+    server.on('upgrade', (req: IncomingMessage, socket: any, head: Buffer) => {
+      const pathname = req.url ? req.url.split('?')[0] : '';
+      if (pathname === '/ws') {
+        this.wss?.handleUpgrade(req, socket, head, (ws) => {
+          this.wss?.emit('connection', ws, req);
+        });
+      }
+      // If pathname !== '/ws', let other listeners (like Vite HMR) handle it
     });
 
     this.wss.on('connection', (ws: ExtendedWebSocket, req: IncomingMessage) => {

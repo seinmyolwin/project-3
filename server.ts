@@ -104,15 +104,7 @@ async function startServer() {
   realtimeEventBus.attach(server);
 
   // 5. Static Frontend Asset Serving / SPA Fallback
-  if (process.env.NODE_ENV !== 'production' && !fs.existsSync(runtimeConfig.distPath)) {
-    // Development dynamic Vite middleware (only when not built and dev requested)
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
+  if (process.env.NODE_ENV === 'production') {
     // Production static serving from dist/
     const distPath = runtimeConfig.distPath;
     if (fs.existsSync(distPath)) {
@@ -135,6 +127,17 @@ async function startServer() {
         `);
       });
     }
+  } else {
+    // Development dynamic Vite middleware (only when dev requested)
+    const { createServer: createViteServer } = await import('vite');
+    const vite = await createViteServer({
+      server: {
+        middlewareMode: true,
+        hmr: { server },
+      },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
   }
 
   healthManager.setState('SERVER_READY');

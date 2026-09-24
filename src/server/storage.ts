@@ -804,6 +804,12 @@ export class PersistentSQLiteStorage {
     const staffSalt = crypto.randomBytes(16).toString('hex');
     const staffHash = crypto.createHash('sha256').update('0000' + staffSalt).digest('hex');
 
+    const dawhlaSalt = crypto.randomBytes(16).toString('hex');
+    const dawhlaHash = crypto.createHash('sha256').update('dawhla123' + dawhlaSalt).digest('hex');
+
+    const koaungSalt = crypto.randomBytes(16).toString('hex');
+    const koaungHash = crypto.createHash('sha256').update('koaung123' + koaungSalt).digest('hex');
+
     this.db.run(`
       INSERT OR IGNORE INTO users (id, business_id, branch_id, username, name, role, password_hash, salt, is_active, created_at)
       VALUES 
@@ -811,8 +817,8 @@ export class PersistentSQLiteStorage {
         ('usr_manager', 'BIZ_SHOP_001', 'BR_MAIN', 'manager', 'ဒေါ်လှ (Manager)', 'manager', '${mgrHash}', '${mgrSalt}', 1, '${now}'),
         ('usr_cashier', 'BIZ_SHOP_001', 'BR_MAIN', 'cashier', 'ကိုအောင် (Cashier)', 'cashier', '${staffHash}', '${staffSalt}', 1, '${now}'),
         ('usr_owner_1', 'BIZ_SHOP_001', 'BR_MAIN', 'aungmin', 'ကိုအောင်မင်း (Shop Owner)', 'owner', '${aungminHash}', '${aungminSalt}', 1, '${now}'),
-        ('usr_mgr_1', 'BIZ_SHOP_001', 'BR_MAIN', 'dawhla', 'ဒေါ်လှ (Manager)', 'manager', '${mgrHash}', '${mgrSalt}', 1, '${now}'),
-        ('usr_staff_1', 'BIZ_SHOP_001', 'BR_MAIN', 'koaung', 'ကိုအောင် (Cashier)', 'cashier', '${staffHash}', '${staffSalt}', 1, '${now}');
+        ('usr_mgr_1', 'BIZ_SHOP_001', 'BR_MAIN', 'dawhla', 'ဒေါ်လှ (Manager)', 'manager', '${dawhlaHash}', '${dawhlaSalt}', 1, '${now}'),
+        ('usr_staff_1', 'BIZ_SHOP_001', 'BR_MAIN', 'koaung', 'ကိုအောင် (Cashier)', 'cashier', '${koaungHash}', '${koaungSalt}', 1, '${now}');
     `);
 
     // Seed Sample Rooms

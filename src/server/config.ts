@@ -44,8 +44,13 @@ function resolveDataDirectory(): string {
 
 export function getRuntimeConfig(): ServerRuntimeConfig {
   const env = (process.env.NODE_ENV === 'production' ? 'production' : (process.env.NODE_ENV === 'test' ? 'test' : 'development'));
-  const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
-  const host = process.env.HOST || '0.0.0.0';
+  const portArgIndex = process.argv.indexOf('--port');
+  const hostArgIndex = process.argv.indexOf('--host');
+  const cliPort = portArgIndex !== -1 && process.argv[portArgIndex + 1] ? parseInt(process.argv[portArgIndex + 1], 10) : null;
+  const cliHost = hostArgIndex !== -1 && process.argv[hostArgIndex + 1] ? process.argv[hostArgIndex + 1] : null;
+
+  const port = cliPort || (process.env.PORT ? parseInt(process.env.PORT, 10) : 3000);
+  const host = cliHost || process.env.HOST || '0.0.0.0';
   const dataDir = resolveDataDirectory();
 
   const databasePath = process.env.DATABASE_PATH

@@ -1,10 +1,10 @@
 {
-  "name": "karaoke-ps5-commerce-hub",
+  "name": "shwe-thiri-erp",
   "version": "1.0.0",
-  "description": "100% Offline Self-Contained Standalone Local Shop Server & POS Hub",
+  "description": "100% Offline Self-Contained Standalone Local Shop Server & POS Hub for Myanmar Spa & KTV",
   "main": "dist/server.cjs",
-  "executable": "KaraokePS5CommerceHub.exe",
+  "executable": "ShweThiriERP.exe",
   "scripts": {
-    "start": "KaraokePS5CommerceHub.exe"
+    "start": "node dist/server.cjs"
   }
 }
