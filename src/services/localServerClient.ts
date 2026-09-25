@@ -101,6 +101,11 @@ export class LocalServerClient {
             window.location.reload();
           }
         }
+        if (response.status === 403 && data.error === 'MUST_CHANGE_PASSWORD') {
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('must-change-password-triggered'));
+          }
+        }
         const error = new Error(data.message || data.error || `HTTP ${response.status}`);
         (error as any).status = response.status;
         (error as any).code = data.error;

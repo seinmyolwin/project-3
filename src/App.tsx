@@ -59,6 +59,7 @@ import { DashboardView } from './components/views/DashboardView';
 import { BookingRecord } from './types';
 import { AlertTriangle } from 'lucide-react';
 import { UserGuideModal } from './components/UserGuideModal';
+import { MustChangePasswordModal } from './components/MustChangePasswordModal';
 
 export default function App() {
   // Application State
@@ -147,6 +148,29 @@ export default function App() {
   const [isPWAModalOpen, setIsPWAModalOpen] = useState<boolean>(false);
   const [isUserGuideOpen, setIsUserGuideOpen] = useState<boolean>(false);
   const [activeInvoiceReceipt, setActiveInvoiceReceipt] = useState<Invoice | null>(null);
+  const [forcePasswordChange, setForcePasswordChange] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (currentUser?.mustChangePassword) {
+      setForcePasswordChange(true);
+    } else {
+      setForcePasswordChange(false);
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    const handleMustChange = () => {
+      setForcePasswordChange(true);
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('must-change-password-triggered', handleMustChange);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('must-change-password-triggered', handleMustChange);
+      }
+    };
+  }, []);
 
   // Sync Transport State
   const [syncState, setSyncState] = useState<SyncState>('LOCAL_ONLY');
@@ -324,6 +348,22 @@ export default function App() {
           setCurrentUser(user);
           refreshData();
         }}
+      />
+    );
+  }
+
+  // Mandatory Password Change Barrier
+  if (forcePasswordChange) {
+    return (
+      <MustChangePasswordModal
+        currentUser={currentUser}
+        lang={lang}
+        onSuccess={updatedUser => {
+          setCurrentUser(updatedUser);
+          setForcePasswordChange(false);
+          refreshData();
+        }}
+        onLogout={handleLogout}
       />
     );
   }

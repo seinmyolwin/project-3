@@ -244,6 +244,49 @@ async function main() {
     assert(dataPostUnblock.error === 'FORBIDDEN_ROLE', `Expected FORBIDDEN_ROLE, got ${dataPostUnblock.error}`);
   });
 
+  // 6. Test E2E Client & UI Integration: login response has mustChangePassword and 403 MUST_CHANGE_PASSWORD triggers event
+  await runTest('API & Client: E2E Integration - login user object has mustChangePassword & 403 triggers custom event', async () => {
+    // 6A: Create a user via storage (mustChangePassword defaults to true)
+    const newUser = storage.createUser({
+      username: 'e2e_user',
+      name: 'E2E User',
+      role: 'cashier',
+      password: 'TemporaryPassword123!',
+      mustChangePassword: true,
+    });
+
+    // 6B: Try to login via API POST /auth/login
+    const resLogin = await fetch(`${baseUrl}/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        username: 'e2e_user',
+        password: 'TemporaryPassword123!',
+      }),
+    });
+
+    assert(resLogin.status === 200, `Login should succeed, got ${resLogin.status}`);
+    const loginData = await resLogin.json() as any;
+    assert(loginData.success === true, 'Login response success is true');
+    assert(loginData.user.mustChangePassword === true, 'Login user object must contain mustChangePassword: true');
+
+    const e2eToken = loginData.token;
+
+    // 6C: Check that accessing a restricted API endpoint returns 403 with MUST_CHANGE_PASSWORD
+    const resRestricted = await fetch(`${baseUrl}/users`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${e2eToken}`,
+      },
+    });
+
+    assert(resRestricted.status === 403, `Access to users should return 403, got ${resRestricted.status}`);
+    const restrictedData = await resRestricted.json() as any;
+    assert(restrictedData.error === 'MUST_CHANGE_PASSWORD', `Error should be MUST_CHANGE_PASSWORD, got ${restrictedData.error}`);
+  });
+
   // Clean up and close server
   server.close();
 

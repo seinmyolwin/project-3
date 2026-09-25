@@ -77,7 +77,11 @@ export const PINModal: React.FC<PINModalProps> = ({
           // Connected & Authenticated with LAN Server
           realtimeClient.connect();
           syncManager.checkHealth();
-          onSelectUser(selectedUser);
+          const mergedUser = {
+            ...selectedUser,
+            mustChangePassword: lanRes.user.mustChangePassword,
+          };
+          onSelectUser(mergedUser);
           if (onSuccess) onSuccess();
           onClose();
           return;

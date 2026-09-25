@@ -109,6 +109,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             username: res.user.username,
             role: res.user.role,
             isActive: true,
+            mustChangePassword: res.user.mustChangePassword,
             createdAt: res.user.createdAt || new Date().toISOString(),
           };
         }

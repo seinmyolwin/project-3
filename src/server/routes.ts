@@ -220,6 +220,7 @@ export function createApiRouter(storage: PersistentSQLiteStorage = serverStorage
         role: user.role,
         businessId: user.businessId,
         branchId: user.branchId,
+        mustChangePassword: user.mustChangePassword,
       },
       expiresAt: new Date(expiresAt).toISOString(),
     });
@@ -262,6 +263,7 @@ export function createApiRouter(storage: PersistentSQLiteStorage = serverStorage
         role: user.role,
         businessId: user.businessId,
         branchId: user.branchId,
+        mustChangePassword: user.mustChangePassword,
       },
       expiresAt: new Date(expiresAt).toISOString(),
     });
