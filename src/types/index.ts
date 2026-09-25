@@ -21,6 +21,7 @@ export interface UserAccount {
   passwordSalt?: string; // Unique cryptographic salt for password
   role: UserRole;
   isActive: boolean;
+  mustChangePassword?: boolean;
   createdAt: string;
 }
 

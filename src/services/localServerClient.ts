@@ -96,7 +96,8 @@ export class LocalServerClient {
       if (!response.ok) {
         if (response.status === 401) {
           authSession.clearSession();
-          if (typeof window !== 'undefined') {
+          const isAuthEndpoint = endpoint.includes('/api/auth/login') || endpoint.includes('/api/auth/pin-login');
+          if (!isAuthEndpoint && typeof window !== 'undefined') {
             window.location.reload();
           }
         }

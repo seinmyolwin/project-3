@@ -58,6 +58,21 @@ export function createApiRouter(storage: PersistentSQLiteStorage = serverStorage
         return res.status(401).json({ error: 'USER_DEACTIVATED', message: 'This user account is deactivated or removed' });
       }
 
+      // Block requests if user must change password
+      if (freshUser.mustChangePassword) {
+        const isAllowed = 
+          req.path === '/auth/me' || 
+          req.path === '/auth/logout' || 
+          (req.path.startsWith('/users/') && req.path.endsWith('/change-password') && req.method === 'POST');
+
+        if (!isAllowed) {
+          return res.status(403).json({
+            error: 'MUST_CHANGE_PASSWORD',
+            message: 'You must change your password or PIN before performing any other actions'
+          });
+        }
+      }
+
       // Sync latest role & profile
       session.user.role = freshUser.role;
       session.user.name = freshUser.name;
@@ -289,6 +304,11 @@ export function createApiRouter(storage: PersistentSQLiteStorage = serverStorage
       return res.status(400).json({ error: 'INVALID_INPUT', message: 'Name and username are required' });
     }
 
+    const rawSecret = password || pin;
+    if (!rawSecret) {
+      return res.status(400).json({ error: 'INVALID_INPUT', message: 'Password or PIN is required' });
+    }
+
     const existing = storage.getUserByUsername(username);
     if (existing) {
       return res.status(400).json({ error: 'USERNAME_EXISTS', message: 'Username is already in use' });
@@ -297,11 +317,14 @@ export function createApiRouter(storage: PersistentSQLiteStorage = serverStorage
     const validRoles: UserRole[] = ['owner', 'manager', 'cashier', 'receptionist'];
     const assignedRole = validRoles.includes(role) ? role : 'cashier';
 
+    const mustChange = req.body.mustChangePassword !== undefined ? Boolean(req.body.mustChangePassword) : true;
+
     const created = storage.createUser({
       name,
       username,
       role: assignedRole,
-      password: password || pin || '123456',
+      password: rawSecret,
+      mustChangePassword: mustChange,
     });
 
     res.json({

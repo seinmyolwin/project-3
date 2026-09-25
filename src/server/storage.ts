@@ -939,6 +939,14 @@ export class PersistentSQLiteStorage {
         INSERT INTO schema_migrations (version, applied_at) VALUES (10, datetime('now'));
       `);
     }
+
+    if (currentVersion < 11) {
+      this.db.run(`
+        -- 11. Support must_change_password column for security hardening
+        ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0;
+        INSERT INTO schema_migrations (version, applied_at) VALUES (11, datetime('now'));
+      `);
+    }
   }
 
   /**
@@ -1271,6 +1279,7 @@ export class PersistentSQLiteStorage {
       name: row.name as string,
       role: row.role as any,
       isActive: row.is_active === 1,
+      mustChangePassword: row.must_change_password === 1,
       createdAt: row.created_at as string,
     };
   }
@@ -1308,6 +1317,7 @@ export class PersistentSQLiteStorage {
       name: row.name as string,
       role: row.role as any,
       isActive: row.is_active === 1,
+      mustChangePassword: row.must_change_password === 1,
       createdAt: row.created_at as string,
     };
   }
@@ -1330,6 +1340,7 @@ export class PersistentSQLiteStorage {
       name: row.name as string,
       role: row.role as any,
       isActive: row.is_active === 1,
+      mustChangePassword: row.must_change_password === 1,
       createdAt: row.created_at as string,
     };
   }
@@ -1352,13 +1363,14 @@ export class PersistentSQLiteStorage {
       name: row.name as string,
       role: row.role as any,
       isActive: row.is_active === 1,
+      mustChangePassword: row.must_change_password === 1,
       createdAt: row.created_at as string,
     };
   }
 
   public getUsers(businessId?: string): ServerUserEntity[] {
     if (!this.db) return [];
-    let sql = `SELECT id, business_id, branch_id, username, name, role, is_active, created_at FROM users`;
+    let sql = `SELECT id, business_id, branch_id, username, name, role, is_active, must_change_password, created_at FROM users`;
     const params: any[] = [];
     if (businessId) {
       sql += ` WHERE business_id = ?`;
@@ -1378,6 +1390,7 @@ export class PersistentSQLiteStorage {
         name: row.name as string,
         role: row.role as any,
         isActive: row.is_active === 1,
+        mustChangePassword: row.must_change_password === 1,
         createdAt: row.created_at as string,
       });
     }
@@ -1406,6 +1419,7 @@ export class PersistentSQLiteStorage {
     role: any;
     password?: string;
     pin?: string;
+    mustChangePassword?: boolean;
   }): ServerUserEntity {
     if (!this.db) throw new Error('DB not initialized');
     const now = new Date().toISOString();
@@ -1416,14 +1430,18 @@ export class PersistentSQLiteStorage {
     const name = userData.name.trim();
     const role = userData.role || 'cashier';
 
-    const rawSecret = userData.password || userData.pin || '123456';
+    const rawSecret = userData.password || userData.pin;
+    if (!rawSecret) {
+      throw new Error('Password or PIN is required');
+    }
     const salt = crypto.randomBytes(16).toString('hex');
     const passwordHash = crypto.createHash('sha256').update(rawSecret.trim() + salt).digest('hex');
+    const mustChangePasswordVal = userData.mustChangePassword ? 1 : 0;
 
     this.db.run(
-      `INSERT INTO users (id, business_id, branch_id, username, name, role, password_hash, salt, is_active, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
-      [id, businessId, branchId, username, name, role, passwordHash, salt, now]
+      `INSERT INTO users (id, business_id, branch_id, username, name, role, password_hash, salt, is_active, must_change_password, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+      [id, businessId, branchId, username, name, role, passwordHash, salt, mustChangePasswordVal, now]
     );
     this.flushToDisk();
 
@@ -1435,6 +1453,7 @@ export class PersistentSQLiteStorage {
       name,
       role,
       isActive: true,
+      mustChangePassword: userData.mustChangePassword || false,
       createdAt: now,
     };
   }
@@ -1484,7 +1503,7 @@ export class PersistentSQLiteStorage {
     if (!this.db || !id || !newPassword) return false;
     const salt = crypto.randomBytes(16).toString('hex');
     const passwordHash = crypto.createHash('sha256').update(newPassword.trim() + salt).digest('hex');
-    this.db.run(`UPDATE users SET password_hash = ?, salt = ? WHERE id = ?`, [passwordHash, salt, id]);
+    this.db.run(`UPDATE users SET password_hash = ?, salt = ?, must_change_password = 0 WHERE id = ?`, [passwordHash, salt, id]);
     this.flushToDisk();
     return true;
   }

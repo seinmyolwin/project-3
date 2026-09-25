@@ -7,22 +7,114 @@
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
   }
 
-  /* Universal high-contrast input fixes for light containers & modals */
+  /* Universal high-contrast input fixes for light containers & modals, or light inputs/selects/textareas themselves */
   .bg-white input,
   .bg-white textarea,
   .bg-white select,
   .bg-gray-50 input,
   .bg-gray-50 textarea,
   .bg-gray-50 select,
+  .bg-gray-100 input,
+  .bg-gray-100 textarea,
+  .bg-gray-100 select,
+  .bg-gray-200 input,
+  .bg-gray-200 textarea,
+  .bg-gray-200 select,
   .bg-slate-50 input,
   .bg-slate-50 textarea,
   .bg-slate-50 select,
+  .bg-slate-100 input,
+  .bg-slate-100 textarea,
+  .bg-slate-100 select,
+  .bg-slate-200 input,
+  .bg-slate-200 textarea,
+  .bg-slate-200 select,
+  .bg-zinc-50 input,
+  .bg-zinc-50 textarea,
+  .bg-zinc-50 select,
+  .bg-zinc-100 input,
+  .bg-zinc-100 textarea,
+  .bg-zinc-100 select,
+  .bg-zinc-200 input,
+  .bg-zinc-200 textarea,
+  .bg-zinc-200 select,
+  .bg-neutral-50 input,
+  .bg-neutral-50 textarea,
+  .bg-neutral-50 select,
+  .bg-neutral-100 input,
+  .bg-neutral-100 textarea,
+  .bg-neutral-100 select,
+  .bg-neutral-200 input,
+  .bg-neutral-200 textarea,
+  .bg-neutral-200 select,
+  .bg-amber-50 input,
+  .bg-amber-50 textarea,
   .bg-amber-50 select,
+  .bg-emerald-50 input,
+  .bg-emerald-50 textarea,
   .bg-emerald-50 select,
-  .bg-teal-50 select {
+  .bg-teal-50 input,
+  .bg-teal-50 textarea,
+  .bg-teal-50 select,
+  
+  /* Class-specific rules when inputs/selects themselves have light backgrounds */
+  input.bg-white,
+  textarea.bg-white,
+  select.bg-white,
+  input.bg-gray-50,
+  textarea.bg-gray-50,
+  select.bg-gray-50,
+  input.bg-gray-100,
+  textarea.bg-gray-100,
+  select.bg-gray-100,
+  input.bg-slate-50,
+  textarea.bg-slate-50,
+  select.bg-slate-50,
+  input.bg-slate-100,
+  textarea.bg-slate-100,
+  select.bg-slate-100,
+  input.bg-zinc-50,
+  textarea.bg-zinc-50,
+  select.bg-zinc-50,
+  input.bg-zinc-100,
+  textarea.bg-zinc-100,
+  select.bg-zinc-100,
+  input.bg-neutral-50,
+  textarea.bg-neutral-50,
+  select.bg-neutral-50,
+  input.bg-neutral-100,
+  textarea.bg-neutral-100,
+  select.bg-neutral-100,
+  input.bg-amber-50,
+  textarea.bg-amber-50,
+  select.bg-amber-50,
+  input.bg-emerald-50,
+  textarea.bg-emerald-50,
+  select.bg-emerald-50,
+  input.bg-teal-50,
+  textarea.bg-teal-50,
+  select.bg-teal-50,
+  
+  /* Fallbacks for generic inputs/textareas/selects inside any modal or form with a light-colored body */
+  div[class*="bg-white"] input,
+  div[class*="bg-white"] textarea,
+  div[class*="bg-white"] select,
+  div[class*="bg-slate-50"] input,
+  div[class*="bg-slate-100"] select,
+  div[class*="bg-slate-100"] input,
+  div[class*="bg-gray-50"] input,
+  div[class*="bg-gray-100"] input,
+  div[class*="bg-gray-100"] select {
     color: #0f172a !important;
     background-color: #ffffff !important;
     border-color: #cbd5e1 !important;
+  }
+
+  /* Style all option elements inside select dropdowns globally to ensure they are visible and have black text */
+  select option,
+  option {
+    color: #0f172a !important;
+    background-color: #ffffff !important;
   }
 
   .bg-white input::placeholder,
@@ -30,7 +122,13 @@
   .bg-gray-50 input::placeholder,
   .bg-gray-50 textarea::placeholder,
   .bg-slate-50 input::placeholder,
-  .bg-slate-50 textarea::placeholder {
+  .bg-slate-50 textarea::placeholder,
+  input.bg-white::placeholder,
+  textarea.bg-white::placeholder,
+  input.bg-slate-100::placeholder,
+  textarea.bg-slate-100::placeholder,
+  input.bg-gray-100::placeholder,
+  textarea.bg-gray-100::placeholder {
     color: #64748b !important;
     opacity: 1 !important;
   }

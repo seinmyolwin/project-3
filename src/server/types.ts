@@ -49,6 +49,7 @@ export interface ServerUserEntity {
   name: string;
   role: UserRole;
   isActive: boolean;
+  mustChangePassword?: boolean;
   createdAt: string;
 }
 
