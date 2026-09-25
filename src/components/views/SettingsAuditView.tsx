@@ -46,6 +46,7 @@ import {
   KeyRound,
   RefreshCw,
   BookOpen,
+  Sparkles,
 } from 'lucide-react';
 import { MasterDataView } from './MasterDataView';
 import { verifyPin, hashPin, hashPassword } from '../../utils/cryptoAuth';
@@ -71,6 +72,7 @@ interface SettingsAuditViewProps {
   expenseCategories?: ExpenseCategoryRecord[];
   commissionRules?: CommissionRuleRecord[];
   onOpenUserGuide: () => void;
+  onOpenSetupWizard?: () => void;
 }
 
 export const SettingsAuditView: React.FC<SettingsAuditViewProps> = ({
@@ -93,6 +95,7 @@ export const SettingsAuditView: React.FC<SettingsAuditViewProps> = ({
   expenseCategories = [],
   commissionRules = [],
   onOpenUserGuide,
+  onOpenSetupWizard,
 }) => {
   const isMm = lang === 'my';
 
@@ -821,10 +824,77 @@ export const SettingsAuditView: React.FC<SettingsAuditViewProps> = ({
 
       {/* 4. Shop Profile Tab */}
       {activeTab === 'shop' && (
-        <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-xs max-w-2xl space-y-4">
-          <h3 className="text-base font-bold text-gray-900 border-b border-gray-100 pb-3">
-            {isMm ? 'ဆိုင်အချက်အလက်များနှင့် ဘောက်ချာ ဆက်တင်' : 'Shop Profile & Voucher Configuration'}
-          </h3>
+        <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-xs max-w-2xl space-y-5">
+          <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+            <h3 className="text-base font-bold text-gray-900">
+              {isMm ? 'ဆိုင်အချက်အလက်များနှင့် လည်ပတ်မှု အဆင့်အတန်း' : 'Shop Profile & Operating Status'}
+            </h3>
+            {settings?.isLive ? (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1 text-xs font-black text-emerald-700">
+                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
+                <span>LIVE (တကယ်စတင်အသုံးပြုနေသည်)</span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 border border-amber-200 px-3 py-1 text-xs font-black text-amber-700">
+                <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
+                <span>စူးစမ်းစမ်းသပ်မှု အဆင့် (Trial Mode)</span>
+              </span>
+            )}
+          </div>
+
+          {/* Operating Mode Status Card */}
+          {settings?.isLive ? (
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 text-xs space-y-2 text-emerald-950">
+              <div className="flex items-center justify-between">
+                <span className="font-extrabold text-emerald-800 text-sm">
+                  {isMm ? '✓ ဆိုင်တွင် တကယ် စတင်အသုံးပြုခြင်း (LIVE PRODUCTION)' : '✓ LIVE PRODUCTION ACTIVE'}
+                </span>
+                {currentUser.role === 'owner' && onOpenSetupWizard && (
+                  <button
+                    type="button"
+                    onClick={onOpenSetupWizard}
+                    className="inline-flex items-center gap-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 text-xs font-bold transition-all cursor-pointer shadow-xs"
+                  >
+                    <RefreshCw className="h-3 w-3" />
+                    <span>{isMm ? 'မာစတာဒေတာ ပြင်ဆင်မည်' : 'Re-run Setup Wizard'}</span>
+                  </button>
+                )}
+              </div>
+              <p className="text-emerald-700/90 text-[11px] leading-relaxed">
+                {isMm
+                  ? `ဤစနစ်အား သင့်ဆိုင်အတွက် တရားဝင် အသုံးပြုရန် စတင်အတည်ပြုထားပြီး ဖြစ်ပါသည်။ ${
+                      settings.liveLaunchedAt ? `(စတင်ရက်စွဲ: ${new Date(settings.liveLaunchedAt).toLocaleDateString()})` : ''
+                    }`
+                  : 'This ERP installation has been officially launched into Live Production mode.'}
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-amber-300 bg-amber-50/80 p-4 text-xs space-y-3 text-amber-950">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="h-2.5 w-2.5 rounded-full bg-amber-500 animate-ping shrink-0" />
+                  <span className="font-extrabold text-amber-900 text-sm">
+                    {isMm ? 'စူးစမ်းလေ့လာ / နမူနာ စမ်းသပ်မှု အဆင့် (Exploration Mode)' : 'Trial / Exploration Mode'}
+                  </span>
+                </div>
+                {currentUser.role === 'owner' && onOpenSetupWizard && (
+                  <button
+                    type="button"
+                    onClick={onOpenSetupWizard}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-emerald-600 hover:from-amber-600 hover:to-emerald-700 text-white px-4 py-2 text-xs font-black shadow-md transition-all cursor-pointer"
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    <span>{isMm ? 'စတင်အသုံးပြုမည် (Setup & Go Live)' : 'Launch Live Setup'}</span>
+                  </button>
+                )}
+              </div>
+              <p className="text-amber-800 text-[11px] leading-relaxed">
+                {isMm
+                  ? 'ပိုင်ရှင်နှင့် ဝန်ထမ်းအကောင့်များ ဖွင့်ထားခြင်းသည် စနစ်အား စူးစမ်းစမ်းသပ်နေသည့် အဆင့်သာ ဖြစ်ပါသည်။ ဆိုင်တွင် တကယ် စတင်အသုံးပြုရန် "စတင်အသုံးပြုမည်" (Setup Wizard) မှတစ်ဆင့် ဆိုင်အချက်အလက်၊ အခန်း၊ ဝန်ဆောင်မှုနှင့် ကုန်ပစ္စည်းများကို ဖြည့်သွင်းပြီး Live အဖြစ် အတည်ပြုပေးပါရန် လိုအပ်ပါသည်။'
+                  : 'Creating accounts or testing samples does not activate Live status. Complete the Setup Wizard with your real shop data to officially launch into Live Production.'}
+              </p>
+            </div>
+          )}
 
           <div className="space-y-4 text-xs">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

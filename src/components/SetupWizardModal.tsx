@@ -173,20 +173,21 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
       return;
     }
 
-    if (ownerPassword.trim() !== confirmPassword.trim()) {
-      setErrorMsg(isMm ? 'စကားဝှက် နှစ်ခု မတူညီပါ' : 'Passwords do not match');
-      return;
-    }
-
-    if (ownerPassword.trim().length < 4) {
-      setErrorMsg(isMm ? 'စကားဝှက် အနည်းဆုံး ၄ လုံး ရှိရပါမည်' : 'Password must be at least 4 characters');
-      return;
+    if (ownerPassword.trim()) {
+      if (ownerPassword.trim().length < 4 || ownerPassword.trim().length > 6) {
+        setErrorMsg(isMm ? 'စကားဝှက်သည် ဂဏန်း ၄ လုံးမှ ၆ လုံးအထိ ဖြစ်ရပါမည်' : 'Password must be between 4 and 6 characters');
+        return;
+      }
+      if (ownerPassword.trim() !== confirmPassword.trim()) {
+        setErrorMsg(isMm ? 'စကားဝှက် နှစ်ခု မတူညီပါ' : 'Passwords do not match');
+        return;
+      }
     }
 
     // Step 3 Confirmation warning
     const confirmMsg = isMm
-      ? 'ဤလုပ်ဆောင်ချက်သည် ဆိုင်၏ ပင်မ မာစတာဒေတာများနှင့် ဆက်တင်များကို အသစ်အစားထိုးမည်ဖြစ်ပြီး လက်ရှိဒေတာများကို ထိခိုက်စေနိုင်ပါသည်။ ဆက်လက်ဆောင်ရွက်ရန် သေချာပါသလား?'
-      : 'This will replace business setup/master data. Existing data may be affected. Are you sure you want to proceed?';
+      ? 'ဖြည့်သွင်းထားသော မာစတာဒေတာများဖြင့် ဆိုင်တွင် တကယ် စတင်အသုံးပြုခြင်း (LIVE PRODUCTION) အဖြစ် တရားဝင် ပြောင်းလဲအတည်ပြုမည် ဖြစ်ပါသည်။ ဆက်လက်ဆောင်ရွက်ရန် သေချာပါသလား?'
+      : 'You are about to launch this ERP into LIVE PRODUCTION with your configured shop data. Are you sure you want to proceed?';
 
     if (!window.confirm(confirmMsg)) {
       return;
@@ -201,32 +202,34 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
       // 1. Build & Validate Shop Settings
       const newSettings: ShopSettings = {
         id: 'settings_main',
-        shopName: shopNameEn || 'Shwe Thiri Lounge',
-        shopNameMm: shopNameMm || 'ရွှေသီရိ စီမံခန့်ခွဲမှုစနစ်',
-        phone: shopPhone || '09-798881234',
-        address: shopAddressEn || 'Yangon, Myanmar',
-        addressMm: shopAddressMm || 'ရန်ကုန်မြို့၊ မြန်မာနိုင်ငံ',
-        taxPercent: taxPercent || 0,
-        serviceChargePercent: serviceChargePercent || 0,
+        shopName: shopNameEn.trim() || 'Shwe Thiri Lounge',
+        shopNameMm: shopNameMm.trim() || 'ရွှေသီရိ စီမံခန့်ခွဲမှုစနစ်',
+        phone: shopPhone.trim() || '09-798881234',
+        address: shopAddressEn.trim() || 'Yangon, Myanmar',
+        addressMm: shopAddressMm.trim() || 'ရန်ကုန်မြို့၊ မြန်မာနိုင်ငံ',
+        taxPercent: Number(taxPercent) || 0,
+        serviceChargePercent: Number(serviceChargePercent) || 0,
         allowNegativeStock: false,
         requirePinForVoid: true,
         receiptFooterNote: 'Thank you for choosing Shwe Thiri!',
         receiptFooterNoteMm: 'ရွှေသီရိကို ရွေးချယ်အားပေးသည့်အတွက် ကျေးဇူးတင်ပါသည်။',
         currencySymbol: 'MMK',
+        isLive: true,
+        operatingMode: 'LIVE',
+        liveLaunchedAt: now,
+        liveLaunchedBy: currentUser.name,
       };
 
-      // 2. Build Owner User Account
-      const { pinHash, pinSalt } = hashPin(ownerPassword.trim());
-      const ownerUser: UserAccount = {
-        id: 'usr_owner_' + Date.now(),
-        name: 'Shop Owner (ဆိုင်ရှင်)',
-        username: 'owner',
-        pinHash,
-        pinSalt,
-        role: 'owner',
-        isActive: true,
-        createdAt: now,
-      };
+      // 2. Build Owner User Account (preserve current user and ID, update password if provided)
+      let ownerUser: UserAccount = currentUser;
+      if (ownerPassword.trim()) {
+        const { pinHash, pinSalt } = hashPin(ownerPassword.trim());
+        ownerUser = {
+          ...currentUser,
+          pinHash,
+          pinSalt,
+        };
+      }
 
       // 3. Build Staff Types & Staff Members
       const defaultStaffTypes = [
@@ -376,7 +379,7 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
       });
 
       // LAN Mode: Execute setup on server SQLite
-      if (authSession.getIsServerConnected()) {
+      try {
         await localServerClient.executeSetupWizard({
           settings: newSettings,
           ownerUser,
@@ -391,6 +394,8 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
           expenseCategories: defaultExpenseCats,
           commissionRules: defaultCommRules,
         });
+      } catch (serverErr) {
+        console.warn('LAN server setup wizard notice (offline Dexie fallback active):', serverErr);
       }
 
       // Sync/Replace Dexie atomically inside transaction
@@ -410,9 +415,8 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
         db.commissionRulesMaster,
         db.auditLogs,
       ], async () => {
-        // Clear inside transaction
+        // Clear master collections (do NOT clear db.users so created staff accounts remain intact!)
         await db.settings.clear();
-        await db.users.clear();
         await db.rooms.clear();
         await db.diningTables.clear();
         await db.staff.clear();
@@ -425,9 +429,9 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
         await db.expenseCategoriesMaster.clear();
         await db.commissionRulesMaster.clear();
 
-        // Write validated new records
+        // Write validated new records & update owner
         await db.settings.put(newSettings);
-        await db.users.add(ownerUser);
+        await db.users.put(ownerUser);
         if (defaultStaffTypes.length > 0) await db.staffTypes.bulkAdd(defaultStaffTypes as any);
         if (parsedStaff.length > 0) await db.staff.bulkAdd(parsedStaff as any);
         if (parsedRooms.length > 0) await db.rooms.bulkAdd(parsedRooms as any);
@@ -974,56 +978,102 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
           </div>
         )}
 
-        {/* Step 6: Owner Password & Confirmation */}
+        {/* Step 6: Review Summary & Live Production Launch */}
         {step === 6 && (
           <div className="space-y-4 bg-slate-900/60 p-5 rounded-2xl border border-slate-800">
-            <div className="flex items-center gap-2 text-cyan-400 font-bold border-b border-slate-800 pb-3">
+            <div className="flex items-center gap-2 text-emerald-400 font-bold border-b border-slate-800 pb-3">
               <ShieldCheck className="h-5 w-5" />
-              <span>{isMm ? '၆။ ဆိုင်ရှင် PIN/စကားဝှက် သတ်မှတ်ပြီး တိုက်ရိုက် စတင်အသုံးပြုခြင်း' : '6. Set Owner PIN & Launch Live ERP'}</span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
-                  {isMm ? 'ဆိုင်ရှင် စကားဝှက် / PIN (အသစ်)' : 'Owner PIN / Password (New)'}
-                </label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
-                  <input
-                    type="password"
-                    value={ownerPassword}
-                    onChange={e => setOwnerPassword(e.target.value)}
-                    className="w-full rounded-xl bg-slate-950 border border-slate-700 pl-9 p-2.5 text-sm text-white focus:border-cyan-500 focus:outline-none"
-                    placeholder="4-digit PIN"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
-                  {isMm ? 'စကားဝှက် အတည်ပြုပါ' : 'Confirm Password'}
-                </label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
-                  <input
-                    type="password"
-                    value={confirmPassword}
-                    onChange={e => setConfirmPassword(e.target.value)}
-                    className="w-full rounded-xl bg-slate-950 border border-slate-700 pl-9 p-2.5 text-sm text-white focus:border-cyan-500 focus:outline-none"
-                    placeholder="Re-enter PIN"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
-              <p className="font-bold">
-                {isMm ? 'သတိပေးချက်:' : 'Important Warning:'}
-              </p>
-              <p className="mt-0.5 text-amber-300/90">
+              <span>
                 {isMm
-                  ? 'အောက်ပါ "စတင်အသုံးပြုမည်" ခလုတ်ကို နှိပ်လိုက်သည်နှင့် နမူနာဒေတာများအားလုံး ဖျက်သိမ်းပြီး ယခု သတ်မှတ်ထားသော မာစတာဒေတာများနှင့် ဆိုင်ရှင်အကောင့်ဖြင့် စနစ်တစ်ခုလုံး တိုက်ရိုက် ချိတ်ဆက် အသုံးပြုနိုင်မည် ဖြစ်ပါသည်။'
-                  : 'Clicking Finish Setup will replace default mock data with your configured Master Data and immediately switch into Live Owner mode.'}
+                  ? '၆။ အချက်အလက်များ စစ်ဆေးအတည်ပြုခြင်းနှင့် ဆိုင်တွင် တကယ် စတင်အသုံးပြုခြင်း (Live Launch)'
+                  : '6. Review Summary & Confirm Live Production Launch'}
+              </span>
+            </div>
+
+            {/* Summary Review Card */}
+            <div className="rounded-2xl bg-slate-950/70 border border-slate-800 p-4 space-y-3">
+              <h4 className="text-xs font-bold text-cyan-300 uppercase tracking-wider">
+                {isMm ? 'ဆိုင်အချက်အလက် အနှစ်ချုပ်' : 'Configuration Overview'}
+              </h4>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+                <div className="rounded-xl bg-slate-900 p-2.5 border border-slate-800">
+                  <span className="text-slate-400 block text-[10px]">{isMm ? 'ဆိုင်အမည်' : 'Shop Name'}</span>
+                  <span className="font-bold text-white truncate block">{shopNameMm || shopNameEn}</span>
+                </div>
+                <div className="rounded-xl bg-slate-900 p-2.5 border border-slate-800">
+                  <span className="text-slate-400 block text-[10px]">{isMm ? 'ဖုန်းနံပါတ်' : 'Contact Phone'}</span>
+                  <span className="font-bold text-white truncate block">{shopPhone}</span>
+                </div>
+                <div className="rounded-xl bg-slate-900 p-2.5 border border-slate-800">
+                  <span className="text-slate-400 block text-[10px]">{isMm ? 'အခန်း / စားပွဲ' : 'Rooms & Tables'}</span>
+                  <span className="font-bold text-emerald-400">{roomsList.length} နေရာ</span>
+                </div>
+                <div className="rounded-xl bg-slate-900 p-2.5 border border-slate-800">
+                  <span className="text-slate-400 block text-[10px]">{isMm ? 'ဝန်ထမ်းစာရင်း' : 'Staff Members'}</span>
+                  <span className="font-bold text-cyan-400">{staffList.length} ဦး</span>
+                </div>
+                <div className="rounded-xl bg-slate-900 p-2.5 border border-slate-800">
+                  <span className="text-slate-400 block text-[10px]">{isMm ? 'ဝန်ဆောင်မှုနှင့် ကုန်ပစ္စည်း' : 'Services & Goods'}</span>
+                  <span className="font-bold text-purple-400">{servicesList.length + productsList.length} မျိုး</span>
+                </div>
+                <div className="rounded-xl bg-slate-900 p-2.5 border border-slate-800">
+                  <span className="text-slate-400 block text-[10px]">{isMm ? 'လော့အင်ဝင်ထားသူ' : 'Logged-in Owner'}</span>
+                  <span className="font-bold text-amber-400 truncate block">{currentUser.name} (@{currentUser.username})</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Optional Password Change */}
+            <div className="rounded-2xl bg-slate-950/40 border border-slate-800 p-4 space-y-3">
+              <div className="text-xs font-semibold text-slate-300">
+                {isMm
+                  ? 'ဆိုင်ရှင် စကားဝှက် / PIN အသစ်ပြောင်းလဲလိုပါက ရိုက်ထည့်ပါ (မပြောင်းလိုပါက အလွတ်ထားနိုင်ပါသည်):'
+                  : 'Update Owner Password / PIN (Leave blank to keep existing password):'}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                    {isMm ? 'စကားဝှက်အသစ် (၄-၆ လုံး)' : 'New Password (4–6 digits/chars)'}
+                  </label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                    <input
+                      type="password"
+                      value={ownerPassword}
+                      onChange={e => setOwnerPassword(e.target.value)}
+                      className="w-full rounded-xl bg-slate-950 border border-slate-700 pl-9 p-2.5 text-xs text-white focus:border-cyan-500 focus:outline-none"
+                      placeholder={isMm ? 'စကားဝှက် မပြောင်းပါက အလွတ်ထားပါ' : 'Leave empty to keep current'}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                    {isMm ? 'စကားဝှက် အတည်ပြုပါ' : 'Confirm New Password'}
+                  </label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                    <input
+                      type="password"
+                      value={confirmPassword}
+                      onChange={e => setConfirmPassword(e.target.value)}
+                      className="w-full rounded-xl bg-slate-950 border border-slate-700 pl-9 p-2.5 text-xs text-white focus:border-cyan-500 focus:outline-none"
+                      placeholder={isMm ? 'စကားဝှက် ထပ်မံရိုက်ထည့်ပါ' : 'Re-enter to confirm'}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3.5 text-xs text-emerald-200">
+              <p className="font-bold flex items-center gap-1.5 text-emerald-300">
+                <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+                <span>{isMm ? 'တကယ်ဆိုင်တွင် စတင်အသုံးပြုခြင်း (Live Production Launch):' : 'Official Live Production Launch:'}</span>
+              </p>
+              <p className="mt-1 text-emerald-300/90 leading-relaxed">
+                {isMm
+                  ? 'အောက်ပါ "စတင်အသုံးပြုမည်" ခလုတ်ကို နှိပ်လိုက်ပါက စနစ်သည် စမ်းသပ်လေ့လာမှုအဆင့်မှ ဆိုင်တွင် တကယ်စတင်အသုံးပြုသည့် "LIVE စတေတပ်" သို့ တရားဝင် ကူးပြောင်းသွားမည်ဖြစ်ပြီး သင့်ဆိုင်၏ စစ်မှန်သော ဒေတာများဖြင့် အပြည့်အဝ လည်ပတ်နိုင်မည် ဖြစ်ပါသည်။'
+                  : 'Clicking the button below transitions the ERP from exploration/sample mode into LIVE PRODUCTION status with your confirmed master data.'}
               </p>
             </div>
 
@@ -1060,13 +1110,13 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
               type="button"
               disabled={isSubmitting}
               onClick={handleFinishSetup}
-              className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 px-6 py-2.5 text-xs font-black text-slate-950 shadow-xl hover:from-emerald-400 hover:to-cyan-400 active:scale-95 transition-all cursor-pointer min-h-[40px]"
+              className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 px-6 py-2.5 text-xs font-black text-slate-950 shadow-xl hover:from-emerald-400 hover:to-cyan-400 active:scale-95 transition-all cursor-pointer min-h-[40px]"
             >
               <CheckCircle2 className="h-4 w-4 text-slate-950" />
               <span>
                 {isSubmitting
                   ? (isMm ? 'စနစ်ပြင်ဆင်နေပါသည်...' : 'Configuring Live Data...')
-                  : (isMm ? 'စတင်အသုံးပြုမည် (Save & Launch Live ERP)' : 'Save & Launch Live ERP')}
+                  : (isMm ? 'စတင်အသုံးပြုမည် (အတည်ပြု၍ Live စတင်မည်)' : 'Confirm & Launch Live ERP')}
               </span>
             </button>
           )}

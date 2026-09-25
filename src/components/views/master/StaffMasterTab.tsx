@@ -180,6 +180,7 @@ export const StaffMasterTab: React.FC<StaffMasterTabProps> = ({
       : 'therapist';
 
     try {
+      const targetStatus = formIsActive === false ? 'off_duty' : formStatus;
       if (editingStaff) {
         // Update
         await db.staff.update(editingStaff.id, {
@@ -191,11 +192,19 @@ export const StaffMasterTab: React.FC<StaffMasterTabProps> = ({
           role: roleSlug,
           baseSalaryMMK: formBaseSalary > 0 ? formBaseSalary : undefined,
           joinedDate: formJoinedDate,
-          status: formStatus,
+          status: targetStatus,
           commissionRuleId: formCommissionRuleId || undefined,
           defaultCommissionRule: commissionSnapshot,
           notes: formNotes.trim(),
           isActive: formIsActive,
+        });
+
+        await db.recordAuditLog({
+          entityType: 'staff',
+          entityId: editingStaff.id,
+          action: 'update',
+          details: `Updated staff profile "${formName.trim()}" (Active: ${formIsActive}, Status: ${targetStatus})`,
+          currentUser: { id: currentUser.id, name: currentUser.name, role: currentUser.role },
         });
       } else {
         // Create new
@@ -210,11 +219,19 @@ export const StaffMasterTab: React.FC<StaffMasterTabProps> = ({
           role: roleSlug,
           baseSalaryMMK: formBaseSalary > 0 ? formBaseSalary : undefined,
           joinedDate: formJoinedDate,
-          status: formStatus,
+          status: targetStatus,
           commissionRuleId: formCommissionRuleId || undefined,
           defaultCommissionRule: commissionSnapshot,
           notes: formNotes.trim(),
           isActive: formIsActive,
+        });
+
+        await db.recordAuditLog({
+          entityType: 'staff',
+          entityId: newStaffId,
+          action: 'create',
+          details: `Created new staff "${formName.trim()}"`,
+          currentUser: { id: currentUser.id, name: currentUser.name, role: currentUser.role },
         });
       }
 
@@ -228,9 +245,20 @@ export const StaffMasterTab: React.FC<StaffMasterTabProps> = ({
   const handleToggleActive = async (member: StaffMember) => {
     try {
       const nextActive = member.isActive === false;
+      const nextStatus = nextActive ? 'available' : 'off_duty';
       await db.staff.update(member.id, {
         isActive: nextActive,
+        status: nextStatus,
       });
+
+      await db.recordAuditLog({
+        entityType: 'staff',
+        entityId: member.id,
+        action: nextActive ? 'activate' : 'deactivate',
+        details: `${nextActive ? 'Activated' : 'Deactivated'} staff member "${member.name}" (Duty status set to ${nextStatus})`,
+        currentUser: { id: currentUser.id, name: currentUser.name, role: currentUser.role },
+      });
+
       onRefresh();
     } catch (err) {
       console.error(err);

@@ -133,10 +133,26 @@ export const Navbar: React.FC<NavbarProps> = ({
               {isMm ? settings?.shopNameMm || 'ရွှေသီရိ စပါနှင့် ကာရာအိုကေ' : settings?.shopName || 'Shwe Thiri Spa & KTV'}
             </h1>
             <div className="flex items-center gap-1.5 mt-0.5">
-              <div className="inline-flex items-center gap-1 rounded-md bg-emerald-500/20 px-1.5 py-0.5 text-[9px] sm:text-[10px] font-black text-emerald-300 border border-emerald-500/50 shadow-xs">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping inline-block"></span>
-                <span>LIVE!</span>
-              </div>
+              {settings?.isLive ? (
+                <div
+                  className="inline-flex items-center gap-1 rounded-md bg-emerald-500/20 px-1.5 py-0.5 text-[9px] sm:text-[10px] font-black text-emerald-300 border border-emerald-500/50 shadow-xs"
+                  title={isMm ? 'ဆိုင်တွင် တကယ် စတင်အသုံးပြုနေသည်' : 'Live Production Mode'}
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping inline-block"></span>
+                  <span>LIVE</span>
+                </div>
+              ) : (
+                <div
+                  onClick={currentUser?.role === 'owner' ? onOpenSetupWizard : undefined}
+                  className={`inline-flex items-center gap-1 rounded-md bg-amber-500/20 px-1.5 py-0.5 text-[9px] sm:text-[10px] font-bold text-amber-300 border border-amber-500/40 shadow-xs ${
+                    currentUser?.role === 'owner' ? 'cursor-pointer hover:bg-amber-500/30' : ''
+                  }`}
+                  title={isMm ? 'စူးစမ်းလေ့လာ / နမူနာ စမ်းသပ်မှု အဆင့်' : 'Trial / Exploration Mode'}
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-400 inline-block"></span>
+                  <span>{isMm ? 'စမ်းသပ်မှု' : 'TRIAL'}</span>
+                </div>
+              )}
 
               <button
                 onClick={onOpenLANModal}
@@ -171,12 +187,16 @@ export const Navbar: React.FC<NavbarProps> = ({
           {currentUser?.role === 'owner' && (
             <button
               onClick={onOpenSetupWizard}
-              className="inline-flex items-center gap-1 rounded-lg bg-gradient-to-r from-emerald-500 to-cyan-500 p-1.5 sm:px-2 sm:py-1 text-[10px] font-black text-slate-950 border border-emerald-400/50 transition-all"
-              title="Setup Wizard"
+              className={`inline-flex items-center gap-1 rounded-lg p-1.5 sm:px-2.5 sm:py-1 text-[10px] font-black transition-all cursor-pointer ${
+                settings?.isLive
+                  ? 'bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700'
+                  : 'bg-gradient-to-r from-amber-400 via-amber-300 to-emerald-400 text-slate-950 border border-amber-300 shadow-md hover:scale-105 animate-pulse'
+              }`}
+              title={settings?.isLive ? 'Setup Wizard' : (isMm ? 'ဆိုင်တွင် တကယ်စတင်အသုံးပြုရန် Setup ပြုလုပ်ပါ' : 'Launch Live Setup')}
               aria-label="Setup Wizard"
             >
               <Sparkles className="h-3.5 w-3.5" />
-              <span className="hidden md:inline">Setup</span>
+              <span>{settings?.isLive ? 'Setup' : (isMm ? 'စတင်အသုံးပြုမည်' : 'Setup (Go Live)')}</span>
             </button>
           )}
 

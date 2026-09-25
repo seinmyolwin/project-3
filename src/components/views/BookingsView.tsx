@@ -1341,7 +1341,7 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
                     className="w-full bg-[#07090e] border border-cyan-900/50 rounded-lg p-2 text-white focus:border-cyan-500 focus:outline-none"
                   >
                     <option value="">{isMm ? '-- ဝန်ထမ်း မသတ်မှတ်ပါ --' : '-- No Staff --'}</option>
-                    {staff.map((st) => (
+                    {staff.filter(st => st.isActive !== false).map((st) => (
                       <option key={st.id} value={st.id}>
                         {st.name} ({st.role})
                       </option>
@@ -1544,7 +1544,7 @@ export const BookingsView: React.FC<BookingsViewProps> = ({
                   className="w-full bg-[#07090e] border border-cyan-900/50 rounded-lg p-2 text-white"
                 >
                   <option value="">{isMm ? '-- ဝန်ထမ်း မသတ်မှတ်ပါ --' : '-- No Staff --'}</option>
-                  {staff.map((s) => (
+                  {staff.filter(s => s.isActive !== false).map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name} ({s.role})
                     </option>

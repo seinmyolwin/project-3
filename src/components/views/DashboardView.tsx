@@ -342,83 +342,55 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   return (
     <div className="space-y-3.5 sm:space-y-5">
-      {/* 1. Manager Overview Header */}
-      <div className="relative overflow-hidden rounded-2xl border border-cyan-500/30 bg-gradient-to-r from-slate-950 via-slate-900 to-cyan-950 p-3.5 sm:p-5 shadow-xl text-white">
-        <div className="absolute -right-10 -top-10 h-32 w-32 rounded-full bg-cyan-500/10 blur-2xl pointer-events-none" />
-        <div className="absolute right-20 bottom-0 h-24 w-24 rounded-full bg-purple-500/10 blur-2xl pointer-events-none" />
-
-        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2 mb-0.5">
-              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] sm:text-xs font-black text-emerald-400 border border-emerald-500/40">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping" />
-                {isMm ? 'ဆိုင်လုပ်ငန်းများ ပုံမှန်လည်ပတ်နေပါသည်' : 'Shop Operations Active'}
-              </span>
-              <span className="text-[10px] sm:text-xs text-cyan-300 font-mono">
-                {todayStr} • {currentUser.name} ({currentUser.role})
-              </span>
-            </div>
-            <h1 className="text-lg sm:text-xl font-extrabold tracking-tight text-white">
-              {isMm ? (settings?.shopNameMm || 'ရွှေသီရိ စပါနှင့် ကာရာအိုကေ') : (settings?.shopName || 'Shwe Thiri Spa & KTV')}
-            </h1>
+      {actionMessage && (
+        <div className="flex items-center justify-between rounded-xl bg-emerald-500/20 border border-emerald-500/40 p-3 text-xs text-emerald-200 shadow-md">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+            <span>{actionMessage}</span>
           </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => onNavigateTab('pos')}
-              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-3 py-2 text-xs font-black text-white shadow-md hover:from-cyan-400 hover:to-blue-500 active:scale-95 transition-all cursor-pointer"
-            >
-              <ShoppingBag className="h-3.5 w-3.5" />
-              <span>{isMm ? 'အရောင်းကောင်တာ (POS)' : 'New POS Sale'}</span>
-            </button>
-            <button
-              onClick={() => onNavigateTab('rooms')}
-              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 px-3 py-2 text-xs font-black text-white shadow-md hover:from-purple-500 hover:to-indigo-500 active:scale-95 transition-all cursor-pointer"
-            >
-              <BedDouble className="h-3.5 w-3.5" />
-              <span>{isMm ? 'အခန်းများကြည့်ရန်' : 'Room Manager'}</span>
-            </button>
-          </div>
+          <button onClick={() => setActionMessage(null)} className="text-emerald-400 hover:text-white font-bold cursor-pointer">×</button>
         </div>
-
-        {actionMessage && (
-          <div className="mt-2.5 flex items-center justify-between rounded-lg bg-emerald-500/20 border border-emerald-500/40 p-2 text-xs text-emerald-200">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
-              <span>{actionMessage}</span>
-            </div>
-            <button onClick={() => setActionMessage(null)} className="text-emerald-400 hover:text-white font-bold">×</button>
-          </div>
-        )}
-      </div>
+      )}
 
       {/* Date Range Filter Bar for Dashboard */}
-      <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-900 border border-slate-800 p-2.5 sm:p-3 rounded-xl shadow-md text-white">
-        <div className="flex items-center gap-2">
-          <CalendarDays className="h-3.5 w-3.5 text-cyan-400" />
-          <span className="text-xs font-bold">{isMm ? 'ကာလ စစ်ဆေးရန်:' : 'Period Filter:'}</span>
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900 border border-slate-800 p-2.5 sm:p-3 rounded-xl shadow-md text-white">
+        <div className="flex items-center gap-2.5">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 px-2.5 py-1 text-[10px] sm:text-xs font-black text-emerald-400 border border-emerald-500/40">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping" />
+            {isMm ? 'ဆိုင်လုပ်ငန်းများ ပုံမှန်လည်ပတ်နေပါသည်' : 'Shop Operations Active'}
+          </span>
+          <span className="hidden md:inline text-[11px] text-cyan-300 font-mono">
+            {todayStr} • {currentUser.name} ({currentUser.role})
+          </span>
         </div>
-        <div className="flex flex-wrap items-center gap-1 bg-slate-800 p-1 rounded-lg">
-          {[
-            { id: 'today', labelEn: 'Today', labelMm: 'ယနေ့' },
-            { id: 'yesterday', labelEn: 'Yesterday', labelMm: 'မနေ့က' },
-            { id: 'week', labelEn: '7 Days', labelMm: '၇ ရက်' },
-            { id: 'month', labelEn: 'This Month', labelMm: 'ဒီလ' },
-            { id: 'prev_month', labelEn: 'Prev Month', labelMm: 'ပြီးခဲ့သောလ' },
-            { id: 'all', labelEn: 'All Time', labelMm: 'အားလုံး' },
-          ].map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setDashDateFilter(tab.id as any)}
-              className={`rounded-md px-2.5 py-1 text-[11px] sm:text-xs font-semibold transition-all ${
-                dashDateFilter === tab.id
-                  ? 'bg-cyan-500 text-slate-950 font-bold shadow-xs'
-                  : 'text-slate-300 hover:text-white'
-              }`}
-            >
-              {isMm ? tab.labelMm : tab.labelEn}
-            </button>
-          ))}
+
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5 text-slate-300">
+            <CalendarDays className="h-3.5 w-3.5 text-cyan-400" />
+            <span className="text-xs font-bold">{isMm ? 'ကာလ စစ်ဆေးရန်:' : 'Period Filter:'}</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-1 bg-slate-800 p-1 rounded-lg">
+            {[
+              { id: 'today', labelEn: 'Today', labelMm: 'ယနေ့' },
+              { id: 'yesterday', labelEn: 'Yesterday', labelMm: 'မနေ့က' },
+              { id: 'week', labelEn: '7 Days', labelMm: '၇ ရက်' },
+              { id: 'month', labelEn: 'This Month', labelMm: 'ဒီလ' },
+              { id: 'prev_month', labelEn: 'Prev Month', labelMm: 'ပြီးခဲ့သောလ' },
+              { id: 'all', labelEn: 'All Time', labelMm: 'အားလုံး' },
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setDashDateFilter(tab.id as any)}
+                className={`rounded-md px-2.5 py-1 text-[11px] sm:text-xs font-semibold transition-all cursor-pointer ${
+                  dashDateFilter === tab.id
+                    ? 'bg-cyan-500 text-slate-950 font-bold shadow-xs'
+                    : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                {isMm ? tab.labelMm : tab.labelEn}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -498,25 +470,49 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-1.5 bg-slate-950 p-1 rounded-2xl border border-slate-800">
-            {[
-              { id: 'rooms', labelEn: 'Room Status', labelMm: 'အခန်းအခြေအနေ' },
-              { id: 'staff', labelEn: 'Staff Roster & Assign', labelMm: 'ဝန်ထမ်းစာရင်း & Assign' },
-              { id: 'sales', labelEn: 'Today Sales', labelMm: 'ယနေ့အရောင်း' },
-              { id: 'settings', labelEn: 'Shop Settings', labelMm: 'ဆိုင်ဆက်တင်' },
-            ].map(tab => (
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap gap-1.5 bg-slate-950 p-1 rounded-2xl border border-slate-800">
+              {[
+                { id: 'rooms', labelEn: 'Room Status', labelMm: 'အခန်းအခြေအနေ' },
+                { id: 'staff', labelEn: 'Staff Roster & Assign', labelMm: 'ဝန်ထမ်းစာရင်း' },
+                { id: 'sales', labelEn: 'Today Sales', labelMm: 'ယနေ့အရောင်း' },
+                { id: 'settings', labelEn: 'Shop Settings', labelMm: 'ဆိုင်ဆက်တင်' },
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveControlTab(tab.id as any)}
+                  className={`rounded-xl px-3.5 py-2 text-xs font-bold transition-all cursor-pointer ${
+                    activeControlTab === tab.id
+                      ? 'bg-cyan-600 text-white shadow-md'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                  }`}
+                >
+                  {isMm ? tab.labelMm : tab.labelEn}
+                </button>
+              ))}
+            </div>
+
+            <div className="h-6 w-px bg-slate-800 hidden sm:block" />
+
+            <div className="flex items-center gap-1.5">
               <button
-                key={tab.id}
-                onClick={() => setActiveControlTab(tab.id as any)}
-                className={`rounded-xl px-3.5 py-2 text-xs font-bold transition-all cursor-pointer ${
-                  activeControlTab === tab.id
-                    ? 'bg-cyan-600 text-white shadow-md'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                }`}
+                type="button"
+                onClick={() => onNavigateTab('pos')}
+                className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-3.5 py-2 text-xs font-black text-white shadow-md hover:from-cyan-400 hover:to-blue-500 active:scale-95 transition-all cursor-pointer"
               >
-                {isMm ? tab.labelMm : tab.labelEn}
+                <ShoppingBag className="h-3.5 w-3.5" />
+                <span>{isMm ? 'အရောင်းကောင်တာ (POS)' : 'New POS Sale'}</span>
               </button>
-            ))}
+              <button
+                type="button"
+                onClick={() => onNavigateTab('rooms')}
+                className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 px-3.5 py-2 text-xs font-black text-white shadow-md hover:from-purple-500 hover:to-indigo-500 active:scale-95 transition-all cursor-pointer"
+              >
+                <BedDouble className="h-3.5 w-3.5" />
+                <span>{isMm ? 'အခန်းများကြည့်ရန်' : 'Room Manager'}</span>
+              </button>
+            </div>
           </div>
         </div>
 

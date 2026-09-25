@@ -56,6 +56,7 @@ export const StaffView: React.FC<StaffViewProps> = ({
 
   const [selectedStaffId, setSelectedStaffId] = useState<string>(staff[0]?.id || '');
   const [activeSubTab, setActiveSubTab] = useState<'roster' | 'schedule' | 'attendance' | 'ledger' | 'settlements' | 'report'>('roster');
+  const [rosterActiveFilter, setRosterActiveFilter] = useState<'all' | 'active' | 'inactive'>('all');
 
   const [schedulesList, setSchedulesList] = useState<StaffScheduleRecord[]>([]);
   const [attendanceList, setAttendanceList] = useState<StaffAttendanceRecord[]>([]);
@@ -315,10 +316,40 @@ export const StaffView: React.FC<StaffViewProps> = ({
     }
   };
 
-  // Toggle staff status
+  // Toggle staff status with active status awareness
   const handleToggleStaffStatus = async (staffId: string, currentStatus: string) => {
+    const targetMember = staff.find(s => s.id === staffId);
+    if (!targetMember) return;
+
+    if (targetMember.isActive === false) {
+      const confirmReactivate = window.confirm(
+        isMm
+          ? `ဤဝန်ထမ်း (${targetMember.name}) အား ဆက်တင်များ (Master Data) တွင် ပိတ်ထားပါသည် (Inactive)။ စနစ်တွင် ပြန်လည်အသုံးပြုပြီး တာဝန်ရှိ (Available) အဖြစ် သတ်မှတ်ရန် သေချာပါသလား?`
+          : `Staff member "${targetMember.name}" is currently deactivated in Settings. Do you want to reactivate them and set to Available?`
+      );
+      if (confirmReactivate) {
+        await db.staff.update(staffId, { isActive: true, status: 'available' });
+        await db.recordAuditLog({
+          entityType: 'staff',
+          entityId: staffId,
+          action: 'activate',
+          details: `Reactivated staff "${targetMember.name}" from Staff Roster view`,
+          currentUser: { id: currentUser.id, name: currentUser.name, role: currentUser.role },
+        });
+        onRefresh();
+      }
+      return;
+    }
+
     const nextStatus = currentStatus === 'available' ? 'off_duty' : 'available';
     await db.staff.update(staffId, { status: nextStatus as any });
+    await db.recordAuditLog({
+      entityType: 'staff',
+      entityId: staffId,
+      action: 'update',
+      details: `Changed staff "${targetMember.name}" status to ${nextStatus}`,
+      currentUser: { id: currentUser.id, name: currentUser.name, role: currentUser.role },
+    });
     onRefresh();
   };
 
@@ -493,49 +524,124 @@ export const StaffView: React.FC<StaffViewProps> = ({
 
       {/* Roster & Balance View */}
       {activeSubTab === 'roster' && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {staff.map(member => {
-            const memberEntries = staffLedger.filter(e => e.staffId === member.id);
-            const totals = calculateStaffLedgerTotals(memberEntries);
+        <div className="space-y-4">
+          {/* Roster Filter Bar */}
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-gray-200 shadow-xs">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-bold text-gray-700 mr-2">
+                {isMm ? 'ဝန်ထမ်းစာရင်း စစ်ထုတ်ရန်:' : 'Filter Staff:'}
+              </span>
+              {[
+                { id: 'all', labelMm: 'အားလုံး', labelEn: 'All Staff', count: staff.length },
+                { id: 'active', labelMm: 'တာဝန်ထမ်းဆောင်ဆဲ (Active)', labelEn: 'Active', count: staff.filter(s => s.isActive !== false).length },
+                { id: 'inactive', labelMm: 'ပိတ်ထားသော ဝန်ထမ်းများ', labelEn: 'Deactivated / Inactive', count: staff.filter(s => s.isActive === false).length },
+              ].map(f => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setRosterActiveFilter(f.id as any)}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    rosterActiveFilter === f.id
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  <span>{isMm ? f.labelMm : f.labelEn}</span>
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                    rosterActiveFilter === f.id ? 'bg-emerald-800 text-white' : 'bg-gray-200 text-gray-700'
+                  }`}>
+                    {f.count}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <div className="text-[11px] text-gray-500">
+              {isMm ? 'စနစ်အတွင်း ဝန်ထမ်းအချက်အလက်များကို Settings > Master Data တွင် အပြည့်အစုံ ပြင်ဆင်နိုင်ပါသည်' : 'Full staff management in Settings > Master Data'}
+            </div>
+          </div>
 
-            return (
-              <div
-                key={member.id}
-                className="flex flex-col justify-between rounded-2xl border border-gray-200 bg-white p-4 shadow-xs hover:shadow-md transition-shadow"
-              >
-                <div>
-                  {/* Header */}
-                  <div className="flex items-start justify-between border-b border-gray-100 pb-3">
+          {/* Roster Cards */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {staff
+              .filter(member => {
+                if (rosterActiveFilter === 'active') return member.isActive !== false;
+                if (rosterActiveFilter === 'inactive') return member.isActive === false;
+                return true;
+              })
+              .map(member => {
+                const memberEntries = staffLedger.filter(e => e.staffId === member.id);
+                const totals = calculateStaffLedgerTotals(memberEntries);
+                const isDeactivated = member.isActive === false;
+
+                return (
+                  <div
+                    key={member.id}
+                    className={`flex flex-col justify-between rounded-2xl border p-4 shadow-xs hover:shadow-md transition-all ${
+                      isDeactivated
+                        ? 'border-gray-300 bg-slate-50/80 opacity-80'
+                        : 'border-gray-200 bg-white'
+                    }`}
+                  >
                     <div>
-                      <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                        {member.role}
-                      </span>
-                      <h3 className="text-base font-bold text-gray-900">
-                        {member.name}
-                      </h3>
-                      <p className="text-[11px] text-gray-500">{member.phone}</p>
-                    </div>
+                      {/* Header */}
+                      <div className="flex items-start justify-between border-b border-gray-100 pb-3">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                              {member.role}
+                            </span>
+                            {isDeactivated && (
+                              <span className="inline-flex items-center rounded-md bg-rose-100 px-1.5 py-0.2 text-[9px] font-bold text-rose-800 uppercase">
+                                {isMm ? 'ပိတ်ထားသည်' : 'Inactive'}
+                              </span>
+                            )}
+                          </div>
+                          <h3 className={`text-base font-bold ${isDeactivated ? 'text-gray-600' : 'text-gray-900'}`}>
+                            {member.name}
+                          </h3>
+                          <p className="text-[11px] text-gray-500">{member.phone}</p>
+                        </div>
 
-                    <button
-                      type="button"
-                      onClick={() => handleToggleStaffStatus(member.id, member.status)}
-                      className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
-                        member.status === 'available'
-                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                          : member.status === 'in_service'
-                          ? 'border-amber-200 bg-amber-50 text-amber-700'
-                          : 'border-gray-200 bg-gray-50 text-gray-500'
-                      }`}
-                      title="Click to toggle duty status"
-                    >
-                      <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                      {member.status === 'available'
-                        ? (isMm ? 'တာဝန်ရှိ' : 'Available')
-                        : member.status === 'in_service'
-                        ? (isMm ? 'အလုပ်လုပ်နေဆဲ' : 'In Service')
-                        : (isMm ? 'အလုပ်ဆင်း' : 'Off Duty')}
-                    </button>
-                  </div>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleStaffStatus(member.id, member.status)}
+                          className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold cursor-pointer transition-colors ${
+                            isDeactivated
+                              ? 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'
+                              : member.status === 'available'
+                              ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                              : member.status === 'in_service'
+                              ? 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'
+                              : 'border-gray-200 bg-gray-50 text-gray-500 hover:bg-gray-100'
+                          }`}
+                          title={
+                            isDeactivated
+                              ? isMm
+                                ? 'ဆက်တင်တွင် ပိတ်ထားသည် (နှိပ်၍ ပြန်ဖွင့်နိုင်သည်)'
+                                : 'Deactivated in Settings (Click to reactivate)'
+                              : isMm
+                              ? 'တာဝန်အခြေအနေ ပြောင်းရန် နှိပ်ပါ'
+                              : 'Click to toggle duty status'
+                          }
+                        >
+                          <span className={`h-1.5 w-1.5 rounded-full ${
+                            isDeactivated
+                              ? 'bg-rose-500'
+                              : member.status === 'available'
+                              ? 'bg-emerald-500'
+                              : member.status === 'in_service'
+                              ? 'bg-amber-500'
+                              : 'bg-gray-400'
+                          }`} />
+                          {isDeactivated
+                            ? (isMm ? 'အလုပ်ဆိုင်းငံ့/ပိတ်ထား' : 'Deactivated')
+                            : member.status === 'available'
+                            ? (isMm ? 'တာဝန်ရှိ' : 'Available')
+                            : member.status === 'in_service'
+                            ? (isMm ? 'အလုပ်လုပ်နေဆဲ' : 'In Service')
+                            : (isMm ? 'အလုပ်ဆင်း' : 'Off Duty')}
+                        </button>
+                      </div>
 
                   {/* Commission Rule Info */}
                   <div className="mt-3 rounded-xl bg-gray-50 p-2.5 text-xs text-gray-700 border border-gray-100 space-y-1">
@@ -627,6 +733,7 @@ export const StaffView: React.FC<StaffViewProps> = ({
               </div>
             );
           })}
+          </div>
         </div>
       )}
 

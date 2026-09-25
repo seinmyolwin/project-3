@@ -322,7 +322,54 @@ export class MyanmarBusinessDB extends Dexie {
       }
     }
 
+    // Consistency sync: Ensure any staff marked as inactive has duty status set to off_duty
+    await this.syncStaffStatusConsistency();
+
     return migratedCount;
+  }
+
+  /**
+   * Consistency helper to ensure that any staff member who is deactivated (isActive === false)
+   * has their operational duty status set to 'off_duty' so they never appear as 'available' / 'တာဝန်ရှိ'.
+   */
+  public async syncStaffStatusConsistency(): Promise<void> {
+    try {
+      const allStaff = await this.staff.toArray();
+      for (const stf of allStaff) {
+        if (stf.isActive === false && stf.status !== 'off_duty') {
+          await this.staff.update(stf.id, { status: 'off_duty' });
+        }
+      }
+    } catch (err) {
+      console.warn('Error during staff status consistency sync:', err);
+    }
+  }
+
+  /**
+   * General-purpose audit logging helper
+   */
+  public async recordAuditLog(params: {
+    entityType: string;
+    entityId: string;
+    action: string;
+    details: string;
+    currentUser: { id: string; name: string; role: any };
+  }): Promise<void> {
+    try {
+      await this.auditLogs.add({
+        id: `aud_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        entity: params.entityType,
+        entityId: params.entityId,
+        action: params.action,
+        details: params.details,
+        userId: params.currentUser.id || 'sys',
+        userName: params.currentUser.name || 'System',
+        userRole: params.currentUser.role || 'owner',
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.warn('Failed to write audit log:', err);
+    }
   }
 
   // ==========================================

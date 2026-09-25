@@ -64,6 +64,8 @@ async function internalSeedDatabaseIfEmpty(): Promise<void> {
     receiptFooterNote: 'Thank you for choosing Shwe Thiri. Please visit us again!',
     receiptFooterNoteMm: 'ရွှေသီရိကို ရွေးချယ်အားပေးသည့်အတွက် အထူးကျေးဇူးတင်ရှိပါသည်။ နောက်တစ်ကြိမ် ထပ်မံကြွရောက်ပါရန် လှိုက်လှဲစွာ ဖိတ်ခေါ်အပ်ပါသည်။',
     currencySymbol: 'MMK',
+    isLive: false,
+    operatingMode: 'EXPLORATION',
   };
 
   // 2. Rooms (No default users are auto-created - Owner created during First-Run Setup)

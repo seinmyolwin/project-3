@@ -96,9 +96,8 @@ export class LocalServerClient {
       if (!response.ok) {
         if (response.status === 401) {
           authSession.clearSession();
-          const isAuthEndpoint = endpoint.includes('/api/auth/login') || endpoint.includes('/api/auth/pin-login');
-          if (!isAuthEndpoint && typeof window !== 'undefined') {
-            window.location.reload();
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('auth-session-expired'));
           }
         }
         if (response.status === 403 && data.error === 'MUST_CHANGE_PASSWORD') {

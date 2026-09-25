@@ -663,6 +663,10 @@ export interface ShopSettings {
   receiptFooterNoteMm: string;
   currencySymbol: string;
   roundingRule?: 'round_half_up' | 'floor' | 'ceil';
+  isLive?: boolean; // false = Exploration/Trial/Sample Mode; true = Live Production Mode
+  operatingMode?: 'EXPLORATION' | 'LIVE';
+  liveLaunchedAt?: string;
+  liveLaunchedBy?: string;
   createdAt?: string;
   updatedAt?: string;
   updatedBy?: string;

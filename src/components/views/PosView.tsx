@@ -1785,7 +1785,7 @@ export const PosView: React.FC<PosViewProps> = ({
                           className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-800"
                         >
                           <option value="">{isMm ? 'ဝန်ထမ်းရွေးရန်' : 'Select Staff'}</option>
-                          {(staff || []).map(s => (
+                          {(staff || []).filter(s => s.isActive !== false).map(s => (
                             <option key={s.id} value={s.id}>
                               {s.name} ({s.role})
                             </option>

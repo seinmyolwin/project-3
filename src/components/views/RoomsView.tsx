@@ -223,7 +223,7 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
       if (booking.staffId) {
         setSelectedStaffIds([booking.staffId]);
       } else {
-        const availableStaff = staff.filter(s => s.status === 'available');
+        const availableStaff = staff.filter(s => s.isActive !== false && s.status === 'available');
         setSelectedStaffIds(availableStaff.length > 0 ? [availableStaff[0].id] : []);
       }
       setSessionNotes(booking.notes || `Linked from booking ${booking.bookingCode}`);
@@ -235,7 +235,7 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
       setPricingRule('duration_based');
       setCustomBasePrice('');
 
-      const availableStaff = staff.filter(s => s.status === 'available');
+      const availableStaff = staff.filter(s => s.isActive !== false && s.status === 'available');
       setSelectedStaffIds(availableStaff.length > 0 ? [availableStaff[0].id] : []);
       setCustomerName('Walk-in Customer (ဧည့်သည်)');
       setCustomerPhone('');
@@ -1511,8 +1511,10 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
                   {isMm ? 'ဝန်ထမ်း တာဝန်ပေးရန် (အနည်းဆုံး ၁ ဦး)' : 'Assign Staff / Therapists (Multi-Select)'}
                 </label>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 max-h-44 overflow-y-auto p-1">
-                  {staff.map(s => {
-                    const isSelected = selectedStaffIds.includes(s.id);
+                  {staff
+                    .filter(s => s.isActive !== false)
+                    .map(s => {
+                      const isSelected = selectedStaffIds.includes(s.id);
                     return (
                       <button
                         key={s.id}
@@ -1695,8 +1697,10 @@ export const RoomsView: React.FC<RoomsViewProps> = ({
                   {isMm ? 'တာဝန်ယူမည့် ဝန်ထမ်းများ ရွေးပါ' : 'Select Assigned Staff'}
                 </label>
                 <div className="grid grid-cols-2 gap-2 max-h-52 overflow-y-auto p-1">
-                  {staff.map(s => {
-                    const isSelected = reassignStaffIds.includes(s.id);
+                  {staff
+                    .filter(s => s.isActive !== false)
+                    .map(s => {
+                      const isSelected = reassignStaffIds.includes(s.id);
                     return (
                       <button
                         key={s.id}
