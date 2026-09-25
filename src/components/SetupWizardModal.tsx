@@ -114,8 +114,8 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({
   ]);
 
   // Step 6: Owner Password & Launch
-  const [ownerPassword, setOwnerPassword] = useState<string>('1234');
-  const [confirmPassword, setConfirmPassword] = useState<string>('1234');
+  const [ownerPassword, setOwnerPassword] = useState<string>('');
+  const [confirmPassword, setConfirmPassword] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 

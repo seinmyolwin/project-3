@@ -141,18 +141,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         }
 
         // Verify password / PIN against salted hash
-        let isPasswordValid = verifyPassword(cleanPassword, localUser.pinHash, localUser.pinSalt);
-        let isPinValid = verifyPin(cleanPassword, localUser.pinHash, localUser.pinSalt, localUser.pin);
-
-        // EXTRA HIGH-FIDELITY OFFLINE RECOVERY FALLBACK
-        if (!isPasswordValid && !isPinValid) {
-          if (
-            (localUser.username === 'owner' || localUser.role === 'owner' || localUser.username === 'admin') &&
-            (cleanPassword === '1234' || cleanPassword === 'admin' || cleanPassword === 'shwethiri123')
-          ) {
-            isPasswordValid = true;
-          }
-        }
+        const isPasswordValid = verifyPassword(cleanPassword, localUser.pinHash, localUser.pinSalt);
+        const isPinValid = verifyPin(cleanPassword, localUser.pinHash, localUser.pinSalt, localUser.pin);
 
         if (!isPasswordValid && !isPinValid) {
           setErrorMessage(
