@@ -246,6 +246,36 @@ export default function App() {
       setSettlements(settleList);
       setSettings(shopSettingsList[0] || null);
 
+      // Opportunistic sync of users from server if LAN server is connected
+      try {
+        const serverUsersRes = await localServerClient.getUsers();
+        if (serverUsersRes && serverUsersRes.success && Array.isArray(serverUsersRes.users)) {
+          let hasDiff = false;
+          for (const sUser of serverUsersRes.users) {
+            const existing = userList.find(u => u.id === sUser.id);
+            if (!existing || existing.name !== sUser.name || existing.username !== sUser.username || existing.role !== sUser.role || existing.isActive !== sUser.isActive) {
+              await db.users.put({
+                id: sUser.id,
+                name: sUser.name,
+                username: sUser.username,
+                role: sUser.role,
+                isActive: sUser.isActive,
+                pinHash: existing?.pinHash,
+                pinSalt: existing?.pinSalt,
+                createdAt: sUser.createdAt || new Date().toISOString(),
+              });
+              hasDiff = true;
+            }
+          }
+          if (hasDiff) {
+            const syncedUserList = await db.users.toArray();
+            setUsers(syncedUserList);
+          }
+        }
+      } catch {
+        // LAN server unavailable or unauthorized, retain offline Dexie cache
+      }
+
       setStaffTypes(stfTypeList);
       setTables(tblList);
       setServiceCategories(srvCatList);

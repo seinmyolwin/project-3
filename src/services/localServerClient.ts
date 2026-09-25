@@ -229,7 +229,7 @@ export class LocalServerClient {
    * First Run Owner Setup (/api/auth/setup-owner)
    */
   public async setupOwner(data: { name: string; username: string; password: string }) {
-    return this.request<{ success: boolean; message: string; user: any }>('/api/auth/setup-owner', {
+    return this.request<{ success: boolean; message: string; user: any; token?: string }>('/api/auth/setup-owner', {
       method: 'POST',
       body: JSON.stringify(data),
     });
@@ -245,7 +245,7 @@ export class LocalServerClient {
   /**
    * Create User (/api/users) - Owner Only
    */
-  public async createUser(data: { name: string; username: string; role: string; password?: string; pin?: string }) {
+  public async createUser(data: { name: string; username: string; role: string; password?: string; pin?: string; mustChangePassword?: boolean }) {
     return this.request<{ success: boolean; message: string; user: any }>('/api/users', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -269,6 +269,16 @@ export class LocalServerClient {
     return this.request<{ success: boolean; message: string }>(`/api/users/${id}/change-password`, {
       method: 'POST',
       body: JSON.stringify({ newPassword }),
+    });
+  }
+
+  /**
+   * Complete First Setup (/api/users/:id/complete-first-setup)
+   */
+  public async completeFirstSetup(id: string, data: { name: string; newUsername: string; newPassword: string }) {
+    return this.request<{ success: boolean; message: string }>(`/api/users/${id}/complete-first-setup`, {
+      method: 'POST',
+      body: JSON.stringify(data),
     });
   }
 

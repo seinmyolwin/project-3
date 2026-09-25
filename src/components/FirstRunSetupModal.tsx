@@ -4,6 +4,7 @@ import { Language } from '../utils/translations';
 import { hashPassword } from '../utils/cryptoAuth';
 import { db } from '../db/database';
 import { localServerClient } from '../services/localServerClient';
+import { authSession } from '../services/authSession';
 import { UserAccount } from '../types';
 
 interface FirstRunSetupModalProps {
@@ -42,8 +43,8 @@ export const FirstRunSetupModal: React.FC<FirstRunSetupModalProps> = ({
       return;
     }
 
-    if (!cleanPassword || cleanPassword.length < 4) {
-      setError(isMm ? 'စကားဝှက် အနည်းဆုံး ၄ လုံး ရှိရပါမည်' : 'Password must be at least 4 characters');
+    if (!cleanPassword || cleanPassword.length < 4 || cleanPassword.length > 6) {
+      setError(isMm ? 'စကားဝှက်သည် ၄ လုံးမှ ၆ လုံးအထိ ဖြစ်ရပါမည် (Password must be 4-6 characters)' : 'Password must be between 4 and 6 characters');
       return;
     }
 
@@ -54,13 +55,28 @@ export const FirstRunSetupModal: React.FC<FirstRunSetupModalProps> = ({
 
     setIsSubmitting(true);
     try {
+      let createdUserId = 'usr_owner_root';
       // 1. Try server-side owner setup if LAN server is reachable
       try {
-        await localServerClient.setupOwner({
+        const setupRes = await localServerClient.setupOwner({
           name: cleanName,
           username: cleanUsername,
           password: cleanPassword,
         });
+        if (setupRes && setupRes.user && setupRes.user.id) {
+          createdUserId = setupRes.user.id;
+        }
+        if (setupRes && setupRes.token) {
+          authSession.setLanSession({
+            token: setupRes.token,
+            user: {
+              ...setupRes.user,
+              mustChangePassword: false,
+            },
+            deviceId: authSession.getOrCreateDeviceId(),
+            expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          });
+        }
       } catch (serverErr) {
         console.warn('LAN server owner setup notice (falling back to offline Dexie setup if unreachable):', serverErr);
       }
@@ -68,13 +84,14 @@ export const FirstRunSetupModal: React.FC<FirstRunSetupModalProps> = ({
       // 2. Persist locally to Dexie with Salted SHA-256
       const { passwordHash, salt } = hashPassword(cleanPassword);
       const newOwner: UserAccount = {
-        id: 'usr_owner_root',
+        id: createdUserId,
         name: cleanName,
         username: cleanUsername,
         role: 'owner',
         pinHash: passwordHash,
         pinSalt: salt,
         isActive: true,
+        mustChangePassword: false,
         createdAt: new Date().toISOString(),
       };
 

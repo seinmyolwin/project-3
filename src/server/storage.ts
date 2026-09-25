@@ -99,6 +99,7 @@ export class PersistentSQLiteStorage {
       }
 
       this.runMigrations();
+
       this.flushToDisk();
       this.isInitialized = true;
     })();
@@ -1513,6 +1514,36 @@ export class PersistentSQLiteStorage {
     this.db.run(`UPDATE users SET is_active = ? WHERE id = ?`, [isActive ? 1 : 0, id]);
     this.flushToDisk();
     return true;
+  }
+
+  public async completeFirstSetup(id: string, name: string, newUsername: string, newPassword: string): Promise<boolean> {
+    if (!this.db || !id || !name || !newUsername || !newPassword) return false;
+    return this.transaction(async () => {
+      const user = this.getUserById(id);
+      if (!user) throw new Error('User not found');
+
+      // Validate username is not taken by another user
+      const existing = this.getUserByUsername(newUsername);
+      if (existing && existing.id !== id) {
+        throw new Error('Username is already taken');
+      }
+
+      // 1. Update username and name in 'users' table
+      this.db!.run(
+        `UPDATE users SET name = ?, username = ? WHERE id = ?`,
+        [name.trim(), newUsername.toLowerCase().trim(), id]
+      );
+
+      // 2. Generate new password hash and clear must_change_password (set to 0)
+      const salt = crypto.randomBytes(16).toString('hex');
+      const passwordHash = crypto.createHash('sha256').update(newPassword.trim() + salt).digest('hex');
+      this.db!.run(
+        `UPDATE users SET password_hash = ?, salt = ?, must_change_password = 0 WHERE id = ?`,
+        [passwordHash, salt, id]
+      );
+
+      return true;
+    });
   }
 
   // ==========================================

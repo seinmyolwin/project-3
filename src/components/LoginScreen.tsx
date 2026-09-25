@@ -48,21 +48,27 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     let isMounted = true;
     async function checkSetup() {
       try {
-        const localUserCount = await db.users.count();
-        if (localUserCount === 0) {
-          try {
-            const status = await localServerClient.getSetupStatus();
-            if (status.isSetupRequired && isMounted) {
+        // 1. Primary: Server-authoritative check
+        try {
+          const status = await localServerClient.getSetupStatus();
+          if (isMounted) {
+            setIsServerAvailable(true);
+            if (status.isSetupRequired) {
               setShowFirstRunSetup(true);
               return;
             }
-          } catch {
-            if (isMounted) setShowFirstRunSetup(true);
+          }
+        } catch {
+          // Server unreachable -> check offline Dexie count
+          if (isMounted) setIsServerAvailable(false);
+          const localUserCount = await db.users.count();
+          if (localUserCount === 0 && isMounted) {
+            setShowFirstRunSetup(true);
             return;
           }
         }
       } catch (err) {
-        console.warn('Error checking user counts:', err);
+        console.warn('Error checking setup status:', err);
       }
 
       // Check server health
@@ -115,16 +121,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         }
       } catch (serverErr: any) {
         setIsServerAvailable(false);
-        // If server explicitly rejected credentials (401), show error
-        if (serverErr.status === 401 || serverErr.status === 403) {
-          setErrorMessage(
-            isMm
-              ? 'အသုံးပြုသူအမည် သို့မဟုတ် စကားဝှက် မှားယွင်းနေပါသည်'
-              : 'Invalid username or password'
-          );
-          setIsLoading(false);
-          return;
-        }
+        console.warn('LAN server login notice, checking offline Dexie credentials:', serverErr?.message);
       }
 
       // 2. OFFLINE FALLBACK: If LAN server is unreachable, verify against local Dexie store
@@ -337,8 +334,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           lang={lang}
           onOwnerCreated={owner => {
             setShowFirstRunSetup(false);
-            setUsername(owner.username);
-            setErrorMessage('');
+            onLoginSuccess(owner);
           }}
         />
       )}

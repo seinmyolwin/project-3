@@ -8,7 +8,7 @@ export const APP_VERSION = '1.0.0';
 export const APP_BUILD_DATE = '2026-09-22';
 export const UPDATE_MODE = 'Local package update (Offline-first)';
 
-export type UserRole = 'owner' | 'manager' | 'cashier' | 'receptionist' | 'admin';
+export type UserRole = 'owner' | 'manager' | 'cashier' | 'receptionist' | 'waiter' | 'admin';
 
 export interface UserAccount {
   id: string;

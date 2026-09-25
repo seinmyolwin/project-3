@@ -81,3 +81,17 @@ When upgrading to a new software release:
 * Zero external APIs, zero third-party telemetry, zero cloud dependencies.
 * All financial transactions and stock movements are written directly with ACID atomicity to the local disk.
 
+---
+
+## 6. Zero Default Credentials & Initial Owner Setup Flow
+
+On a completely fresh installation (when the database has zero configured users), there are **zero default or demo accounts of any kind**:
+
+* **First User Becomes Owner:** The first person to open the application is presented directly with a mandatory **"Create Owner Account"** screen (not a login form, and with no pre-filled credentials).
+* **Credentials Choice:** The owner chooses their own **Name**, **Username**, and **Password/PIN** (4 to 6 characters/digits).
+* **Immediate Activation:** Upon submission, the owner account is created with `role: "owner"` and `isActive: true` (`mustChangePassword: false`). They are immediately authenticated and granted full administrative control.
+* **Subsequent Logins:** After this single owner account exists, this screen will never appear again. All future visits and other connected devices will display the standard secure Login form.
+* **Staff Provisioning:** The shop owner provisions accounts for **Cashier**, **Receptionist**, **Waiter**, and **Manager** via **Settings -> Users & PIN Management**. Credentials (4 to 6 digits/characters) assigned by the owner are immediately active, allowing staff to log in immediately with their respective roles.
+* **Header PIN / User Switcher:** Supports fast 4 to 6 digit PIN switching via touch numpad or physical keyboard entry, interconnected in real time with the persistent user database.
+
+

@@ -36,15 +36,14 @@ export function seedDatabaseIfEmpty(): Promise<void> {
 }
 
 async function internalSeedDatabaseIfEmpty(): Promise<void> {
-  const [roomCount, userCount, settingsCount, staffTypeCount] = await Promise.all([
+  const [roomCount, settingsCount, staffTypeCount] = await Promise.all([
     db.rooms.count(),
-    db.users.count(),
     db.settings.count(),
     db.staffTypes.count(),
   ]);
 
   // If already seeded across core collections, check and fill any empty master tables
-  if (roomCount > 0 && userCount > 0 && settingsCount > 0 && staffTypeCount > 0) return;
+  if (roomCount > 0 && settingsCount > 0 && staffTypeCount > 0) return;
 
   console.log('Seeding initial Myanmar Business ERP database...');
 
@@ -67,43 +66,7 @@ async function internalSeedDatabaseIfEmpty(): Promise<void> {
     currencySymbol: 'MMK',
   };
 
-  // 2. Users (Salted SHA-256 PIN Hashes)
-  const ownerHash = hashPin('1234', 'salt_owner_init');
-  const managerHash = hashPin('5678', 'salt_manager_init');
-  const cashierHash = hashPin('0000', 'salt_cashier_init');
-
-  const defaultUsers: UserAccount[] = [
-    {
-      id: 'usr_owner',
-      name: 'U Zaw Min (ဦးဇော်မင်း - ဆိုင်ရှင်)',
-      username: 'owner',
-      pinHash: ownerHash.pinHash,
-      pinSalt: ownerHash.pinSalt,
-      role: 'owner',
-      isActive: true,
-      createdAt: now,
-    },
-    {
-      id: 'usr_manager',
-      name: 'Daw Sandar (ဒေါ်စန္ဒာ - မန်နေဂျာ)',
-      username: 'manager',
-      pinHash: managerHash.pinHash,
-      pinSalt: managerHash.pinSalt,
-      role: 'manager',
-      isActive: true,
-      createdAt: now,
-    },
-    {
-      id: 'usr_cashier',
-      name: 'Maung Kyaw (မောင်ကျော် - ငွေကိုင်)',
-      username: 'cashier',
-      pinHash: cashierHash.pinHash,
-      pinSalt: cashierHash.pinSalt,
-      role: 'cashier',
-      isActive: true,
-      createdAt: now,
-    },
-  ];
+  // 2. Rooms (No default users are auto-created - Owner created during First-Run Setup)
 
   // 3. Rooms
   const defaultRooms: Room[] = [

@@ -63,7 +63,8 @@ export function createApiRouter(storage: PersistentSQLiteStorage = serverStorage
         const isAllowed = 
           req.path === '/auth/me' || 
           req.path === '/auth/logout' || 
-          (req.path.startsWith('/users/') && req.path.endsWith('/change-password') && req.method === 'POST');
+          (req.path.startsWith('/users/') && req.path.endsWith('/change-password') && req.method === 'POST') ||
+          (req.path.startsWith('/users/') && req.path.endsWith('/complete-first-setup') && req.method === 'POST');
 
         if (!isAllowed) {
           return res.status(403).json({
@@ -124,8 +125,8 @@ export function createApiRouter(storage: PersistentSQLiteStorage = serverStorage
     }
 
     const { name, username, password } = req.body;
-    if (!name || !username || !password || password.length < 4) {
-      return res.status(400).json({ error: 'INVALID_INPUT', message: 'Name, username, and password (min 4 chars) are required' });
+    if (!name || !username || !password || password.length < 4 || password.length > 6) {
+      return res.status(400).json({ error: 'INVALID_INPUT', message: 'Name, username, and password (4 to 6 chars) are required' });
     }
 
     const owner = storage.createUser({
@@ -133,16 +134,36 @@ export function createApiRouter(storage: PersistentSQLiteStorage = serverStorage
       username,
       role: 'owner',
       password,
+      mustChangePassword: false,
+    });
+
+    const token = 'sess_' + crypto.randomBytes(24).toString('hex');
+    activeSessions.set(token, {
+      token,
+      user: {
+        id: owner.id,
+        businessId: owner.businessId,
+        branchId: owner.branchId,
+        username: owner.username,
+        name: owner.name,
+        role: owner.role,
+        isActive: true,
+        createdAt: owner.createdAt,
+      },
+      deviceId: (req.headers['x-device-id'] as string) || 'dev_main',
+      expiresAt: Date.now() + 24 * 3600 * 1000,
     });
 
     res.json({
       success: true,
+      token,
       message: 'Owner account created successfully',
       user: {
         id: owner.id,
         name: owner.name,
         username: owner.username,
         role: owner.role,
+        isActive: owner.isActive,
       },
     });
   });
@@ -310,16 +331,19 @@ export function createApiRouter(storage: PersistentSQLiteStorage = serverStorage
     if (!rawSecret) {
       return res.status(400).json({ error: 'INVALID_INPUT', message: 'Password or PIN is required' });
     }
+    if (rawSecret.trim().length < 4) {
+      return res.status(400).json({ error: 'INVALID_INPUT', message: 'Password or PIN must be at least 4 characters' });
+    }
 
     const existing = storage.getUserByUsername(username);
     if (existing) {
       return res.status(400).json({ error: 'USERNAME_EXISTS', message: 'Username is already in use' });
     }
 
-    const validRoles: UserRole[] = ['owner', 'manager', 'cashier', 'receptionist'];
+    const validRoles: UserRole[] = ['owner', 'manager', 'cashier', 'receptionist', 'waiter'];
     const assignedRole = validRoles.includes(role) ? role : 'cashier';
 
-    const mustChange = req.body.mustChangePassword !== undefined ? Boolean(req.body.mustChangePassword) : true;
+    const mustChange = req.body.mustChangePassword !== undefined ? Boolean(req.body.mustChangePassword) : false;
 
     const created = storage.createUser({
       name,
@@ -396,6 +420,30 @@ export function createApiRouter(storage: PersistentSQLiteStorage = serverStorage
     }
 
     res.json({ success: true, message: 'Password updated successfully' });
+  });
+
+  router.post('/users/:id/complete-first-setup', requireAuth(), async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { name, newUsername, newPassword } = req.body;
+    const currentUser = (req as any).user;
+
+    if (currentUser.id !== id) {
+      return res.status(403).json({ error: 'FORBIDDEN', message: 'You can only configure your own account' });
+    }
+
+    if (!name || !newUsername || !newPassword || newPassword.trim().length < 4) {
+      return res.status(400).json({ error: 'INVALID_INPUT', message: 'Name, username, and password (min 4 characters) are required' });
+    }
+
+    try {
+      const success = await storage.completeFirstSetup(id, name, newUsername, newPassword);
+      if (!success) {
+        return res.status(404).json({ error: 'USER_NOT_FOUND', message: 'User not found' });
+      }
+      res.json({ success: true, message: 'First-run owner setup completed successfully' });
+    } catch (err: any) {
+      res.status(400).json({ error: 'SETUP_FAILED', message: err.message });
+    }
   });
 
   router.post('/users/:id/toggle-active', requireAuth(['owner']), (req: Request, res: Response) => {

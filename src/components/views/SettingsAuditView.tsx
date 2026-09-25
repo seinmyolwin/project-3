@@ -268,33 +268,59 @@ export const SettingsAuditView: React.FC<SettingsAuditViewProps> = ({
       return;
     }
 
+    const cleanUsername = newUserUsername.toLowerCase().trim();
+    const cleanName = newUserName.trim();
+    const cleanPassword = newUserPassword.trim();
+
+    if (!cleanName || !cleanUsername) {
+      alert(isMm ? 'အမည်နှင့် အသုံးပြုသူအမည် ထည့်သွင်းပါ' : 'Please provide name and username');
+      return;
+    }
+
+    if (cleanPassword.length < 4 || cleanPassword.length > 6) {
+      alert(isMm ? 'စကားဝှက်/PIN သည် ၄ လုံးမှ ၆ လုံး အထိ ဖြစ်ရပါမည်' : 'Password/PIN must be between 4 and 6 characters');
+      return;
+    }
+
+    if (cleanPassword !== newUserConfirmPassword.trim()) {
+      alert(isMm ? 'စကားဝှက် ၂ ကြိမ် ရိုက်ထည့်မှု မတူညီပါ' : 'Passwords do not match');
+      return;
+    }
+
     try {
-      const cleanUsername = newUserUsername.toLowerCase().trim();
-      const cleanName = newUserName.trim();
-      const cleanPassword = newUserPassword.trim();
+      let createdId = 'usr_' + Date.now();
 
       // 1. Authoritative Server Call
       try {
-        await localServerClient.createUser({
+        const sRes = await localServerClient.createUser({
           name: cleanName,
           username: cleanUsername,
           role: newUserRole,
           password: cleanPassword,
+          mustChangePassword: false,
         });
-      } catch (serverErr) {
+        if (sRes && sRes.user && sRes.user.id) {
+          createdId = sRes.user.id;
+        }
+      } catch (serverErr: any) {
         console.warn('LAN server user creation notice:', serverErr);
+        if (serverErr.status === 400 && serverErr.message?.includes('already in use')) {
+          alert(isMm ? 'ဤ အသုံးပြုသူအမည် ရှိနှင့်ပြီးဖြစ်ပါသည်' : 'Username is already taken');
+          return;
+        }
       }
 
       // 2. Local Dexie Storage
       const { passwordHash, salt } = hashPassword(cleanPassword);
       const newUser: UserAccount = {
-        id: 'usr_' + Date.now(),
+        id: createdId,
         name: cleanName,
         username: cleanUsername,
         role: newUserRole,
         pinHash: passwordHash,
         pinSalt: salt,
         isActive: true,
+        mustChangePassword: false,
         createdAt: new Date().toISOString(),
       };
 
@@ -367,18 +393,18 @@ export const SettingsAuditView: React.FC<SettingsAuditViewProps> = ({
   };
 
   const handleSavePassword = async () => {
-    if (!targetPasswordUserId || newPasswordInput.length < 4) {
-      alert(isMm ? 'စကားဝှက် အနည်းဆုံး ၄ လုံး ရှိရပါမည်' : 'Password must be at least 4 characters');
+    if (!targetPasswordUserId) return;
+    const cleanPassword = newPasswordInput.trim();
+    if (cleanPassword.length < 4 || cleanPassword.length > 6) {
+      alert(isMm ? 'စကားဝှက်သည် ၄ လုံးမှ ၆ လုံး အထိ ဖြစ်ရပါမည်' : 'Password must be between 4 and 6 characters');
       return;
     }
-    if (newPasswordInput !== confirmPasswordInput) {
+    if (cleanPassword !== confirmPasswordInput.trim()) {
       alert(isMm ? 'စကားဝှက် ၂ ကြိမ် ရိုက်ထည့်မှု မတူညီပါ' : 'Passwords do not match');
       return;
     }
 
     try {
-      const cleanPassword = newPasswordInput.trim();
-
       // Server update
       try {
         await localServerClient.changeUserPassword(targetPasswordUserId, cleanPassword);
@@ -391,6 +417,7 @@ export const SettingsAuditView: React.FC<SettingsAuditViewProps> = ({
       await db.users.update(targetPasswordUserId, {
         pinHash: passwordHash,
         pinSalt: salt,
+        mustChangePassword: false,
       });
 
       setIsChangePasswordOpen(false);
@@ -1093,27 +1120,28 @@ export const SettingsAuditView: React.FC<SettingsAuditViewProps> = ({
                 >
                   <option value="cashier">Cashier (ငွေကိုင်)</option>
                   <option value="receptionist">Receptionist (ဧည့်ကြို)</option>
+                  <option value="waiter">Waiter (စားပွဲထိုး/အော်ဒါ)</option>
                   <option value="manager">Manager (မန်နေဂျာ)</option>
                   <option value="owner">Owner (ဆိုင်ရှင်)</option>
                 </select>
               </div>
               <div>
-                <label className="block font-semibold mb-1 text-gray-700">Password</label>
+                <label className="block font-semibold mb-1 text-gray-700">Password / PIN (၄ လုံးမှ ၆ လုံး)</label>
                 <input
                   type="password"
                   value={newUserPassword}
                   onChange={e => setNewUserPassword(e.target.value)}
-                  placeholder="••••••••"
+                  placeholder="4 to 6 characters"
                   className="w-full rounded-xl border border-gray-200 bg-gray-50 p-2.5 text-gray-900"
                 />
               </div>
               <div>
-                <label className="block font-semibold mb-1 text-gray-700">Confirm Password</label>
+                <label className="block font-semibold mb-1 text-gray-700">Confirm Password / PIN</label>
                 <input
                   type="password"
                   value={newUserConfirmPassword}
                   onChange={e => setNewUserConfirmPassword(e.target.value)}
-                  placeholder="••••••••"
+                  placeholder="4 to 6 characters"
                   className="w-full rounded-xl border border-gray-200 bg-gray-50 p-2.5 text-gray-900"
                 />
               </div>
@@ -1171,6 +1199,7 @@ export const SettingsAuditView: React.FC<SettingsAuditViewProps> = ({
                 >
                   <option value="cashier">Cashier (ငွေကိုင်)</option>
                   <option value="receptionist">Receptionist (ဧည့်ကြို)</option>
+                  <option value="waiter">Waiter (စားပွဲထိုး/အော်ဒါ)</option>
                   <option value="manager">Manager (မန်နေဂျာ)</option>
                   <option value="owner">Owner (ဆိုင်ရှင်)</option>
                 </select>
